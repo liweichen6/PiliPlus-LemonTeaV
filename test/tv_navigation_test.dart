@@ -701,5 +701,53 @@ void main() {
         expect(confirmNode.hasPrimaryFocus, isTrue);
       },
     );
+
+    testWidgets(
+      'scrolls full-screen ListView down past bottom viewport edge through cacheExtent items',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          12,
+          (i) => FocusNode(debugLabel: 'setting_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: ListView.builder(
+                  itemCount: nodes.length,
+                  itemBuilder: (context, index) => SizedBox(
+                    height: 100,
+                    child: ListTile(
+                      focusNode: nodes[index],
+                      autofocus: index == 0,
+                      title: Text('Setting $index'),
+                      onTap: () {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        for (int i = 1; i < nodes.length; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(
+            nodes[i].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected focus to advance and scroll to Setting $i',
+          );
+        }
+      },
+    );
   });
 }

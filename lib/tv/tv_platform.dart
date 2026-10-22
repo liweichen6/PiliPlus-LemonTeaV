@@ -53,6 +53,7 @@ abstract final class TvPlatform {
     SettingBoxKey.showFsScreenshotBtn: false,
     SettingBoxKey.showFsLockBtn: false,
     SettingBoxKey.themeMode: 1, // ThemeType.dark.index
+    SettingBoxKey.autoUpdate: false,
   };
 
   /// Returns `true` when running on an Android TV / Leanback device or when

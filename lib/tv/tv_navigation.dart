@@ -5,7 +5,11 @@ import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
 import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/rendering.dart'
-    show RenderClipPath, RenderClipRRect, RenderClipRect;
+    show
+        RenderClipPath,
+        RenderClipRRect,
+        RenderClipRect,
+        RenderFractionalTranslation;
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -58,21 +62,19 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     }
 
     Rect visible = globalRect;
-    final view = View.maybeOf(context);
-    if (view != null && view.devicePixelRatio > 0) {
-      final Size logicalSize = view.physicalSize / view.devicePixelRatio;
-      if (logicalSize.width > 1.0 && logicalSize.height > 1.0) {
-        final Rect viewport = Offset.zero & logicalSize;
-        visible = visible.intersect(viewport);
-        if (visible.width <= 1.0 || visible.height <= 1.0) {
-          return false;
-        }
-      }
-    }
-
     bool focusable = true;
     bool checkedOwner = false;
+    bool insideScrollable = false;
+    bool hasNonZeroTranslation = false;
+
     context.visitAncestorElements((Element element) {
+      if (element is StatefulElement && element.state is ScrollableState) {
+        final scrollable = element.state as ScrollableState;
+        if (_canUserScroll(scrollable)) {
+          insideScrollable = true;
+        }
+      }
+
       final RenderObject? ancestorRo = element.renderObject;
       if (ancestorRo is RenderBox &&
           ancestorRo.attached &&
@@ -81,12 +83,22 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           focusable = false;
           return false;
         }
-        if ((ancestorRo is RenderClipRect &&
-                ancestorRo.clipBehavior != Clip.none) ||
-            (ancestorRo is RenderClipRRect &&
-                ancestorRo.clipBehavior != Clip.none) ||
-            (ancestorRo is RenderClipPath &&
-                ancestorRo.clipBehavior != Clip.none)) {
+        if (ancestorRo is RenderFractionalTranslation &&
+            (ancestorRo.translation.dx.abs() > 0.01 ||
+                ancestorRo.translation.dy.abs() > 0.01)) {
+          hasNonZeroTranslation = true;
+        }
+        // Intersect clip bounds only below any enclosing Scrollable (or when
+        // shifted by a SlideTransition/FractionalTranslation such as AppBarAni)
+        // so items built in a Scrollable's offscreen cacheExtent remain
+        // reachable for in-list D-pad scrolling.
+        if ((!insideScrollable || hasNonZeroTranslation) &&
+            ((ancestorRo is RenderClipRect &&
+                    ancestorRo.clipBehavior != Clip.none) ||
+                (ancestorRo is RenderClipRRect &&
+                    ancestorRo.clipBehavior != Clip.none) ||
+                (ancestorRo is RenderClipPath &&
+                    ancestorRo.clipBehavior != Clip.none))) {
           final Rect clipBounds =
               ancestorRo.localToGlobal(Offset.zero) & ancestorRo.size;
           if (!clipBounds.hasNaN && !clipBounds.isInfinite) {
@@ -154,7 +166,41 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       }
       return true;
     });
-    return focusable;
+    if (!focusable) return false;
+
+    if (!insideScrollable || hasNonZeroTranslation) {
+      final view = View.maybeOf(context);
+      if (view != null && view.devicePixelRatio > 0) {
+        final Size logicalSize = view.physicalSize / view.devicePixelRatio;
+        if (logicalSize.width > 1.0 && logicalSize.height > 1.0) {
+          final Rect viewport = Offset.zero & logicalSize;
+          visible = visible.intersect(viewport);
+          if (visible.width <= 1.0 || visible.height <= 1.0) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  static bool _isVisibleInEnclosingScrollables(FocusNode node) {
+    final ScrollableState? vert = _verticalScrollableOf(node);
+    if (vert != null) {
+      final Rect? vertRect = _scrollableRect(vert);
+      if (vertRect != null && !_isVisibleInScrollable(node, vertRect)) {
+        return false;
+      }
+    }
+    final ScrollableState? horiz = _horizontalScrollableOf(node);
+    if (horiz != null) {
+      final Rect? horizRect = _scrollableRect(horiz);
+      if (horizRect != null &&
+          !_isVisibleHorizontallyInScrollable(node, horizRect)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override
@@ -166,14 +212,22 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       currentNode,
       ignoreCurrentFocus: ignoreCurrentFocus,
     );
-    if (candidate != null && _isEffectivelyFocusable(candidate)) {
+    if (candidate != null &&
+        _isEffectivelyFocusable(candidate) &&
+        _isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
     final List<FocusNode> candidates = currentNode.traversalDescendants
         .where(_isEffectivelyFocusable)
         .toList();
     if (candidates.isEmpty) return null;
-    return sortDescendants(candidates, currentNode).firstOrNull;
+    final List<FocusNode> visibleInScrollables = candidates
+        .where(_isVisibleInEnclosingScrollables)
+        .toList();
+    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+        ? visibleInScrollables
+        : candidates;
+    return sortDescendants(pool, currentNode).firstOrNull;
   }
 
   @override
@@ -199,14 +253,22 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       currentNode,
       direction,
     );
-    if (candidate != null && _isEffectivelyFocusable(candidate)) {
+    if (candidate != null &&
+        _isEffectivelyFocusable(candidate) &&
+        _isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
     final List<FocusNode> candidates = currentNode.traversalDescendants
         .where(_isEffectivelyFocusable)
         .toList();
     if (candidates.isEmpty) return null;
-    return sortDescendants(candidates, currentNode).firstOrNull;
+    final List<FocusNode> visibleInScrollables = candidates
+        .where(_isVisibleInEnclosingScrollables)
+        .toList();
+    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+        ? visibleInScrollables
+        : candidates;
+    return sortDescendants(pool, currentNode).firstOrNull;
   }
 
   static bool _canUserScroll(ScrollableState scrollable) {
