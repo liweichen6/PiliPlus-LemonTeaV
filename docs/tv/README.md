@@ -6,7 +6,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 
 ## 1. Design Goals
 
-1. **Near-Zero Upstream Merge Conflicts**: Keep upstream modifications to an absolute minimum (**only 5 Dart files in `lib/`, `< 20 lines` total**) so automated daily merges from `lemonteaau/PiliPlus` run cleanly without manual conflict resolution.
+1. **Near-Zero Upstream Merge Conflicts**: Keep upstream modifications to an absolute minimum (**only 5 Dart files in `lib/`, `< 20 lines` total**) so automated weekly merges from `lemonteaau/PiliPlus` run cleanly without manual conflict resolution.
 2. **10-Foot D-Pad First Experience**: Provide spatial 2D directional focus traversal (`TvFocusTraversalPolicy`), zero-rebuild focus ring rendering (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), automatic scroll-into-view (`cacheExtent` pre-rendering), closed-loop escape from scrollable dialogs/lists, and a dedicated 10-foot TV Player HUD (`TvPlayerHud`).
 3. **Framework-Level Widget Adaptation (`patch.ps1` / `tool/tv_patch.sh`)**: Fix Flutter/Material D-pad limitations (`GestureDetector` lacking focus, `RadioGroup` trapping arrow keys, `InkResponse` missing keyboard activation for `onTapDown`/`onTapUp` hold-to-triple-like and coordinate menus) at the build-time patch layer rather than editing 40+ upstream business pages.
 4. **Universal APK & Side-by-Side Coexistence**:
@@ -28,9 +28,9 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 
 ## 3. Upstream Sync Guide (`lemonteaau/PiliPlus`)
 
-### Option A: Automated Daily / Manual Sync on GitHub Actions
+### Option A: Automated Weekly / Manual Sync on GitHub Actions
 The workflow [`.github/workflows/sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml) runs:
-- **Automatically** every day at `18:17 UTC` (`02:17` Beijing time),
+- **Automatically** every week on **Saturday at `16:16 UTC` (`GMT+0`)** (`cron: "16 16 * * 6"`),
 - **On every code push** to `main` (ignoring `**.md` documentation-only changes), or
 - **Manually** via GitHub → **Actions** → **Sync upstream and build custom apps** → **Run workflow**.
 

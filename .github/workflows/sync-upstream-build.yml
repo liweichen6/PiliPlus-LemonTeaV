@@ -8,8 +8,8 @@ on:
     paths-ignore:
       - "**.md"
   schedule:
-    # Once a day at 18:17 UTC (02:17 Beijing), after upstream's day is over.
-    - cron: "17 18 * * *"
+    # Once a week on Saturday at 16:16 UTC (GMT+0).
+    - cron: "16 16 * * 6"
   workflow_dispatch:
 
 concurrency:

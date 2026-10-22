@@ -1,9 +1,11 @@
+> **声明**：此 repo 完全是 wish coding 的产物，主要由 Argon High 完成。
+
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png" alt="PiliPlus TV logo">
     <h1>PiliPlus TV（海外加速 + 安卓电视版）</h1>
     <p>中文 | <a href="README.en.md">English</a></p>
     <p>专为 <strong>Android TV 大屏遥控器</strong>与<strong>海外流畅观看</strong>打造的哔哩哔哩第三方客户端。</p>
-    <p>基于 <a href="https://github.com/lemonteaau/PiliPlus">lemonteaau/PiliPlus</a>（内置 <a href="https://github.com/MrTangLuyao/Bilibili-thread-ripper">B站线程撕裂者 BTR</a> 多线程海外加速）与 <a href="https://github.com/bggRGjQaUbCoE/PiliPlus">PiliPlus</a>，采用<strong>三层解耦 TV 控制层架构</strong>，每日自动跟进上游更新。</p>
+    <p>基于 <a href="https://github.com/lemonteaau/PiliPlus">lemonteaau/PiliPlus</a>（内置 <a href="https://github.com/MrTangLuyao/Bilibili-thread-ripper">B站线程撕裂者 BTR</a> 多线程海外加速）与 <a href="https://github.com/bggRGjQaUbCoE/PiliPlus">PiliPlus</a>，采用<strong>三层解耦 TV 控制层架构</strong>，每周自动跟进上游更新。</p>
 </div>
 
 ---
@@ -60,7 +62,7 @@
 
 ## 自动跟进上游更新
 
-本仓库通过 GitHub Actions 每日自动同步 [`lemonteaau/PiliPlus`](https://github.com/lemonteaau/PiliPlus)（上游同时同步自 [`bggRGjQaUbCoE/PiliPlus`](https://github.com/bggRGjQaUbCoE/PiliPlus)），在无侵入合并上游新功能的同时自动应用 TV 补丁并构建发布新版 APK。
+本仓库通过 GitHub Actions 每周（周六 `16:16 UTC`）自动同步 [`lemonteaau/PiliPlus`](https://github.com/lemonteaau/PiliPlus)（上游同时同步自 [`bggRGjQaUbCoE/PiliPlus`](https://github.com/bggRGjQaUbCoE/PiliPlus)），在无侵入合并上游新功能的同时自动应用 TV 补丁并构建发布新版 APK。
 
 - 版本号格式为 `2.1.6.2-fork.5720`（前半部分为上游版本号，末尾数字为提交计数 `versionCode`）。
 - 应用内「设置 → 关于 → 检查更新」直接指向本仓库（`liweichen6/PiliPlus-LemonTeaV`），更新不会丢失 TV 控制层。
@@ -85,4 +87,5 @@
 
 - [bggRGjQaUbCoE/PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)：上游核心项目，采用 [GPL-3.0](LICENSE) 许可，本项目保持相同开源协议。
 - [lemonteaau/PiliPlus](https://github.com/lemonteaau/PiliPlus)：海外多线程加速（BTR）集成上游分支。
+- [N3urda/PiliPlus-TV](https://github.com/N3urda/PiliPlus-TV)：灵感来源，本来想把 lemonteaau merge 进去的，但是问题越修越多干脆推倒重来了。
 - [MrTangLuyao/Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thread-ripper)：多线程下载核心思路来源，基于 MIT 许可，详见 [docs/licenses/bilibili-thread-ripper.txt](docs/licenses/bilibili-thread-ripper.txt)。

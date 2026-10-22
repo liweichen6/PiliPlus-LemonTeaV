@@ -1,9 +1,11 @@
+> **Disclaimer**: This repo is entirely a product of wish coding, primarily completed by Argon High. (`此 repo 完全是 wish coding 的产物，主要由 Argon High 完成`)
+
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png" alt="PiliPlus TV logo">
     <h1>PiliPlus TV (Android TV + Overseas Acceleration)</h1>
     <p><a href="README.md">中文</a> | English</p>
     <p>A third-party Bilibili client engineered for <strong>Android TV D-pad navigation</strong> and <strong>overseas multi-threaded streaming acceleration</strong>.</p>
-    <p>Built on top of <a href="https://github.com/lemonteaau/PiliPlus">lemonteaau/PiliPlus</a> (featuring <a href="https://github.com/MrTangLuyao/Bilibili-thread-ripper">Bilibili-thread-ripper / BTR</a>) and <a href="https://github.com/bggRGjQaUbCoE/PiliPlus">PiliPlus</a>, powered by a <strong>Three-Tier Decoupled TV Control Layer</strong> that syncs cleanly with upstream daily.</p>
+    <p>Built on top of <a href="https://github.com/lemonteaau/PiliPlus">lemonteaau/PiliPlus</a> (featuring <a href="https://github.com/MrTangLuyao/Bilibili-thread-ripper">Bilibili-thread-ripper / BTR</a>) and <a href="https://github.com/bggRGjQaUbCoE/PiliPlus">PiliPlus</a>, powered by a <strong>Three-Tier Decoupled TV Control Layer</strong> that syncs cleanly with upstream every week.</p>
 </div>
 
 ---
@@ -60,7 +62,7 @@ Download the APK matching your device's CPU architecture from [Releases](../../r
 
 ## Automated Upstream Sync & Updates
 
-This repository syncs daily with [`lemonteaau/PiliPlus`](https://github.com/lemonteaau/PiliPlus) (which tracks [`bggRGjQaUbCoE/PiliPlus`](https://github.com/bggRGjQaUbCoE/PiliPlus)) via GitHub Actions, automatically applying the TV patch pipeline and publishing new release APKs when upstream changes land.
+This repository syncs weekly (every Saturday at `16:16 UTC`) with [`lemonteaau/PiliPlus`](https://github.com/lemonteaau/PiliPlus) (which tracks [`bggRGjQaUbCoE/PiliPlus`](https://github.com/bggRGjQaUbCoE/PiliPlus)) via GitHub Actions, automatically applying the TV patch pipeline and publishing new release APKs when upstream changes land.
 
 - Release versions follow the format `2.1.6.2-fork.5720` (`<upstream_version>-fork.<commit_count>`).
 - In-app update checks (**Settings → About → Check for Updates**) point directly to `liweichen6/PiliPlus-LemonTeaV`.
@@ -85,4 +87,5 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 
 - [bggRGjQaUbCoE/PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus): The core upstream project, licensed under [GPL-3.0](LICENSE) (this repository is distributed under the same license).
 - [lemonteaau/PiliPlus](https://github.com/lemonteaau/PiliPlus): Upstream fork integrating overseas multi-threaded video acceleration (BTR).
+- [N3urda/PiliPlus-TV](https://github.com/N3urda/PiliPlus-TV): Source of inspiration — originally intended to merge `lemonteaau` into it, but as fixing one issue kept uncovering more, decided to rebuild from scratch onto `lemonteaau` instead.
 - [MrTangLuyao/Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thread-ripper): Origin of the multi-threaded streaming proxy concept, licensed under MIT (see [docs/licenses/bilibili-thread-ripper.txt](docs/licenses/bilibili-thread-ripper.txt)).
