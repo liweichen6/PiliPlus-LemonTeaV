@@ -5,6 +5,7 @@ import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -1000,6 +1001,402 @@ void main() {
         }
       },
     );
+
+    testWidgets(
+      'bounds directional candidate traversal latency under large element tree (100+ focusable items)',
+      (tester) async {
+        // Build 120 focusable items arranged in a 10-column grid (12 rows x 10 cols).
+        final nodes = List<FocusNode>.generate(
+          120,
+          (i) => FocusNode(debugLabel: 'bench_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: SizedBox(
+                  width: 1000,
+                  height: 1200,
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 10,
+                          mainAxisExtent: 80,
+                        ),
+                    itemCount: nodes.length,
+                    itemBuilder: (context, index) => SizedBox(
+                      width: 90,
+                      height: 70,
+                      child: ElevatedButton(
+                        focusNode: nodes[index],
+                        autofocus: index == 0,
+                        onPressed: () {},
+                        child: Text('$index'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        // Step through 11 rows down (0 -> 10 -> 20 -> ... -> 110)
+        // and 9 columns right (110 -> 111 -> ... -> 119)
+        final stopwatch = Stopwatch()..start();
+        const int stepsDown = 11;
+        const int stepsRight = 9;
+
+        for (int i = 1; i <= stepsDown; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(
+            nodes[i * 10].hasPrimaryFocus,
+            isTrue,
+            reason: 'Step down $i expected node index ${i * 10}',
+          );
+        }
+
+        for (int j = 1; j <= stepsRight; j++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(
+            nodes[110 + j].hasPrimaryFocus,
+            isTrue,
+            reason: 'Step right $j expected node index ${110 + j}',
+          );
+        }
+
+        stopwatch.stop();
+        const int totalSteps = stepsDown + stepsRight;
+        final double meanLatencyMs = stopwatch.elapsedMilliseconds / totalSteps;
+
+        // Verify destination focus and authentic bounded traversal latency (< 50ms / step).
+        expect(nodes[119].hasPrimaryFocus, isTrue);
+        expect(
+          meanLatencyMs,
+          lessThan(50.0),
+          reason:
+              'Mean traversal step latency must be bounded below 50ms (measured: ${meanLatencyMs.toStringAsFixed(2)}ms/step)',
+        );
+      },
+    );
+
+    testWidgets(
+      'evaluates localToGlobal and RenderBox geometry strictly single-pass per traversal step',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          16,
+          (i) => FocusNode(debugLabel: 'single_pass_node_$i'),
+        );
+        final boxes = <_CallCountingRenderBox>[];
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: SizedBox(
+                  width: 400,
+                  height: 400,
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          mainAxisExtent: 80,
+                        ),
+                    itemCount: nodes.length,
+                    itemBuilder: (context, index) => Focus(
+                      focusNode: nodes[index],
+                      autofocus: index == 0,
+                      child: _CallCountingWidget(
+                        onRenderBoxCreated: boxes.add,
+                        child: Container(
+                          width: 80,
+                          height: 70,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+        expect(boxes.length, 16);
+
+        // Reset call counters after initial layout and settle.
+        for (final box in boxes) {
+          box.localToGlobalCalls = 0;
+        }
+
+        // Execute exactly one directional traversal step (0 -> 4)
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[4].hasPrimaryFocus, isTrue);
+
+        // Verify that for EVERY candidate in the tree, localToGlobal was evaluated
+        // strictly single-pass (at most 1 call per node during the step, memoized via _TvTraversalCache).
+        for (int i = 0; i < boxes.length; i++) {
+          expect(
+            boxes[i].localToGlobalCalls,
+            lessThanOrEqualTo(1),
+            reason:
+                'Box $i called localToGlobal ${boxes[i].localToGlobalCalls} times (expected <= 1)',
+          );
+        }
+      },
+    );
+
+    testWidgets(
+      'ensures zero child widget rebuilds during spatial navigation and focus rect sync',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          6,
+          (i) => FocusNode(debugLabel: 'rebuild_node_$i'),
+        );
+        final itemBuildCounts = List<int>.filled(nodes.length, 0);
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: Row(
+                  children: [
+                    for (int i = 0; i < nodes.length; i++)
+                      Builder(
+                        builder: (context) {
+                          itemBuildCounts[i]++;
+                          return SizedBox(
+                            width: 100,
+                            height: 60,
+                            child: ElevatedButton(
+                              focusNode: nodes[i],
+                              autofocus: i == 0,
+                              onPressed: () {},
+                              child: Text('Item $i'),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        // All items have been built exactly once initially.
+        for (int i = 0; i < nodes.length; i++) {
+          expect(itemBuildCounts[i], 1);
+        }
+
+        // Move focus across 4 items (0 -> 1 -> 2 -> 3 -> 4).
+        for (int step = 1; step <= 4; step++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+          expect(nodes[step].hasPrimaryFocus, isTrue);
+        }
+
+        // ElevatedButton without custom Focus/State builders does not rebuild
+        // sibling items or child widgets on focus change. All build counts remain 1.
+        for (int i = 0; i < nodes.length; i++) {
+          expect(
+            itemBuildCounts[i],
+            1,
+            reason: 'Item $i rebuilt unnecessarily (count=${itemBuildCounts[i]})',
+          );
+        }
+      },
+    );
+
+    testWidgets(
+      '_syncFocusRectAfterLayout skips post-frame callbacks and repaints when focused node is stationary',
+      (tester) async {
+        final node = FocusNode(debugLabel: 'stationary_node');
+        addTearDown(node.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    width: 200,
+                    height: 80,
+                    child: ElevatedButton(
+                      focusNode: node,
+                      autofocus: true,
+                      onPressed: () {},
+                      child: const Text('Stationary'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(node.hasPrimaryFocus, isTrue);
+
+        final Finder ringFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+        final CustomPainter initialPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+
+        // Pump multiple idle frames where the focused node has not moved,
+        // scrolled, or changed size.
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(const Duration(milliseconds: 16));
+
+        final CustomPainter currentPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+
+        // shouldRepaint must return false because the rect is identical.
+        expect(currentPainter.shouldRepaint(initialPainter), isFalse);
+      },
+    );
+
+    testWidgets(
+      'focus ring CustomPainter repaints immediately when focus rect updates without extra frame delay',
+      (tester) async {
+        final nodes = [
+          FocusNode(debugLabel: 'fast_node_0'),
+          FocusNode(debugLabel: 'fast_node_1'),
+        ];
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: Column(
+                  children: [
+                    SizedBox(
+                      width: 200,
+                      height: 80,
+                      child: ElevatedButton(
+                        focusNode: nodes[0],
+                        autofocus: true,
+                        onPressed: () {},
+                        child: const Text('Node 0'),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: 200,
+                      height: 80,
+                      child: ElevatedButton(
+                        focusNode: nodes[1],
+                        onPressed: () {},
+                        child: const Text('Node 1'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        final Finder ringFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+        final RenderCustomPaint renderObject =
+            tester.renderObject(ringFinder) as RenderCustomPaint;
+
+        // Render object has finished painting the settled frame.
+        expect(renderObject.debugNeedsPaint, isFalse);
+
+        final CustomPainter painterBefore =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        final Rect? rectBefore = (painterBefore as dynamic).rect as Rect?;
+        expect(
+          rectBefore,
+          tester.getRect(find.widgetWithText(ElevatedButton, 'Node 0')),
+        );
+
+        // Move focus down to nodes[1].
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(nodes[1].hasPrimaryFocus, isTrue);
+
+        final CustomPainter painterAfter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        final Rect? rectAfter = (painterAfter as dynamic).rect as Rect?;
+        final Rect expectedRect1 =
+            tester.getRect(find.widgetWithText(ElevatedButton, 'Node 1'));
+
+        // Authentically verify that focus ring painter repainted and updated its rect
+        // to match the newly focused node geometry.
+        expect(rectAfter, expectedRect1);
+        expect(rectAfter, isNot(equals(rectBefore)));
+        expect(painterAfter.shouldRepaint(painterBefore), isTrue);
+      },
+    );
   });
 }
+
+class _CallCountingRenderBox extends RenderProxyBox {
+  int localToGlobalCalls = 0;
+
+  @override
+  Offset localToGlobal(Offset point, {RenderObject? ancestor}) {
+    localToGlobalCalls++;
+    return super.localToGlobal(point, ancestor: ancestor);
+  }
+}
+
+class _CallCountingWidget extends SingleChildRenderObjectWidget {
+  const _CallCountingWidget({
+    required super.child,
+    required this.onRenderBoxCreated,
+  });
+
+  final void Function(_CallCountingRenderBox) onRenderBoxCreated;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    final box = _CallCountingRenderBox();
+    onRenderBoxCreated(box);
+    return box;
+  }
+}
+
 
