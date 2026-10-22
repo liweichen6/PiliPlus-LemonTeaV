@@ -6,6 +6,7 @@ import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/rendering.dart'
     show
+        BoxParentData,
         RenderClipPath,
         RenderClipRRect,
         RenderClipRect,
@@ -400,6 +401,45 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   static bool isEffectivelyFocusable(FocusNode node) =>
       _TvTraversalCache().isEffectivelyFocusable(node);
 
+  static FocusNode? _findFirstReadingOrderNode(
+    List<FocusNode> candidates,
+    _TvTraversalCache cache,
+  ) {
+    if (candidates.isEmpty) return null;
+    if (candidates.length == 1) return candidates.first;
+
+    // Pass 1: find topmost node in reading order
+    FocusNode topmost = candidates.first;
+    Rect topmostRect = cache.rectOf(topmost);
+    for (int i = 1; i < candidates.length; i++) {
+      final FocusNode node = candidates[i];
+      final Rect r = cache.rectOf(node);
+      if (r.top < topmostRect.top) {
+        topmost = node;
+        topmostRect = r;
+      }
+    }
+
+    // Pass 2: find leftmost node in the topmost node's horizontal band
+    final double bandTop = topmostRect.top;
+    final double bandBottom = topmostRect.bottom;
+    FocusNode firstNode = topmost;
+    Rect firstRect = topmostRect;
+
+    for (int i = 0; i < candidates.length; i++) {
+      final FocusNode node = candidates[i];
+      if (node == topmost) continue;
+      final Rect r = cache.rectOf(node);
+      if (r.bottom > bandTop && r.top < bandBottom) {
+        if (r.left < firstRect.left) {
+          firstNode = node;
+          firstRect = r;
+        }
+      }
+    }
+    return firstNode;
+  }
+
   @override
   FocusNode? findFirstFocus(
     FocusNode currentNode, {
@@ -414,17 +454,21 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         cache.isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
-    final List<FocusNode> candidates = currentNode.traversalDescendants
-        .where(cache.isEffectivelyFocusable)
-        .toList();
-    if (candidates.isEmpty) return null;
-    final List<FocusNode> visibleInScrollables = candidates
-        .where(cache.isVisibleInEnclosingScrollables)
-        .toList();
+    final List<FocusNode> visibleInScrollables = <FocusNode>[];
+    final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    for (final FocusNode node in currentNode.traversalDescendants) {
+      if (cache.isEffectivelyFocusable(node)) {
+        if (cache.isVisibleInEnclosingScrollables(node)) {
+          visibleInScrollables.add(node);
+        } else {
+          fallbackCandidates.add(node);
+        }
+      }
+    }
     final List<FocusNode> pool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
-        : candidates;
-    return _sortDescendantsWithCache(pool, currentNode, cache).firstOrNull;
+        : fallbackCandidates;
+    return _findFirstReadingOrderNode(pool, cache);
   });
 
   List<FocusNode> _sortDescendantsWithCache(
@@ -466,17 +510,21 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         cache.isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
-    final List<FocusNode> candidates = currentNode.traversalDescendants
-        .where(cache.isEffectivelyFocusable)
-        .toList();
-    if (candidates.isEmpty) return null;
-    final List<FocusNode> visibleInScrollables = candidates
-        .where(cache.isVisibleInEnclosingScrollables)
-        .toList();
+    final List<FocusNode> visibleInScrollables = <FocusNode>[];
+    final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    for (final FocusNode node in currentNode.traversalDescendants) {
+      if (cache.isEffectivelyFocusable(node)) {
+        if (cache.isVisibleInEnclosingScrollables(node)) {
+          visibleInScrollables.add(node);
+        } else {
+          fallbackCandidates.add(node);
+        }
+      }
+    }
     final List<FocusNode> pool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
-        : candidates;
-    return _sortDescendantsWithCache(pool, currentNode, cache).firstOrNull;
+        : fallbackCandidates;
+    return _findFirstReadingOrderNode(pool, cache);
   });
 
   static bool _canUserScroll(ScrollableState scrollable) {
@@ -488,6 +536,20 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         r.top < scrollableRect.bottom - 1.0 &&
         r.center.dy >= scrollableRect.top - 1.0 &&
         r.center.dy <= scrollableRect.bottom + 1.0;
+  }
+
+  static bool _isInOppositeHalfPlane(
+    Rect candidateRect,
+    Rect targetRect,
+    TraversalDirection direction,
+  ) {
+    if (candidateRect.isEmpty || targetRect.isEmpty) return false;
+    return switch (direction) {
+      TraversalDirection.down => candidateRect.bottom <= targetRect.top - 2.0,
+      TraversalDirection.up => candidateRect.top >= targetRect.bottom + 2.0,
+      TraversalDirection.right => candidateRect.right <= targetRect.left - 2.0,
+      TraversalDirection.left => candidateRect.left >= targetRect.right + 2.0,
+    };
   }
 
   static bool _isRectVisibleHorizontallyInScrollable(
@@ -527,15 +589,37 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     _TvTraversalCache cache,
   ) {
     if (candidates.length <= 1) return candidates;
-    return candidates.where((FocusNode node) {
-      for (final FocusNode other in candidates) {
-        if (other == node || other == focusedChild) continue;
-        if (_isEmbeddedSecondaryOf(node, other, cache)) {
-          return false;
+
+    // Fast check: identify potential secondary micro-actions (w, h <= 36 or small surface area)
+    final List<FocusNode> microNodes = <FocusNode>[];
+    for (final FocusNode node in candidates) {
+      if (node == focusedChild) continue;
+      final Rect r = cache.rectOf(node);
+      if ((r.width <= 36.0 && r.height <= 36.0) ||
+          (r.width <= 64.0 && r.height <= 64.0 && r.width * r.height <= 2500)) {
+        microNodes.add(node);
+      }
+    }
+
+    if (microNodes.isEmpty) {
+      return candidates;
+    }
+
+    final Set<FocusNode> excluded = <FocusNode>{};
+    for (final FocusNode secondary in microNodes) {
+      for (final FocusNode container in candidates) {
+        if (container == secondary || container == focusedChild) continue;
+        if (_isEmbeddedSecondaryOf(secondary, container, cache)) {
+          excluded.add(secondary);
+          break;
         }
       }
-      return true;
-    }).toList();
+    }
+
+    if (excluded.isEmpty) return candidates;
+    return candidates
+        .where((FocusNode node) => !excluded.contains(node))
+        .toList();
   }
 
   void _focusNode(FocusNode node, TraversalDirection direction) {
@@ -590,12 +674,20 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           .horizontalScrollableOf(focusedChild);
       final Rect target = cache.rectOf(focusedChild);
 
-      final List<FocusNode> rawDescendants = nearestScope.traversalDescendants
-          .where(
-            (FocusNode node) =>
-                node.context != null && cache.isEffectivelyFocusable(node),
-          )
-          .toList();
+      final List<FocusNode> rawDescendants = <FocusNode>[];
+      for (final FocusNode node in nearestScope.traversalDescendants) {
+        if (node.context == null) continue;
+        final RenderObject? ro = node.context!.findRenderObject();
+        if (ro is RenderBox && ro.attached && ro.hasSize) {
+          final Rect nr = cache.boxRect(ro);
+          if (_isInOppositeHalfPlane(nr, target, direction)) {
+            continue;
+          }
+        }
+        if (cache.isEffectivelyFocusable(node)) {
+          rawDescendants.add(node);
+        }
+      }
       final Set<FocusNode> rawSet = rawDescendants.toSet();
       final Set<FocusNode> nonLeafNodes = <FocusNode>{};
       for (final FocusNode node in rawDescendants) {
@@ -735,6 +827,23 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final List<FocusNode> externalCandidates = <FocusNode>[];
     final List<FocusNode> fallbackScrollableCandidates = <FocusNode>[];
 
+    // Pre-calculate column-disjoint vertical band bounds to eliminate O(N^2) candidate scans.
+    final List<(double, double)> adjacentColumnSpans = <(double, double)>[];
+    for (final FocusNode other in primaryNodes) {
+      final Rect otherBounds =
+          cache.scrollableRect(cache.verticalScrollableOf(other)) ??
+          cache.rectOf(other);
+      final bool overlapsTargetVertically =
+          otherBounds.bottom > target.top + 1.0 &&
+          otherBounds.top < target.bottom - 1.0;
+      final bool disjointFromTargetHorizontally =
+          otherBounds.left >= target.right - 2.0 ||
+          otherBounds.right <= target.left + 2.0;
+      if (overlapsTargetVertically && disjointFromTargetHorizontally) {
+        adjacentColumnSpans.add((otherBounds.left, otherBounds.right));
+      }
+    }
+
     for (final FocusNode node in primaryNodes) {
       final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
       if (focusedScrollable != null && nodeScrollable == focusedScrollable) {
@@ -775,26 +884,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           if (!overlapsTargetHorizontally) {
             // Reject candidates that belong to a separate side-by-side column
             // which already has items or a scrollable at target's vertical band.
-            final bool belongsToAdjacentColumn = primaryNodes.any((
-              FocusNode other,
-            ) {
-              if (other == node) return false;
-              final Rect otherBounds =
-                  cache.scrollableRect(cache.verticalScrollableOf(other)) ??
-                  cache.rectOf(other);
-              final bool overlapsTargetVertically =
-                  otherBounds.bottom > target.top + 1.0 &&
-                  otherBounds.top < target.bottom - 1.0;
-              final bool overlapsNodeHorizontally =
-                  otherBounds.right > nr.left + 1.0 &&
-                  otherBounds.left < nr.right - 1.0;
-              final bool disjointFromTargetHorizontally =
-                  otherBounds.left >= target.right - 2.0 ||
-                  otherBounds.right <= target.left + 2.0;
-              return overlapsTargetVertically &&
-                  overlapsNodeHorizontally &&
-                  disjointFromTargetHorizontally;
-            });
+            final bool belongsToAdjacentColumn = adjacentColumnSpans.any(
+              ((double, double) span) =>
+                  span.$2 > nr.left + 1.0 && span.$1 < nr.right - 1.0,
+            );
             if (belongsToAdjacentColumn) continue;
           }
         }
@@ -1213,6 +1306,12 @@ class _TvNavigationState extends State<TvNavigation> {
   int? _lastDirectionalStepMs;
   bool _rectSyncScheduled = false;
   bool _focusSyncScheduled = false;
+  FocusNode? _lastFocusedNode;
+  RenderBox? _lastTargetBox;
+  Size? _lastTargetSize;
+  Size? _lastRootSize;
+  Offset? _lastParentDataOffset;
+  double? _lastScrollOffset;
 
   @override
   void initState() {
@@ -1275,8 +1374,60 @@ class _TvNavigationState extends State<TvNavigation> {
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv || _rectSyncScheduled) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
-    if (node is FocusScopeNode) return;
+    if (node == null || node is FocusScopeNode) {
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+      _lastTargetSize = null;
+      _lastRootSize = null;
+      _lastParentDataOffset = null;
+      _lastScrollOffset = null;
+      if (_rectNotifier.value != null) {
+        _rectSyncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _rectSyncScheduled = false;
+          if (!mounted) return;
+          _updateRect(null);
+        });
+      }
+      return;
+    }
+
+    final BuildContext? context = node.context;
+    if (context == null || !context.mounted) return;
+    final RenderObject? ro = context.findRenderObject();
+    if (ro is! RenderBox || !ro.attached || !ro.hasSize) return;
+    final RenderObject? rootRo = _key.currentContext?.findRenderObject();
+    if (rootRo is! RenderBox || !rootRo.attached || !rootRo.hasSize) return;
+
+    final Offset? parentOffset =
+        ro.parentData is BoxParentData
+            ? (ro.parentData as BoxParentData).offset
+            : null;
+    final ScrollableState? scrollable = Scrollable.maybeOf(context);
+    final double? scrollPixels =
+        scrollable?.position.hasPixels == true
+            ? scrollable!.position.pixels
+            : null;
+
+    final bool isStationary =
+        node == _lastFocusedNode &&
+        ro == _lastTargetBox &&
+        ro.size == _lastTargetSize &&
+        rootRo.size == _lastRootSize &&
+        parentOffset == _lastParentDataOffset &&
+        scrollPixels == _lastScrollOffset &&
+        _rectNotifier.value != null;
+
+    if (isStationary) return;
+
     final Rect? rect = _computeFocusedRect(node);
+    _lastFocusedNode = node;
+    _lastTargetBox = ro;
+    _lastTargetSize = ro.size;
+    _lastRootSize = rootRo.size;
+    _lastParentDataOffset = parentOffset;
+    _lastScrollOffset = scrollPixels;
+
     if (_sameRect(rect, _rectNotifier.value)) return;
     _rectSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1290,6 +1441,8 @@ class _TvNavigationState extends State<TvNavigation> {
   }
 
   void _onFocus() {
+    _lastFocusedNode = null;
+    _lastTargetBox = null;
     if (!TvPlatform.isTv || _focusSyncScheduled) return;
     _focusSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1413,7 +1566,10 @@ class _TvNavigationState extends State<TvNavigation> {
                         valueListenable: _rectNotifier,
                         builder: (BuildContext context, Rect? rect, _) {
                           return CustomPaint(
-                            painter: _TvFocusRingPainter(rect),
+                            painter: _TvFocusRingPainter(
+                              rect,
+                              repaint: _rectNotifier,
+                            ),
                           );
                         },
                       ),
@@ -1430,7 +1586,7 @@ class _TvNavigationState extends State<TvNavigation> {
 }
 
 class _TvFocusRingPainter extends CustomPainter {
-  const _TvFocusRingPainter(this.rect);
+  const _TvFocusRingPainter(this.rect, {super.repaint});
 
   final Rect? rect;
 
