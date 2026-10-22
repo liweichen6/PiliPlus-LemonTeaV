@@ -1,330 +1,122 @@
-# PiliPlus-LemonTeaV: TV Control Layer Implementation Plan
+# PiliPlus-LemonTeaV: TV Control Layer Implementation & Optimization Plan
 
 > **Execution Rules**:
 > 1. Execute strictly one task at a time in Milestone → Epic → Task order.
-> 2. After completing each task, update [`docs/tv/PROGRESS.md`](./PROGRESS.md) with what changed, verification results, and any design notes.
-> 3. Create an atomic Git commit after each task (including the updated `docs/tv/PROGRESS.md`).
-> 4. **Privacy & Sanitization Rule**: Never include LAN IP addresses/ports, local machine absolute paths, file-scheme URLs, or any other personal information in committed files or commit messages. Always use relative repository paths and generic placeholders (e.g., `$TV_DEVICE_ADDR` or `<physical-tv-adb>`).
+> 2. After completing each task, update [`docs/tv/PROGRESS.md`](./PROGRESS.md) with what changed, verification results, and design notes.
+> 3. Create an atomic Git commit after each logical milestone/task (including the updated `docs/tv/PROGRESS.md`).
+> 4. **Privacy & Sanitization Rule**: Never include LAN IP addresses/ports, local machine absolute paths, file-scheme URLs, local usernames, or device serials in committed files or commit messages. Always use relative repository paths and generic placeholders (`<vm-tv>`, `<physical-tv>`).
 
 ---
 
 ## Roadmap Overview
 
-| Milestone | Epics | Tasks | Summary |
-| :--- | :--- | :--- | :--- |
-| **M0: Architecture & Planning Docs** | Epic 0.1 | Task 0.1.1 | Initialize `docs/tv/` architecture, milestone plan, and progress log. |
-| **M1: Android TV Platform Bridge & Defaults** | Epic 1.1, Epic 1.2 | Task 1.1.1, Task 1.2.1, Task 1.2.2 | Native `TvBridge.kt`, Leanback manifest/banner, `TvPlatform` runtime detection, first-launch Hive defaults, system soft-keyboard gate, and Ethernet broadband recognition. |
-| **M2: Spatial Focus Engine & Route Observer** | Epic 2.1, Epic 2.2 | Task 2.1.1, Task 2.2.1, Task 2.2.2 | Hardened `TvFocusTraversalPolicy` (with `RenderBox` zero-size/offscreen introspection, loop escape, micro-stop filtering), `TvNavigation` root wrapper (`NavigationMode.directional`), `TvNavigationObserver` (focus restore + QR login auto-tab), and `lib/main.dart` micro-hook. |
-| **M3: Build-Time SDK & Widget Patch Pipeline** | Epic 3.1, Epic 3.2 | Task 3.1.1, Task 3.1.2, Task 3.1.3, Task 3.2.1 | Framework-level TV patches (`tv_gesture_detector.patch`, `tv_radio_group.patch`, `tv_ink_well.patch`) integrated into `lib/scripts/patch.ps1` + local `tool/tv_patch.sh` helper. |
-| **M4: Self-Contained 10-Foot Player HUD** | Epic 4.1 | Task 4.1.1, Task 4.1.2 | `lib/tv/tv_player_hud.dart` with GetX/controller auto-discovery (transport controls, seek acceleration, danmaku/quality/episode/speed OSD, triple-like) and 4-line hook in `player_focus.dart`. |
-| **M5: CI/CD Upstream Sync & End-to-End Verification** | Epic 5.1, Epic 5.2 | Task 5.1.1, Task 5.2.1 | Configure `.github/workflows/sync-upstream-build.yml` to sync from `lemonteaau/PiliPlus` & build Android APKs, add unit tests for `lib/tv/`, and verify full APK build + Android TV D-pad flows. |
-| **M6: D-Pad High-Frequency Input & Traversal Performance Hardening** | Epic 6.1 | Task 6.1.1, Task 6.1.2, Task 6.1.3 | Eliminate root widget rebuilds (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), deduplicate conflicting `120ms` `ensureVisible` animations, cache `O(N·D)` traversal metadata (`_TvTraversalCache`), throttle rapid D-pad repeats, and verify under high-frequency D-pad stress on both TV devices. |
+### Phase 1: Foundation & Initial TV Port (Milestones 0–6) — Completed
+
+| Milestone | Epics | Tasks | Summary | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **M0: Architecture & Planning Docs** | Epic 0.1 | Task 0.1.1 | Initialize `docs/tv/` architecture, milestone plan, and progress log. | ✅ Completed |
+| **M1: Android TV Platform Bridge & Defaults** | Epic 1.1, 1.2 | Task 1.1.1, 1.2.1, 1.2.2 | Native `TvBridge.kt`, Leanback manifest/banner, `TvPlatform` runtime detection, first-launch Hive defaults, soft-keyboard gate, and Ethernet recognition. | ✅ Completed |
+| **M2: Spatial Focus Engine & Route Observer** | Epic 2.1, 2.2 | Task 2.1.1, 2.2.1, 2.2.2 | `TvFocusTraversalPolicy` (RenderBox geometry/offscreen introspection, loop escape, micro-stop filtering), `TvNavigation` root wrapper, `TvNavigationObserver` (focus restore + QR login auto-tab), and `main.dart` hook. | ✅ Completed |
+| **M3: Build-Time SDK & Widget Patch Pipeline** | Epic 3.1, 3.2 | Task 3.1.1, 3.1.2, 3.1.3, 3.2.1 | Framework-level TV patches (`tv_gesture_detector.patch`, `tv_radio_group.patch`, `tv_ink_well.patch`) integrated into `lib/scripts/patch.ps1` + local `tool/tv_patch.sh` helper. | ✅ Completed |
+| **M4: Self-Contained 10-Foot Player HUD** | Epic 4.1 | Task 4.1.1, 4.1.2 | `lib/tv/tv_player_hud.dart` with GetX/controller auto-discovery (transport controls, seek acceleration, OSD dialogs, triple-like) and 4-line hook in `player_focus.dart`. | ✅ Completed |
+| **M5: CI/CD Upstream Sync & Verification** | Epic 5.1, 5.2 | Task 5.1.1, 5.2.1 | Sync from `lemonteaau/PiliPlus` & build Android APKs, add unit tests for `lib/tv/`, and verify full APK build + Android TV D-pad flows. | ✅ Completed |
+| **M6: D-Pad Input & Traversal Hardening** | Epic 6.1 | Task 6.1.1, 6.1.2, 6.1.3 | Eliminate root rebuilds (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), deduplicate scroll animations, cache metadata (`_TvTraversalCache`), throttle rapid D-pad repeats (45ms). | ✅ Completed |
 
 ---
 
-## Milestone 0: Architecture & Planning Documentation
+### Phase 2: TV Control Layer Optimization & Verification (Milestones M1–M5) — Completed
 
-### Epic 0.1: Repository Documentation Bootstrap
-Establish the architecture specification, milestone/epic/task breakdown, and progress tracker inside `docs/tv/`.
-
-#### Task 0.1.1: Create `docs/tv/` Planning Suite
-* **Files**:
-  * `[NEW] docs/tv/README.md`
-  * `[NEW] docs/tv/ARCHITECTURE.md`
-  * `[NEW] docs/tv/PLAN.md`
-  * `[NEW] docs/tv/PROGRESS.md`
-* **Acceptance Criteria**:
-  * All 4 documentation files are created and cross-linked.
-  * Commit created before any code changes begin, holding for manual user review.
-* **Commit Message**: `docs(tv): add TV control layer architecture and milestone plan`
+| Milestone | Focus Area | Scope | Dependencies | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **M1: Navigation & Traversal Optimization** | Performance & Efficiency | `lib/tv/tv_navigation.dart`, `lib/tv/tv_platform.dart`, `lib/scripts/tv_gesture_detector.patch` (F1, F2, F3, F4, F5, F10) | None | ✅ Completed |
+| **M2: Player HUD & Native Bridge Optimization** | Reactivity & Memory Safety | `lib/tv/tv_player_hud.dart`, `android/.../TvBridge.kt` (F6, F7, F8, F9, F10) | None | ✅ Completed |
+| **M3: Living Documentation & Atomic Git History** | Documentation & Hygiene | `docs/tv/PLAN.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PROGRESS.md`, git commit history (F11, F12) | M1, M2 | ✅ Completed |
+| **M4: Test Suite Expansion & Benchmarks** | Objective Verification | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (F13, F14, F15) | None | ✅ Completed |
+| **M5: Dual-Device Verification & Sanitization** | Release Validation | Split-ABI release APK build, live verification on `<vm-tv>` and `<physical-tv>`, privacy audit (F16, F17) | M1, M2, M3, M4 | ✅ Completed |
 
 ---
 
-## Milestone 1: Android TV Platform Bridge, Defaults & Network Adaptation
+## Feature Inventory (Optimization Phase)
 
-### Epic 1.1: Native Android TV Leanback & MethodChannel Bridge
-Enable Android TV launcher discovery and expose native TV hardware/UI-mode capabilities to Dart with minimal changes to `android/`.
-
-#### Task 1.1.1: Implement `TvBridge.kt` and Leanback Manifest Configuration
-* **Files**:
-  * `[NEW] android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt`
-  * `[NEW] android/app/src/main/res/drawable/tv_banner.xml`
-  * `[MODIFY] android/app/src/main/AndroidManifest.xml`
-  * `[MODIFY] android/app/src/main/kotlin/com/example/piliplus/MainActivity.kt`
-* **Implementation Details**:
-  * Create `TvBridge.kt` registering MethodChannel `com.example.piliplus/tv` with methods:
-    * `getTvEnvironment`: returns `isTelevisionUiMode`, `hasLeanbackFeature`, `hasTouchscreen`, `smallestScreenWidthDp`.
-    * `showSoftKeyboard` / `hideSoftKeyboard`: invokes `InputMethodManager` explicitly when requested by the user on a focused `TextField`.
-  * Update `AndroidManifest.xml`:
-    * Add `<uses-feature android:name="android.software.leanback" android:required="false" />` and `<uses-feature android:name="android.hardware.touchscreen" android:required="false" />`.
-    * Add `android:banner="@drawable/tv_banner"` on `<application>` and `<category android:name="android.intent.category.LEANBACK_LAUNCHER" />` on `.MainActivity`.
-  * Add 1 line in `MainActivity.configureFlutterEngine`: `TvBridge.register(flutterEngine, this)`.
-* **Verification**:
-  * Verify Kotlin syntax and manifest XML validity.
-* **Commit Message**: `feat(tv-android): add TvBridge channel and Leanback launcher manifest`
-
----
-
-### Epic 1.2: Dart `TvPlatform` Runtime, First-Launch Hive Defaults & Ethernet Support
-Provide a single source of truth (`TvPlatform.isTv`) in Dart, seed TV-friendly preferences without editing `storage_pref.dart`, gate the Android TV soft keyboard so it only opens on explicit `OK`/`Enter` activation, and recognize Ethernet as broadband.
-
-#### Task 1.2.1: Create `lib/tv/tv_platform.dart` with Hive Seeding & Soft-Keyboard Gate
-* **Files**:
-  * `[NEW] lib/tv/tv_platform.dart`
-* **Implementation Details**:
-  * Query `com.example.piliplus/tv` (`getTvEnvironment`) and support `--dart-define=PILI_FORCE_TV=true` override for testing.
-  * Seed TV defaults into `GStorage.setting` on first TV launch (if not yet set by user):
-    * `horizontalScreen`: `true`
-    * `useSideBar`: `true`
-    * `enableVerticalExpand`: `false`
-    * `defaultFullScreen`: `true`
-    * `autoPlayEnable`: `true`
-  * Install a `SystemChannels.textInput` outgoing message gate when `TvPlatform.isTv`:
-    * Suppresses automatic `TextInput.show` triggered merely by directional focus traversal landing on a `TextField`.
-    * Exposes `TvPlatform.requestSoftKeyboard()` (called when user presses `Select`/`Enter` on a focused `EditableText` or `TextField`) which permits `TextInput.show` and invokes native `showSoftKeyboard`.
-* **Verification**:
-  * Run `flutter analyze lib/tv/tv_platform.dart`.
-* **Commit Message**: `feat(tv-core): add TvPlatform runtime, Hive default seeding, and soft-keyboard gate`
-
-#### Task 1.2.2: Support Wired Ethernet in `ConnectivityUtils.isWiFi`
-* **Files**:
-  * `[MODIFY] lib/utils/connectivity_utils.dart`
-* **Implementation Details**:
-  * Update `ConnectivityUtils.isWiFi` to check `results.contains(ConnectivityResult.wifi) || (TvPlatform.isTv && results.contains(ConnectivityResult.ethernet))` (and allow `TvPlatform.isTv` alongside `PlatformUtils.isMobile`).
-  * Zero controllers need renaming (`isWiFi` remains the method name everywhere).
-* **Verification**:
-  * Run `flutter analyze lib/utils/connectivity_utils.dart`.
-* **Commit Message**: `feat(tv-net): treat Ethernet as broadband inside ConnectivityUtils.isWiFi on TV`
+| Feature | Description | Target Files | Milestone | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **F1: Idle Frame Callback Optimization** | Multi-attribute stationary caching in `_syncFocusRectAfterLayout` (node, target box, target size, root size, parent data offset, scroll offset) to skip RenderBox matrix climbs; direct `_rectNotifier` connection to `_TvFocusRingPainter` via `super.repaint`. | `lib/tv/tv_navigation.dart` | M1 | ✅ Done |
+| **F2: Traversal Geometry Pre-filtering** | Opposite half-plane spatial pre-filtering (`_isInOppositeHalfPlane`) using `node.rect` before ancestor element walks; pre-calculated `adjacentColumnSpans` interval lookups in vertical candidate scoring. | `lib/tv/tv_navigation.dart` | M1 | ✅ Done |
+| **F3: Bounded Micro-Action Filtering** | Restrict `_isEmbeddedSecondaryOf` checks strictly to candidate nodes qualifying as micro-actions ($w \le 36 \land h \le 36$ or area $\le 2500$), bypassing $O(N^2)$ candidate scans when no micro-actions exist. | `lib/tv/tv_navigation.dart` | M1 | ✅ Done |
+| **F4: Single-Pass Reading-Order Min-Element** | Single-pass $O(N)$ min-element search in reading order (`_findFirstReadingOrderNode`); eliminate duplicate `isEffectivelyFocusable` filtering and $O(N \log N)$ sorting. | `lib/tv/tv_navigation.dart` | M1 | ✅ Done |
+| **F5: Patch Key Handler Optimization** | Extract inline anonymous key handler in `lib/scripts/tv_gesture_detector.patch` into static method `_handleDirectionalKeyEvent` to eliminate closure allocations during builds in directional mode. | `lib/scripts/tv_gesture_detector.patch` | M1 | ✅ Done |
+| **F6: Root Obx Elimination & PopScope Migration** | Remove top-level `Obx` in `TvPlayerHud.build`; subscribe to `isFullScreen.listen` with localized `setState()`; migrate deprecated `ModalRoute.addScopedWillPopCallback` to Flutter's `PopScope`. | `lib/tv/tv_player_hud.dart` | M2 | ✅ Done |
+| **F7: Virtual Seek Target Accumulator** | Decouple rapid remote key repeats from hardware video decoder latency via `_virtualSeekTarget` accumulator (with 1x -> 2x -> 3x progressive multipliers), bounded clamping, and 1400ms idle timeout reset. | `lib/tv/tv_player_hud.dart` | M2 | ✅ Done |
+| **F8: TV Dialog Boilerplate Consolidation** | Consolidate 5 modal dialog invocations into single `_showTvDialog()` helper; deduplicate `_isSelectKey()` across `_TvPlayerHudState`, `_TvHudPillButtonState`, and `_TvTripleLikePillState`. | `lib/tv/tv_player_hud.dart` | M2 | ✅ Done |
+| **F9: Memory-Safe `TvBridge.kt`** | Replace strong Android Activity reference in `TvBridge.kt` with `java.lang.ref.WeakReference<Activity>` and add null-safe guards to eliminate activity memory leaks across configuration changes. | `android/.../TvBridge.kt` | M2 | ✅ Done |
+| **F10: 15 Preserved TV Capability Invariants** | Preserve 100% of functional capabilities C1–C15 (2D grid traversal, RenderBox collapse/clip introspection, cacheExtent scrolling, nested focus deduplication, micro-buttons, soft keyboard gate, etc.). | `lib/tv/*`, `lib/scripts/*` | M1, M2 | ✅ Done |
+| **F11: Living Documentation** | Update `docs/tv/PLAN.md`, `ARCHITECTURE.md`, `PROGRESS.md` with complete optimization milestones, before/after architecture, and performance metrics. | `docs/tv/*` | M3 | ✅ Done |
+| **F12: Atomic Git Commits & Revert Discipline** | Revert patches before commits (`./tool/tv_patch.sh revert`); maintain 4 clean atomic commits on `main` without sensitive identifiers. | Git repository | M3 | ✅ Done |
+| **F13: Deterministic Traversal Benchmarks** | Automated benchmark tests bounding directional traversal latency (<50ms/step) over 120+ focusable nodes, single-pass RenderBox evaluations, and 0 unnecessary child rebuilds. | `test/tv_navigation_test.dart` | M4 | ✅ Done |
+| **F14: Idle Frame Callback Test** | Verify `_syncFocusRectAfterLayout` skips post-frame callbacks and repaints when stationary, and verify immediate focus ring repaint on movement. | `test/tv_navigation_test.dart` | M4 | ✅ Done |
+| **F15: `TvPlayerHud` Automated Test Suite** | 14 automated widget tests in `test/tv_player_hud_test.dart` covering transport controls, split-screen quick strip, virtual seek acceleration/clamping/resets, PopScope back navigation, and dialog lifecycles. | `test/tv_player_hud_test.dart` | M4 | ✅ Done |
+| **F16: Dual-Device Release APK Verification** | Build split-ABI release APKs, install on `<vm-tv>` and `<physical-tv>`, and verify live D-pad navigation with 0 logcat errors. | Android APK / Devices | M5 | ✅ Done |
+| **F17: Privacy Sanitization Verification** | Audit all files in `docs/tv/`, `lib/tv/`, `test/`, and git history to ensure 0 occurrences of LAN IPs, remote ports, usernames, local paths, or device serials. | Repository | M5 | ✅ Done |
 
 ---
 
-## Milestone 2: Spatial 2D Focus Engine, Route Observer & App Root Integration
+## Detailed Milestone Breakdown (Optimization Phase)
 
-### Epic 2.1: Hardened 2D Focus Traversal Policy & Overlay Highlight (`lib/tv/tv_navigation.dart`)
-Bring over the battle-tested 2D spatial focus traversal engine and enhance it with `RenderBox` geometry/offscreen introspection so zero upstream widget files (`animated_height.dart`, `app_bar_ani.dart`) need edits.
-
-#### Task 2.1.1: Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` & `TvNavigation`)
-* **Files**:
-  * `[NEW] lib/tv/tv_navigation.dart`
-* **Implementation Details**:
-  * Wrap app tree in `MediaQuery(data: mediaQuery.copyWith(navigationMode: NavigationMode.directional))` when `TvPlatform.isTv` (natively fixing `Slider` arrow-key traps across all dialogs/pages).
-  * Implement `TvFocusTraversalPolicy`:
-    * 2D directional cone scoring with primary-axis distance, cross-axis overlap, and same-row/column locking.
-    * **RenderBox Geometry & Viewport Introspection**: Inside `_isEffectivelyFocusable(FocusNode node)`, inspect ancestor `RenderBox` sizes (`width < 1 || height < 1` → unfocusable, replacing `animated_height.dart` edits) and viewport intersection (`globalRect.intersect(screenRect)` empty → unfocusable, replacing `app_bar_ani.dart` edits).
-    * **Nested Focus Deduplication & Micro-Button Filtering**: Skip parent wrapper if a descendant is already focusable; skip tiny secondary action buttons (`<= 36x36` inside a larger card) during vertical/horizontal grid navigation.
-    * **Scroll Boundary & Dialog Escape**: Allow `Up`/`Down` at the edge of scrollable lists inside dialogs/sheets to escape to dialog header/footer buttons (`取消`/`确定`).
-    * **EditableText Activation Handling**: When pressing `Select`/`Enter` while a `FocusNode` belonging to an `EditableText` (`TextField`) is focused, call `TvPlatform.requestSoftKeyboard()` to open the Android TV system keyboard.
-    * **Visual Focus Ring**: Render a smooth, high-contrast focus border overlay around the active `FocusNode`.
-* **Verification**:
-  * Run `flutter analyze lib/tv/tv_navigation.dart`.
-* **Commit Message**: `feat(tv-focus): add TvFocusTraversalPolicy with RenderBox introspection and focus ring`
+### Milestone M1: Navigation & Traversal Optimization
+* **Goal**: Optimize spatial navigation algorithms, persistent frame callbacks, and framework patch closures for peak runtime efficiency and minimal CPU overhead.
+* **Tasks**:
+  * **Task M1.1 (F2)**: Spatial Candidate Pre-filtering: Filter out candidates located in the opposite half-plane before traversing ancestor element trees; pre-compute horizontal interval spans (`adjacentColumnSpans`) for vertical candidate alignment.
+  * **Task M1.2 (F3)**: Bounded Micro-Action Filtering: Evaluate secondary micro-action relationships only for candidates with $(w \le 36 \land h \le 36)$ or small bounding areas, bypassing $O(N^2)$ candidate scans.
+  * **Task M1.3 (F4)**: Single-Pass Reading-Order Min-Element: Implement `_findFirstReadingOrderNode` using $O(N)$ min-element scan instead of full $O(N \log N)$ sorting and eliminate duplicate `isEffectivelyFocusable` filtering.
+  * **Task M1.4 (F1)**: Idle Frame Callback Optimization: Multi-attribute stationary caching in `_syncFocusRectAfterLayout` (`_lastFocusedNode`, `_lastTargetBox`, `_lastTargetSize`, `_lastRootSize`, `_lastParentDataOffset`, `_lastScrollOffset`) to skip matrix climbs; pass notifier to `_TvFocusRingPainter` via `super.repaint`.
+  * **Task M1.5 (F5)**: Static Patch Key Handler: Replace anonymous closure in `tv_gesture_detector.patch` with static method `_handleDirectionalKeyEvent`.
+* **Verification**: `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart` passes with 0 issues; 15 original invariant tests pass 100%.
 
 ---
 
-### Epic 2.2: Route Focus Memory, Login QR Auto-Switch & `lib/main.dart` Hook
-Ensure seamless page transitions, automatic QR-code tab selection on `LoginPage` without editing `lib/pages/login/`, and wire `TvNavigation` into `lib/main.dart`.
-
-#### Task 2.2.1: Add `TvNavigationObserver` with Route Focus Restore & Login QR Auto-Tab
-* **Files**:
-  * `[MODIFY] lib/tv/tv_navigation.dart`
-* **Implementation Details**:
-  * Implement `TvNavigationObserver extends NavigatorObserver`:
-    * Memorize last focused node before pushing a new route or dialog and restore it on pop.
-    * When `route.settings.name == '/loginPage'` is pushed on TV, schedule a post-frame callback that looks up `Get.isRegistered<LoginPageController>()` and animates `tabController` to index `2` (`扫码登录`), avoiding any edits to `lib/pages/login/controller.dart` or `lib/pages/login/view.dart`.
-* **Verification**:
-  * Run `flutter analyze lib/tv/tv_navigation.dart`.
-* **Commit Message**: `feat(tv-nav): add route focus memory and zero-touch LoginPage QR tab auto-switch`
-
-#### Task 2.2.2: Wire `TvPlatform` & `TvNavigation` into `lib/main.dart`
-* **Files**:
-  * `[MODIFY] lib/main.dart`
-* **Implementation Details**:
-  * Call `await TvPlatform.initialize();` right after `GStorage.init()`.
-  * Add `if (TvPlatform.isTv) TvNavigationObserver()` to `GetMaterialApp.navigatorObservers`.
-  * Wrap the return widget of `MyApp._builder` with `TvNavigation(onBack: _onBack, child: child)`.
-* **Verification**:
-  * Run `flutter analyze lib/main.dart`.
-* **Commit Message**: `feat(tv-main): hook TvPlatform and TvNavigation into main.dart`
+### Milestone M2: Player HUD & Native Bridge Optimization
+* **Goal**: Eliminate reactive rebuild storms in 10-foot player HUD, decouple rapid remote scrubbing from hardware video decoder latency, consolidate dialog boilerplate, and eliminate Android Activity memory leaks.
+* **Tasks**:
+  * **Task M2.1 (F6)**: Root `Obx` Elimination & PopScope Migration: Remove root `Obx` in `TvPlayerHud.build`; subscribe to `isFullScreen.listen` with localized `setState()`; migrate deprecated `ModalRoute.addScopedWillPopCallback` to `PopScope(canPop: !_hudVisible, onPopInvokedWithResult: ...)`.
+  * **Task M2.2 (F7)**: Virtual Seek Target Accumulator: Introduce `Duration? _virtualSeekTarget` in `_TvPlayerHudState` to accumulate target time during rapid key repeats (<450ms) instead of reading lagging decoder position; clamp to video bounds; reset on idle timeout (1400ms), play/pause toggle, and HUD dismissal.
+  * **Task M2.3 (F8)**: TV Dialog Consolidation & Key Handler Deduplication: Consolidate `_showTvDialog()` helper across all 5 HUD modal dialogs; deduplicate `_isSelectKey()` into single top-level utility.
+  * **Task M2.4 (F9)**: Memory-Safe `TvBridge.kt`: Replace strong Activity reference with `WeakReference<Activity>` and guard all platform channel methods with null safety.
+* **Verification**: `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart` passes with 0 issues; 15 unit/widget tests pass 100%.
 
 ---
 
-## Milestone 3: Build-Time SDK & Widget Patch Pipeline (`lib/scripts/`)
-
-### Epic 3.1: Flutter SDK & `material_ui` TV Patches
-Eliminate the need to edit 40+ upstream PiliPlus page/widget files by adding 3 targeted build-time patches applied by `lib/scripts/patch.ps1`.
-
-#### Task 3.1.1: Create `lib/scripts/tv_gesture_detector.patch` (Bare `GestureDetector` D-Pad Support)
-* **Files**:
-  * `[NEW] lib/scripts/tv_gesture_detector.patch`
-* **Implementation Details**:
-  * Patch `$FLUTTER_ROOT/packages/flutter/lib/src/widgets/gesture_detector.dart` in `GestureDetector.build`:
-    * When `MediaQuery.maybeNavigationModeOf(context) == NavigationMode.directional` and `onTap != null` (or `onSecondaryTap != null`), wrap the returned `RawGestureDetector` with a `Focus` widget that handles `LogicalKeyboardKey.select`, `enter`, `numpadEnter`, and `gameButtonA` by invoking `onTap!()`.
-* **Verification**:
-  * Verify `git apply --check` against `$FLUTTER_ROOT`.
-* **Commit Message**: `feat(tv-patch): add tv_gesture_detector.patch for automatic D-pad focus and activation`
-
-#### Task 3.1.2: Create `lib/scripts/tv_radio_group.patch` (Un-trap `RadioGroup` Arrow Keys)
-* **Files**:
-  * `[NEW] lib/scripts/tv_radio_group.patch`
-* **Implementation Details**:
-  * Patch `$FLUTTER_ROOT/packages/flutter/lib/src/widgets/radio_group.dart`:
-    * Bypass `RadioGroup`'s internal arrow-key (`arrowUp`, `arrowDown`, `arrowLeft`, `arrowRight`) shortcut map when `MediaQuery.maybeNavigationModeOf(context) == NavigationMode.directional`, allowing `TvFocusTraversalPolicy` to move focus freely across radio options and out to dialog buttons (`取消`/`确定`).
-* **Verification**:
-  * Verify `git apply --check` against `$FLUTTER_ROOT`.
-* **Commit Message**: `feat(tv-patch): add tv_radio_group.patch to prevent arrow-key focus traps in dialogs`
-
-#### Task 3.1.3: Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` (Triple-Like & Coordinate Popup Support)
-* **Files**:
-  * `[NEW] lib/scripts/material/tv_ink_well.patch`
-  * `[NEW] lib/scripts/tv_ink_well.patch`
-* **Implementation Details**:
-  * Patch `_InkResponseState` in `material_ui` (`lib/src/ink_well.dart`) and Flutter SDK (`packages/flutter/lib/src/material/ink_well.dart`):
-    1. Consider `InkResponse` enabled/focusable in `NavigationMode.directional` when `widget.onTap != null || widget.onTapDown != null || widget.onTapUp != null || widget.onLongPress != null`.
-    2. In `activateOnIntent` (and OK key press/hold), if `widget.onTap == null`:
-       * If `widget.onTapDown != null && widget.onTapUp != null` (e.g., `ActionItem` Like / Hold-to-Triple-Like), synthesize `onTapDown(TapDownDetails())` on key-down / intent and `onTapUp(TapUpDetails(...))` on key-up / intent so both single-press Like and long-press Triple-Like work natively on TV!
-       * If `widget.onTapUp != null` (e.g., `PopupListTile` account switcher), compute the global center position of `context.findRenderObject() as RenderBox` and invoke `widget.onTapUp!(TapUpDetails(kind: PointerDeviceKind.unknown, globalPosition: center, localPosition: localCenter))`.
-* **Verification**:
-  * Verify `git apply --check` against both `$FLUTTER_ROOT` and `material_ui` in pub-cache.
-* **Commit Message**: `feat(tv-patch): add tv_ink_well.patch for ActionItem triple-like and PopupListTile support`
+### Milestone M3: Living Documentation & Atomic Git History
+* **Goal**: Provide transparent, accurate living documentation and maintain atomic, clean git commit history with strict privacy sanitization.
+* **Tasks**:
+  * **Task M3.1 (F11)**: Update Living Documentation:
+    * `docs/tv/PLAN.md`: Full milestone breakdown, feature inventory, completed vs planned milestones.
+    * `docs/tv/ARCHITECTURE.md`: Document 3-tier architecture, F1–F10 technical mechanisms, capability invariants C1–C15, and before/after architectural and metric comparisons.
+    * `docs/tv/PROGRESS.md`: Detailed changelog, timeline, before/after metrics, and test results.
+  * **Task M3.2 (F12)**: Patch Revert & Git Hygiene:
+    * Revert all patches via `./tool/tv_patch.sh revert` and confirm 38 patches are `[NOT APPLIED]`.
+    * Perform strict privacy sanitization audit (0 occurrences of LAN IPs, remote ports, usernames, local paths, or device serials).
+    * Create 4 clean, atomic git commits on `main`:
+      1. `refactor(tv): optimize spatial navigation traversal and idle frame callbacks`
+      2. `refactor(tv): optimize player hud reactivity and bridge memory safety`
+      3. `test(tv): expand automated test suite and traversal benchmarks`
+      4. `docs(tv): document TV optimization milestones and benchmarks`
+* **Verification**: `git status` clean; `git log -n 5` clean; privacy grep returns 0 matches.
 
 ---
 
-### Epic 3.2: Patch Pipeline Integration & Local Developer Tooling
-Register the TV patches in `lib/scripts/patch.ps1` and provide a cross-platform `tool/tv_patch.sh` script for local macOS/Linux development.
-
-#### Task 3.2.1: Register TV Patches in `lib/scripts/patch.ps1` and Add `tool/tv_patch.sh`
-* **Files**:
-  * `[MODIFY] lib/scripts/patch.ps1`
-  * `[NEW] tool/tv_patch.sh`
-* **Implementation Details**:
-  * Add `$TvGestureDetectorPatch`, `$TvRadioGroupPatch`, and `$TvInkWellPatch` to `lib/scripts/patch.ps1` (and `$TvInkWellPatchMaterial` to `$patches_material`).
-  * Create executable `tool/tv_patch.sh` supporting `./tool/tv_patch.sh apply`, `./tool/tv_patch.sh revert`, and `./tool/tv_patch.sh status` on macOS/Linux.
-* **Verification**:
-  * Run `./tool/tv_patch.sh apply` and `./tool/tv_patch.sh status` locally to confirm clean application.
-* **Commit Message**: `build(tv-patch): wire TV patches into patch.ps1 and add tool/tv_patch.sh helper`
+### Milestone M4: Automated Test Suite Expansion & Deterministic Benchmarks
+* **Goal**: Objectively certify functional invariants, deterministic traversal performance bounds, idle frame callback skipping, and 10-foot player HUD lifecycles.
+* **Tasks**:
+  * **Task M4.1 (F13)**: Traversal Latency & Geometry Benchmarks: Add benchmark test asserting mean traversal latency < 50ms/step across 120-node widget grid; verify strictly single-pass RenderBox geometry evaluations per traversal step; verify 0 unnecessary widget rebuilds.
+  * **Task M4.2 (F14)**: Idle Frame Callback & Focus Ring Repaint Tests: Verify `_syncFocusRectAfterLayout` skips post-frame callbacks and repaints when stationary (`shouldRepaint == false`); verify `_TvFocusRingPainter` repaints immediately when focus moves (`shouldRepaint == true`).
+  * **Task M4.3 (F15)**: `TvPlayerHud` Automated Test Suite: Create `test/tv_player_hud_test.dart` with 14 comprehensive tests covering transport controls, virtual seek acceleration/clamping/timeouts, PopScope route interception, and modal dialogs.
+* **Verification**: `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes 34/34 tests; full repository suite passes 89/89 tests.
 
 ---
 
-## Milestone 4: Self-Contained 10-Foot TV Player HUD
-
-### Epic 4.1: `TvPlayerHud` Overlay & `PlayerFocus` Micro-Hook
-Provide a rich 10-foot D-pad player OSD that auto-discovers PiliPlus controllers (`PlPlayerController`, `CommonIntroController`, `VideoDetailController`, `LiveRoomController`) without requiring any edits to `video/view.dart` or `live_room/view.dart`.
-
-#### Task 4.1.1: Implement `lib/tv/tv_player_hud.dart` with Controller Auto-Discovery
-* **Files**:
-  * `[NEW] lib/tv/tv_player_hud.dart`
-* **Implementation Details**:
-  * Build `TvPlayerHud` accepting `plPlayerController`, `introController`, `onSendDanmaku`, `canPlay`, `onSkipSegment`, `onRefresh`, and `child`.
-  * When `plPlayerController.isFullScreen.value` (or when the player area holds focus on TV):
-    * **HUD Hidden**:
-      * `Left` / `Right`: Seek `-10s` / `+10s` (with hold-to-scrub acceleration and OSD time preview).
-      * `Select` / `Enter` / `Space` / `MediaPlayPause`: Toggle Play/Pause.
-      * `Up` / `Down` / `Menu` / `Info`: Show the TV HUD control bar and focus the primary transport button.
-      * `Back` / `Escape`: Exit fullscreen if fullscreen, otherwise pop route.
-    * **HUD Visible**:
-      * Top/Bottom 10-foot OSD bar with D-pad focusable pills:
-        * Play/Pause, Seek bar, Danmaku toggle, Danmaku settings, Quality selector, Playback speed selector, Episode/Part selector (auto-discovered from `introController`), Aspect ratio / View fit, Like / Hold-to-Triple-Like, Coin, Favorite.
-      * Auto-hide timer (resets on D-pad activity; `Back` immediately hides HUD).
-* **Verification**:
-  * Run `flutter analyze lib/tv/tv_player_hud.dart`.
-* **Commit Message**: `feat(tv-player): add self-contained TvPlayerHud with controller auto-discovery`
-
-#### Task 4.1.2: Add 4-Line `TvPlayerHud` Micro-Hook in `lib/pages/video/widgets/player_focus.dart`
-* **Files**:
-  * `[MODIFY] lib/pages/video/widgets/player_focus.dart`
-* **Implementation Details**:
-  * Import `package:PiliPlus/tv/tv_platform.dart` and `package:PiliPlus/tv/tv_player_hud.dart`.
-  * In `PlayerFocus.build`, when `TvPlatform.isTv`, return `TvPlayerHud(...)` wrapping the focus/player subtree.
-* **Verification**:
-  * Run `flutter analyze lib/pages/video/widgets/player_focus.dart`.
-* **Commit Message**: `feat(tv-player): hook TvPlayerHud into PlayerFocus`
-
----
-
-## Milestone 5: CI/CD Upstream Sync Configuration & End-to-End Verification
-
-### Epic 5.1: GitHub Actions Sync from `lemonteaau/PiliPlus` & Android-Only Build
-Configure CI so `PiliPlus-LemonTeaV` automatically syncs from `https://github.com/lemonteaau/PiliPlus.git` and builds Android APKs.
-
-#### Task 5.1.1: Update `.github/workflows/sync-upstream-build.yml` and `.github/workflows/build.yml`
-* **Files**:
-  * `[MODIFY] .github/workflows/sync-upstream-build.yml`
-  * `[MODIFY] .github/workflows/build.yml`
-* **Implementation Details**:
-  * Point the `upstream` git remote in `sync-upstream-build.yml` to `https://github.com/lemonteaau/PiliPlus.git` (inheriting both `bggRGjQaUbCoE/PiliPlus` official updates and `lemonteaau`'s BTR updates).
-  * Streamline build jobs in `sync-upstream-build.yml` and `build.yml` to build Android APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`), removing unneeded iOS, Windows, macOS, and Linux CI build matrices.
-* **Verification**:
-  * Validate YAML syntax and workflow job dependencies (`sync` → `android` → `release`).
-* **Commit Message**: `ci(sync): sync upstream from lemonteaau/PiliPlus and target Android APK builds`
-
----
-
-### Epic 5.2: Unit Tests, Static Analysis & Dual-Device TV Verification
-Verify that all patches apply cleanly, `flutter analyze` and unit tests pass, release/debug APKs build cleanly, and end-to-end TV controls are verified on both the Android TV VM (`arm64-v8a`) and the physical Android TV device over ADB.
-
-#### Task 5.2.1: Add TV Unit/Widget Tests and Run Dual-Device Verification (VM TV `arm64-v8a` + Physical TV)
-* **Files**:
-  * `[NEW] test/tv_navigation_test.dart`
-  * `[MODIFY] docs/tv/PROGRESS.md`
-* **Implementation Details**:
-  * Write unit/widget tests in `test/tv_navigation_test.dart` covering:
-    * 2D spatial traversal (`TvFocusTraversalPolicy`) across grids and dialog buttons;
-    * Automatic filtering of zero-height (`AnimatedSize` / `Align(heightFactor: 0)`) and off-screen (`SlideTransition`) nodes;
-    * Patched `GestureDetector(onTap)` D-pad focus and `Select`/`Enter` activation in `NavigationMode.directional`;
-    * Patched `RadioGroup` directional arrow-key escape;
-    * Patched `InkWell` (`onTapDown`/`onTapUp` and `onTapUp(TapUpDetails)`) keyboard activation.
-  * Run `flutter test test/tv_navigation_test.dart test/thread_ripper_test.dart test/thread_ripper_auto_test.dart` and `flutter analyze`.
-  * Build split-ABI Android APKs (`armeabi-v7a`, `arm64-v8a`) and verify installation + live D-pad interaction on:
-    1. **Android TV Virtual Machine (VM TV, `arm64-v8a`)**;
-    2. **Physical Android TV Device** via ADB (`$TV_DEVICE_ADDR`, matching its `ro.product.cpu.abi` ABI).
-  * Record sanitized verification results in `docs/tv/PROGRESS.md` (with no IP addresses, ports, or local machine paths).
-* **Commit Message**: `test(tv): add TV control layer widget tests and complete dual-device verification`
-
----
-
-## Milestone 6: D-Pad High-Frequency Input & Traversal Performance Hardening
-
-### Epic 6.1: Focus Traversal Caching, Overlay Isolation & Input Pacing
-Eliminate UI thread freezes, root widget rebuild storms, and Input Dispatching ANRs under rapid D-pad clicking or key-repeat holding while keeping all changes 100% self-contained inside `lib/tv/tv_navigation.dart` and `test/tv_navigation_test.dart`.
-
-#### Task 6.1.1: Document Milestone 6 Plan in `docs/tv/`
-* **Files**:
-  * `[MODIFY] docs/tv/PLAN.md`
-  * `[MODIFY] docs/tv/PROGRESS.md`
-* **Implementation Details**:
-  * Add Milestone 6 (`Epic 6.1`, `Task 6.1.1`, `Task 6.1.2`, `Task 6.1.3`) to `docs/tv/PLAN.md` and `docs/tv/PROGRESS.md`.
-* **Commit Message**: `docs(tv): add Milestone 6 D-pad input and traversal performance hardening plan`
-
-#### Task 6.1.2: Harden `TvFocusTraversalPolicy` & `TvNavigation` for High-Frequency D-Pad Input
-* **Files**:
-  * `[MODIFY] lib/tv/tv_navigation.dart`
-  * `[MODIFY] docs/tv/PROGRESS.md`
-* **Implementation Details**:
-  * **Single-Pass Traversal Metadata Snapshot (`_TvNodeMeta` & `_TvTraversalCache`)**:
-    * Collect each candidate node's `rect`, `verticalScrollable`, `horizontalScrollable`, `enclosingListTile`, `enclosingInkResponse`, and `enclosingWrap` in a single `visitAncestorElements` walk per node at the start of `inDirection()`.
-    * Memoize ancestor `RenderBox` global bounds (`Map<RenderBox, Rect>`) and `ScrollableState` global rects (`Map<ScrollableState, Rect?>`) so `localToGlobal` is computed at most once per `RenderBox` per traversal pass.
-    * Refactor `inDirection`, `_filterOutEmbeddedSecondaryActions`, `_findVerticalCandidate`, `_pickFromClosestRow`, and `_findHorizontalCandidate` to perform $O(1)$ metadata lookups instead of repeated `node.rect` and `visitAncestorElements` walks.
-  * **Isolate Focus Ring Overlay (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`)**:
-    * Replace `Rect? _rect` and `_TvNavigationState.setState()` with `ValueNotifier<Rect?> _rectNotifier` driving a `Positioned.fill` → `IgnorePointer` → `RepaintBoundary` → `ValueListenableBuilder<Rect?>` → `CustomPaint(painter: _TvFocusRingPainter(rect))` layer so focus ring updates never rebuild `TvNavigation` or relayout the root `RenderStack`.
-  * **Deduplicate `_onFocus` & Eliminate Competing `120ms` Scroll Animations**:
-    * Guard `_onFocus` post-frame scheduling with `bool _focusSyncScheduled` so multiple `FocusManager` notifications in a single frame coalesce into one callback.
-    * Track the last node scrolled by `TvFocusTraversalPolicy._focusNode` (`FocusNode? _lastPolicyScrolledNode`) so `_onFocus` does not start a second conflicting `Scrollable.ensureVisible` animation on directional focus steps; use synchronous `ScrollPositionAlignmentPolicy.explicit` (`Duration.zero`) for non-policy focus changes.
-  * **Frame-Paced Directional Traversal & Key-Repeat Throttling**:
-    * Gate `TvFocusTraversalPolicy.inDirection` to at most one directional step per rendered frame (`_traversalLockedThisFrame`, cleared via `addPostFrameCallback`) so buffered same-frame key events cannot traverse on stale pre-layout `RenderBox` coordinates.
-    * Throttle held directional `KeyRepeatEvent`s (`arrowUp`, `arrowDown`, `arrowLeft`, `arrowRight`) in `_TvNavigationState._handleKeyEvent` to a `45ms` minimum interval (~22 steps/sec max repeat rate) while allowing distinct `KeyDownEvent` clicks to execute on every frame.
-* **Verification**:
-  * Run `flutter analyze --no-pub lib/tv/tv_navigation.dart`.
-* **Commit Message**: `perf(tv-focus): cache traversal metadata, isolate focus ring repaint, and pace rapid D-pad input`
-
-#### Task 6.1.3: Add Rapid D-Pad Stress & Zero-Root-Rebuild Tests and Verify on Dual TV Devices
-* **Files**:
-  * `[MODIFY] test/tv_navigation_test.dart`
-  * `[MODIFY] docs/tv/PROGRESS.md`
-* **Implementation Details**:
-  * Add widget tests in `test/tv_navigation_test.dart` verifying:
-    1. Zero `TvNavigation` child rebuilds across multiple D-pad focus moves and list scrolls (`buildCount == 1`).
-    2. High-frequency D-pad burst & key-repeat throttling across a scrollable `ListView.builder` (30 rapid directional events with same-frame bursts and `KeyRepeatEvent`s) completing with zero exceptions and deterministic focus progression.
-  * Run `flutter analyze --no-pub` and `flutter test --no-pub`.
-  * Build split-ABI release APKs and stress-test rapid D-pad clicking and key-repeat holding on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`).
-* **Commit Message**: `test(tv-focus): add rapid D-pad stress and zero-rebuild tests and verify on TV devices`
-
+### Milestone M5: Dual-Device Release APK Verification & Sanitization
+* **Goal**: Build split-ABI release APKs, install and test on physical and virtual TV targets, and verify zero runtime errors and zero privacy leaks.
+* **Tasks**:
+  * **Task M5.1 (F16)**: Dual-Device Release Validation: Build release APKs (`flutter build apk --release --split-per-abi --build-number=5720 --no-pub`); install on `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`); verify live D-pad navigation, rapid stress bursts, settings scrolling, and video playback with 0 logcat errors.
+  * **Task M5.2 (F17)**: Repository Privacy Audit: Scan all committed files and commit messages to verify 0 occurrences of sensitive local identifiers.
+* **Verification**: Logcat clean of `EXCEPTION`, `ANR`, or `FlutterError`; repository privacy scan returns 0 matches.
