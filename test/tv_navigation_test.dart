@@ -749,5 +749,257 @@ void main() {
         }
       },
     );
+
+    testWidgets(
+      'focus ring updates do not rebuild TvNavigation child subtree across D-pad moves',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          8,
+          (i) => FocusNode(debugLabel: 'perf_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        int childBuildCount = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Builder(
+                builder: (context) {
+                  childBuildCount++;
+                  return Scaffold(
+                    body: ListView.builder(
+                      itemCount: nodes.length,
+                      itemBuilder: (context, index) => SizedBox(
+                        height: 96,
+                        child: ListTile(
+                          focusNode: nodes[index],
+                          autofocus: index == 0,
+                          title: Text('Perf Item $index'),
+                          onTap: () {},
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+        expect(childBuildCount, 1);
+
+        for (int i = 1; i < nodes.length; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(nodes[i].hasPrimaryFocus, isTrue);
+        }
+
+        for (int i = nodes.length - 2; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expect(nodes[i].hasPrimaryFocus, isTrue);
+        }
+
+        // Shifting the focused item's position via scroll offset without
+        // changing primaryFocus must synchronize the focus ring overlay rect
+        // via _syncFocusRectAfterLayout without rebuilding TvNavigation.child.
+        final Finder ringCustomPaintFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+        final CustomPainter painterBeforeScroll = tester
+            .widget<CustomPaint>(ringCustomPaintFinder)
+            .painter!;
+        final ScrollableState scrollable = tester.state<ScrollableState>(
+          find.byType(Scrollable),
+        );
+        final double topBeforeScroll = tester
+            .getRect(
+              find.byWidgetPredicate(
+                (w) => w is ListTile && w.focusNode == nodes[0],
+              ),
+            )
+            .top;
+        scrollable.position.jumpTo(24.0);
+        await tester.pumpAndSettle();
+        final double topAfterScroll = tester
+            .getRect(
+              find.byWidgetPredicate(
+                (w) => w is ListTile && w.focusNode == nodes[0],
+              ),
+            )
+            .top;
+        expect(topAfterScroll, closeTo(topBeforeScroll - 24.0, 0.5));
+        final CustomPainter painterAfterScroll = tester
+            .widget<CustomPaint>(ringCustomPaintFinder)
+            .painter!;
+        expect(painterAfterScroll.shouldRepaint(painterBeforeScroll), isTrue);
+
+        // Moving focus and updating the focus ring overlay must never rebuild
+        // TvNavigation's child widget subtree.
+        expect(childBuildCount, 1);
+      },
+    );
+
+    testWidgets(
+      'gates same-frame D-pad bursts to one step per frame and paces KeyRepeatEvents at 45ms including after idle periods',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          30,
+          (i) => FocusNode(debugLabel: 'burst_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: ListView.builder(
+                  itemCount: nodes.length,
+                  itemBuilder: (context, index) => SizedBox(
+                    height: 88,
+                    child: ListTile(
+                      focusNode: nodes[index],
+                      autofocus: index == 0,
+                      title: Text('Burst Item $index'),
+                      onTap: () {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        // 1. Two directional KeyDownEvents within the same frame (before pump)
+        // must only advance focus by 1 item, preventing layout-stale multi-jumps.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[1].hasPrimaryFocus, isTrue);
+
+        // 2. Simulate 5 seconds of idle screen time (no frames scheduled) before
+        // pressing and holding arrowDown. The KeyDownEvent fires at +5000ms
+        // while currentSystemFrameTimeStamp is still at the pre-idle frame,
+        // and the resulting frame renders at +5010ms. A sub-45ms KeyRepeatEvent
+        // at +5010ms (+10ms after KeyDown) must still be throttled.
+        await tester.pump(const Duration(seconds: 5));
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 10));
+        expect(nodes[2].hasPrimaryFocus, isTrue);
+
+        // Sub-45ms repeat (at +10ms since KeyDown) is throttled.
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 10));
+        expect(nodes[2].hasPrimaryFocus, isTrue);
+
+        // Advance past 45ms total since KeyDown and stream 15 paced repeats.
+        await tester.pump(const Duration(milliseconds: 40));
+        for (int step = 3; step <= 17; step++) {
+          await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(
+            nodes[step].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected paced KeyRepeatEvent to land on Burst Item $step',
+          );
+        }
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(nodes[17].hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'gates rapid diagonal and boundary D-pad bursts across lazy GridView.builder rows',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          24,
+          (i) => FocusNode(debugLabel: 'grid_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: SizedBox(
+                  width: 600,
+                  height: 300,
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisExtent: 120,
+                        ),
+                    itemCount: nodes.length,
+                    itemBuilder: (context, index) => InkWell(
+                      focusNode: nodes[index],
+                      autofocus: index == 0,
+                      onTap: () {},
+                      child: Center(child: Text('Grid $index')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        // Same-frame diagonal burst (Down + Right before pump) must only apply
+        // the first directional move (0 -> 3) and gate the second move.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[3].hasPrimaryFocus, isTrue);
+
+        // Move across the row to the right boundary (3 -> 4 -> 5).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[4].hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[5].hasPrimaryFocus, isTrue);
+
+        // Pressing Right at the right boundary is a no-op (does not lock
+        // traversal), so a subsequent Down steps cleanly to the next row (8).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(nodes[8].hasPrimaryFocus, isTrue);
+
+        // Step down through remaining lazy rows to the bottom-right item (23).
+        for (int row = 3; row < 8; row++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(
+            nodes[row * 3 + 2].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected focus to reach row $row col 2 (item ${row * 3 + 2})',
+          );
+        }
+      },
+    );
   });
 }
+

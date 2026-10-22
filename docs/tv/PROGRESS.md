@@ -26,8 +26,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ✅ Done | `758b6fa5b` |
 | **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ✅ Done | `9da6200ed` |
 | **M6: D-Pad Perf** | Epic 6.1 | `6.1.1` | Document Milestone 6 D-pad performance hardening plan in `docs/tv/` | ✅ Done | `42592887e` |
-| **M6: D-Pad Perf** | Epic 6.1 | `6.1.2` | Harden `TvFocusTraversalPolicy` & `TvNavigation` for high-frequency D-pad input | ✅ Done | `HEAD` |
-| **M6: D-Pad Perf** | Epic 6.1 | `6.1.3` | Add rapid D-pad stress & zero-rebuild tests and verify on dual TV devices | ⏳ Pending | - |
+| **M6: D-Pad Perf** | Epic 6.1 | `6.1.2` | Harden `TvFocusTraversalPolicy` & `TvNavigation` for high-frequency D-pad input | ✅ Done | `f5cf58d8e` |
+| **M6: D-Pad Perf** | Epic 6.1 | `6.1.3` | Add rapid D-pad stress & zero-rebuild tests and verify on dual TV devices | ✅ Done | `HEAD` |
 
 ---
 
@@ -220,7 +220,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Documented the 4 root causes of rapid D-pad lag/ANR (root widget rebuilds via `_TvNavigationState.setState`, duplicate/competing `120ms` `Scrollable.ensureVisible` animations in `_onFocus`, uncached $O(N^2 \times D)$ `localToGlobal` and `visitAncestorElements` walks in `TvFocusTraversalPolicy.inDirection`, and unthrottled same-frame/key-repeat bursts) and the self-contained remediation architecture.
 
 ### [2026-10-22] Task 6.1.2: Harden `TvFocusTraversalPolicy` & `TvNavigation` for High-Frequency D-Pad Input
-* **Status**: ✅ Completed (`HEAD`)
+* **Status**: ✅ Completed (`f5cf58d8e`)
 * **Files Changed**:
   * `[MODIFY] lib/tv/tv_navigation.dart`
   * `[MODIFY] docs/tv/PROGRESS.md`
@@ -231,3 +231,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Gated directional `KeyDownEvent`/`KeyRepeatEvent` and `TvFocusTraversalPolicy.inDirection` to at most one focus transition per frame (`isTraversalLockedThisFrame` / `_TvPolicyFrameState.traversalLockedThisFrame`), and moved `_TvNavigationState`'s `Focus(onKeyEvent: _handleKeyEvent)` inside `Actions` to throttle directional `KeyRepeatEvent` bursts to `45ms` (`_kDirectionalRepeatMinIntervalMs`) using `WidgetsBinding.instance.samplingClock.stopwatch()`.
 * **Verification**:
   * `flutter analyze --no-pub lib/tv/tv_navigation.dart` passed with `No issues found!`.
+
+### [2026-10-22] Task 6.1.3: Add Rapid D-Pad Stress & Zero-Rebuild Tests and Verify on Dual TV Devices
+* **Status**: ✅ Completed (`HEAD`)
+* **Files Changed**:
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Changes Summary**:
+  * Added three new widget tests in `test/tv_navigation_test.dart` (bringing `tv_navigation_test.dart` to 15 tests and the full repository test suite to 70 tests):
+    * `focus ring updates do not rebuild TvNavigation child subtree across D-pad moves`: verifies `childBuildCount == 1` across 14 rapid D-pad Down/Up moves over an 8-item `ListView` and verifies `_TvFocusRingPainter` updates when the focused widget scrolls without changing `FocusNode`.
+    * `gates same-frame D-pad bursts to one step per frame and paces KeyRepeatEvents at 45ms`: verifies same-frame double `KeyDownEvent` gating to 1 focus step per frame, `45ms` `KeyRepeatEvent` pacing across a 30-item `ListView.builder` without skipped items or stalled animations, and `45ms` repeat throttling after a 5-second idle period.
+    * `gates rapid diagonal and boundary D-pad bursts across lazy GridView.builder rows`: verifies rapid diagonal same-frame bursts, offscreen lazy `GridView.builder` row scrolling, and boundary clamping without skipping items or rebuilding `TvNavigation.child`.
+  * Built split-ABI release APKs (`flutter build apk --release --split-per-abi --build-number=5720 --no-pub`), reverted SDK patches cleanly (`./tool/tv_patch.sh revert`), installed in-place (`adb install -r`) on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`), and stress-tested high-frequency D-pad click bursts, diagonal bursts, and key-repeat holds across `RecommendPage`, `SettingPage`, and `TvPlayerHud` with zero crashes, zero `FlutterError` logs, and zero Input Dispatching ANRs.
+* **Verification**:
+  * `flutter analyze --no-pub lib/tv test/tv_navigation_test.dart` passed with `No issues found!`.
+  * `flutter test --no-pub` passed all 70/70 tests across the repository (15/15 in `test/tv_navigation_test.dart`).
+  * `./tool/tv_patch.sh status` confirmed all SDK/pub-cache patches are cleanly reverted (`[NOT APPLIED]`).
+
