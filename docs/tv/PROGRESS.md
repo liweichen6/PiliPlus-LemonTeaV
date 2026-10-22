@@ -24,7 +24,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ✅ Done | `cbf030b75` |
 | **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ✅ Done | `e65f57eb4` |
 | **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ✅ Done | `758b6fa5b` |
-| **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ✅ Done | *(this commit)* |
+| **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ✅ Done | `9da6200ed` |
 
 ---
 
@@ -182,22 +182,28 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * YAML syntax check passed for both workflow files.
 
 ### [2026-10-21] Task 5.2.1: Add Unit/Widget Tests for TV Control Layer & Dual-Device Verification
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`9da6200ed` + review hardening)
 * **Files Changed**:
   * `[NEW] test/tv_navigation_test.dart`
+  * `[MODIFY] lib/tv/tv_platform.dart`
   * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] lib/tv/tv_player_hud.dart`
+  * `[MODIFY] .github/workflows/sync-upstream-build.yml`
   * `[MODIFY] tool/tv_patch.sh`
 * **Changes Summary**:
-  * Created `test/tv_navigation_test.dart` with 10 unit/widget tests covering:
-    * `TvPlatform.seedTvDefaultsToBox` idempotency and preservation of user-customized settings.
-    * `TvFocusTraversalPolicy` 2D grid directional movement, zero-height (`AnimatedHeightWidget`) and micro-button (`<= 36x36`) candidate filtering, and scrollable boundary exit to sibling buttons.
+  * Created `test/tv_navigation_test.dart` with 11 unit/widget tests covering:
+    * `TvPlatform.seedTvDefaultsToBox` idempotency, `FullScreenMode.none.index` (`1`), and preservation of user-customized settings.
+    * `TvFocusTraversalPolicy` 2D grid directional movement, zero-height (`AnimatedHeightWidget`) and micro-button (`<= 36x36`) candidate filtering, ancestor clip-bounds (`RenderClipRect` / `RenderClipRRect` / `RenderClipPath`) filtering for slide-translated `AppBarAni` controls, and scrollable boundary exit to sibling buttons.
     * Patched `GestureDetector` D-pad `Select`/`Enter` `onTap` (`KeyDownEvent`) and `onLongPress` (`KeyRepeatEvent`) activation.
     * Patched `RadioGroup` unobstructed arrow-key traversal in `NavigationMode.directional`.
     * Patched `InkWell` (`material_ui`) D-pad key-down (`onTapDown`) and key-up (`onTapUp`) activation for `ActionItem` triple-like and coordinate-dependent `PopupListTile` callbacks.
     * `TvNavigationObserver` route focus restoration on dialog pop and soft-keyboard gating (`TextField` traversal without keyboard popup until explicit `Select`/`Enter`).
-  * Updated `lib/tv/tv_navigation.dart` to import `package:material_ui/material_ui.dart` so `InkResponse`, `ListTile`, `IconButton`, `ButtonStyleButton`, `TextField`, and `TabBar` type checks match PiliPlus's patched `material_ui` widgets.
+  * Updated `lib/tv/tv_navigation.dart` to import `package:material_ui/material_ui.dart` and intersect candidate rect visibility with ancestor clip layers (`RenderClipRect`, `RenderClipRRect`, `RenderClipPath`).
+  * Hardened `lib/tv/tv_player_hud.dart` with `ExcludeFocus(excluding: isFullScreen || _hudVisible)` around `widget.child`, dedicated `_surfaceFocusNode` lifecycle tracking `isFullScreen` transitions and post-dialog focus restoration, and `ModalRoute.addScopedWillPopCallback` handling so Android TV `KEYCODE_BACK` closes only the active HUD or exits fullscreen without double-firing on `KeyDownEvent` + system `onBackPressed()`.
+  * Fixed `SettingBoxKey.fullScreenMode` in `TvPlatform.defaultTvSettings` to `1` (`FullScreenMode.none.index`) and aligned `.github/workflows/sync-upstream-build.yml` to use `--no-pub` during `flutter build apk`.
   * Updated `tool/tv_patch.sh` to apply all upstream Android and TV patches idempotently for local testing and release builds.
 * **Verification**:
-  * `flutter test --no-pub` passed all 65 tests across the repository (`test/tv_navigation_test.dart` + existing test suites).
+  * `flutter test --no-pub` passed all 66 tests across the repository (`test/tv_navigation_test.dart` + existing test suites).
   * `flutter analyze --no-pub` passed with `No issues found!`.
-  * Built release APKs (`flutter build apk --release --split-per-abi --no-pub`) and verified installation, Leanback launcher resolution, cold/warm launch, and D-pad navigation with zero runtime exceptions on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`).
+  * Built release APKs (`flutter build apk --release --split-per-abi --no-pub`) and verified installation, Leanback launcher resolution, cold/warm launch, fullscreen auto-enter, `TvPlayerHud` overlay/dialogs, single-press Back HUD dismissal and fullscreen-to-split-screen transition, and D-pad navigation with zero runtime exceptions on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`).
+

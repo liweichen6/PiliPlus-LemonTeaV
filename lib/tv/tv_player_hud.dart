@@ -66,11 +66,16 @@ class TvPlayerHud extends StatefulWidget {
 class _TvPlayerHudState extends State<TvPlayerHud> {
   static final DateFormat _clockFormat = DateFormat('HH:mm');
 
+  final FocusNode _surfaceFocusNode = FocusNode(
+    debugLabel: 'TvPlayerHudSurface',
+  );
   final FocusNode _playPauseFocusNode = FocusNode(debugLabel: 'TvHudPlayPause');
   final FocusNode _quickFullscreenFocusNode = FocusNode(
     debugLabel: 'TvQuickFullscreen',
   );
 
+  StreamSubscription<bool>? _fullScreenSub;
+  ModalRoute<dynamic>? _route;
   bool _hudVisible = false;
   Timer? _autoHideTimer;
   Timer? _seekPreviewTimer;
@@ -109,25 +114,99 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   @override
   void initState() {
     super.initState();
+    _bindFullScreenListener();
     // Suppress upstream touch controls when fullscreen or TV HUD is active
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _pl.showControls.value = false;
-      if (!_isFullScreen &&
-          FocusManager.instance.primaryFocus == null &&
-          _quickFullscreenFocusNode.canRequestFocus) {
-        _quickFullscreenFocusNode.requestFocus();
-      }
+      _syncFocusForMode(_isFullScreen);
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ModalRoute<dynamic>? nextRoute = ModalRoute.of(context);
+    if (nextRoute != _route) {
+      // ignore: deprecated_member_use
+      _route?.removeScopedWillPopCallback(_onWillPop);
+      _route = nextRoute;
+      // ignore: deprecated_member_use
+      _route?.addScopedWillPopCallback(_onWillPop);
+    }
+  }
+
+  @override
+  void didUpdateWidget(TvPlayerHud oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.plPlayerController != widget.plPlayerController) {
+      _fullScreenSub?.cancel();
+      _bindFullScreenListener();
+    }
+  }
+
+  @override
   void dispose() {
+    // ignore: deprecated_member_use
+    _route?.removeScopedWillPopCallback(_onWillPop);
+    _fullScreenSub?.cancel();
     _autoHideTimer?.cancel();
     _seekPreviewTimer?.cancel();
+    _surfaceFocusNode.dispose();
     _playPauseFocusNode.dispose();
     _quickFullscreenFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_hudVisible) {
+      _hideHud();
+      return false;
+    }
+    return true;
+  }
+
+  void _bindFullScreenListener() {
+    _fullScreenSub = _pl.isFullScreen.listen((bool isFullScreen) {
+      if (!mounted) return;
+      if (isFullScreen) {
+        _pl.showControls.value = false;
+      }
+      if (!_hudVisible) {
+        _syncFocusForMode(
+          isFullScreen,
+          forceSplitScreenQuickFocus: !isFullScreen,
+        );
+      }
+    });
+  }
+
+  void _syncFocusForMode(
+    bool isFullScreen, {
+    bool forceSplitScreenQuickFocus = false,
+  }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _hudVisible) return;
+      final ModalRoute<dynamic>? route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) return;
+      if (isFullScreen) {
+        if (_surfaceFocusNode.canRequestFocus) {
+          _surfaceFocusNode.requestFocus();
+        }
+      } else {
+        final FocusNode? primary = FocusManager.instance.primaryFocus;
+        final bool shouldFocusQuickStrip =
+            forceSplitScreenQuickFocus ||
+            primary == null ||
+            primary == _surfaceFocusNode ||
+            primary is FocusScopeNode ||
+            !(primary.context?.mounted ?? false);
+        if (shouldFocusQuickStrip &&
+            _quickFullscreenFocusNode.canRequestFocus) {
+          _quickFullscreenFocusNode.requestFocus();
+        }
+      }
+    });
   }
 
   void _showHud() {
@@ -145,12 +224,15 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     _resetAutoHideTimer();
   }
 
-  void _hideHud() {
+  void _hideHud({bool restoreFocus = true}) {
     _autoHideTimer?.cancel();
     if (_hudVisible && mounted) {
       setState(() {
         _hudVisible = false;
       });
+      if (restoreFocus) {
+        _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+      }
     }
   }
 
@@ -169,12 +251,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.space ||
         key == LogicalKeyboardKey.gameButtonA;
-  }
-
-  bool _isBackKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.browserBack;
   }
 
   bool _isMenuKey(LogicalKeyboardKey key) {
@@ -270,11 +346,22 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       }
     }
 
+    // Android dispatches Navigator.maybePop() after KEYCODE_BACK; let _onWillPop
+    // and the page's PopScope handle LogicalKeyboardKey.goBack once so one Back
+    // press never both closes the HUD/fullscreen and pops the route.
+    if (key == LogicalKeyboardKey.goBack ||
+        key == LogicalKeyboardKey.browserBack) {
+      if (_hudVisible) {
+        _resetAutoHideTimer();
+      }
+      return KeyEventResult.ignored;
+    }
+
     // When the 10-foot HUD is open, reset inactivity timer on any key event
-    // and let Back/Escape close the HUD first.
+    // and let Escape close the HUD.
     if (_hudVisible) {
       _resetAutoHideTimer();
-      if (event is KeyDownEvent && _isBackKey(key)) {
+      if (event is KeyDownEvent && key == LogicalKeyboardKey.escape) {
         _hideHud();
         return KeyEventResult.handled;
       }
@@ -303,7 +390,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     }
 
     if (event is KeyDownEvent) {
-      if (_isBackKey(key)) {
+      if (key == LogicalKeyboardKey.escape) {
         _pl.triggerFullScreen(status: false);
         return KeyEventResult.handled;
       }
@@ -415,7 +502,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       SmartDialog.showToast('当前视频无分P或剧集');
       return;
     }
-    _hideHud();
+    _hideHud(restoreFocus: false);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -441,6 +528,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
+    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Future<void> _showQualityDialog() async {
@@ -451,7 +539,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         return;
       }
       final currentQn = liveCtr.currentQn.value;
-      _hideHud();
+      _hideHud(restoreFocus: false);
       await showDialog<void>(
         context: context,
         builder: (dialogContext) {
@@ -472,6 +560,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
           );
         },
       );
+      if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
       return;
     }
 
@@ -487,7 +576,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     final availableQa =
         videoCtr.data.dash!.video?.map((e) => e.id).toSet() ?? const <int?>{};
     final currentQaCode = videoCtr.currentVideoQa.value?.code;
-    _hideHud();
+    _hideHud(restoreFocus: false);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -523,13 +612,14 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
+    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Future<void> _showSpeedDialog() async {
     if (_pl.isLive) return;
     final speeds = _pl.speedList;
     final currentSpeed = _pl.playbackSpeed;
-    _hideHud();
+    _hideHud(restoreFocus: false);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -550,11 +640,12 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
+    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Future<void> _showVideoFitDialog() async {
     final currentFit = _pl.videoFit.value;
-    _hideHud();
+    _hideHud(restoreFocus: false);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -575,10 +666,11 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
+    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Future<void> _showDanmakuSettingsDialog() async {
-    _hideHud();
+    _hideHud(restoreFocus: false);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -754,6 +846,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
+    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Widget _buildSettingGroup({
@@ -799,20 +892,25 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _handleRootKeyEvent,
-      child: Obx(() {
-        final isFullScreen = _pl.isFullScreen.value;
-        if (isFullScreen && _pl.showControls.value) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _pl.showControls.value = false;
-          });
-        }
-        return Stack(
+    return Obx(() {
+      final isFullScreen = _pl.isFullScreen.value;
+      if (isFullScreen && _pl.showControls.value) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _pl.showControls.value = false;
+        });
+      }
+      return Focus(
+        focusNode: _surfaceFocusNode,
+        autofocus: isFullScreen,
+        skipTraversal: !isFullScreen || _hudVisible,
+        onKeyEvent: _handleRootKeyEvent,
+        child: Stack(
           fit: StackFit.passthrough,
           children: [
-            widget.child,
+            ExcludeFocus(
+              excluding: isFullScreen || _hudVisible,
+              child: widget.child,
+            ),
             // Split-screen quick control strip so D-pad users can enter
             // fullscreen, play/pause, open the 10-foot HUD, or navigate down
             // to UP / Like / Coin / Fav / Related Videos / Comments.
@@ -849,9 +947,9 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
             // Full 10-foot TV HUD overlay
             if (_hudVisible) _buildFullHudOverlay(isFullScreen: isFullScreen),
           ],
-        );
-      }),
-    );
+        ),
+      );
+    });
   }
 
   Widget _buildSplitScreenQuickStrip() {
@@ -952,7 +1050,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                             : Icons.close_rounded,
                         label: isFullScreen ? '退出全屏' : '关闭面板',
                         onPressed: () {
-                          _hideHud();
+                          _hideHud(restoreFocus: !isFullScreen);
                           if (isFullScreen) {
                             _pl.triggerFullScreen(status: false);
                           }
@@ -1051,7 +1149,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                                 icon: Icons.fullscreen_rounded,
                                 label: '全屏播放',
                                 onPressed: () {
-                                  _hideHud();
+                                  _hideHud(restoreFocus: false);
                                   _pl.triggerFullScreen(status: true);
                                 },
                               ),

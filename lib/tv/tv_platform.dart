@@ -47,7 +47,7 @@ abstract final class TvPlatform {
     SettingBoxKey.enableAutoExit: false,
     SettingBoxKey.autoPlayEnable: true,
     SettingBoxKey.enableShowDanmaku: true,
-    SettingBoxKey.fullScreenMode: 3, // FullScreenMode.none.index
+    SettingBoxKey.fullScreenMode: 1, // FullScreenMode.none.index
     SettingBoxKey.recommendCardWidth: 300.0,
     SettingBoxKey.defaultTextScale: 1.2,
     SettingBoxKey.showFsScreenshotBtn: false,

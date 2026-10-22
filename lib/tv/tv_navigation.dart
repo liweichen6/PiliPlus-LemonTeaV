@@ -4,6 +4,8 @@ import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
     as custom_list_tile;
 import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
+import 'package:flutter/rendering.dart'
+    show RenderClipPath, RenderClipRRect, RenderClipRect;
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -55,12 +57,13 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       return false;
     }
 
+    Rect visible = globalRect;
     final view = View.maybeOf(context);
     if (view != null && view.devicePixelRatio > 0) {
       final Size logicalSize = view.physicalSize / view.devicePixelRatio;
       if (logicalSize.width > 1.0 && logicalSize.height > 1.0) {
         final Rect viewport = Offset.zero & logicalSize;
-        final Rect visible = globalRect.intersect(viewport);
+        visible = visible.intersect(viewport);
         if (visible.width <= 1.0 || visible.height <= 1.0) {
           return false;
         }
@@ -77,6 +80,22 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         if (ancestorRo.size.width < 1.0 || ancestorRo.size.height < 1.0) {
           focusable = false;
           return false;
+        }
+        if ((ancestorRo is RenderClipRect &&
+                ancestorRo.clipBehavior != Clip.none) ||
+            (ancestorRo is RenderClipRRect &&
+                ancestorRo.clipBehavior != Clip.none) ||
+            (ancestorRo is RenderClipPath &&
+                ancestorRo.clipBehavior != Clip.none)) {
+          final Rect clipBounds =
+              ancestorRo.localToGlobal(Offset.zero) & ancestorRo.size;
+          if (!clipBounds.hasNaN && !clipBounds.isInfinite) {
+            visible = visible.intersect(clipBounds);
+            if (visible.width <= 1.0 || visible.height <= 1.0) {
+              focusable = false;
+              return false;
+            }
+          }
         }
       }
 

@@ -42,7 +42,7 @@ void main() {
       expect(box.get(SettingBoxKey.enableShowDanmaku), isTrue);
       expect(
         box.get(SettingBoxKey.fullScreenMode),
-        FullScreenMode.horizontal.index,
+        FullScreenMode.none.index,
       );
       expect(box.get(SettingBoxKey.recommendCardWidth), 300.0);
       expect(box.get(SettingBoxKey.defaultTextScale), 1.2);
@@ -256,6 +256,94 @@ void main() {
         expect(collapsedNode.hasPrimaryFocus, isFalse);
         expect(microNode.hasPrimaryFocus, isFalse);
         expect(targetNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'skips SlideTransition controls clipped out by an ancestor ClipRect (AppBarAni split-screen pattern)',
+      (tester) async {
+        final topQuickNode = FocusNode(debugLabel: 'quick_strip');
+        final clippedBottomBarNode = FocusNode(debugLabel: 'clipped_bottom_bar');
+        final belowPlayerBtnNode = FocusNode(debugLabel: 'below_player_btn');
+        addTearDown(() {
+          topQuickNode.dispose();
+          clippedBottomBarNode.dispose();
+          belowPlayerBtnNode.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Split-screen player box clipped at height 240 (inside 600px screen)
+                    ClipRect(
+                      child: SizedBox(
+                        width: 400,
+                        height: 240,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              width: 140,
+                              height: 44,
+                              child: ElevatedButton(
+                                focusNode: topQuickNode,
+                                autofocus: true,
+                                onPressed: () {},
+                                child: const Text('QuickFullscreen'),
+                              ),
+                            ),
+                            // Bottom control bar translated down by Offset(0, 1.2)
+                            // so its global rect is still within the 600px screen
+                            // (y = 240..288) but outside the 240px player ClipRect.
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              height: 48,
+                              child: FractionalTranslation(
+                                translation: const Offset(0, 1.2),
+                                child: ElevatedButton(
+                                  focusNode: clippedBottomBarNode,
+                                  onPressed: () {},
+                                  child: const Text('HiddenPlayerBottomBtn'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: 200,
+                      height: 52,
+                      child: ElevatedButton(
+                        focusNode: belowPlayerBtnNode,
+                        onPressed: () {},
+                        child: const Text('LikeActionItem'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(topQuickNode.hasPrimaryFocus, isTrue);
+
+        // Pressing Down skips clippedBottomBarNode and lands on belowPlayerBtnNode.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+
+        expect(clippedBottomBarNode.hasPrimaryFocus, isFalse);
+        expect(belowPlayerBtnNode.hasPrimaryFocus, isTrue);
       },
     );
 
