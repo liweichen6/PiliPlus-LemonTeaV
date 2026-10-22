@@ -16,6 +16,8 @@ import 'package:PiliPlus/services/account_service.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
 import 'package:PiliPlus/services/logger.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/tv/tv_navigation.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/cache_manager.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/desktop/calc_window_position.dart';
@@ -109,6 +111,7 @@ void main() async {
     if (kDebugMode) debugPrint('GStorage init error: $e');
     DeviceUtils.exitApp();
   }
+  await TvPlatform.initialize();
   ScaledWidgetsFlutterBinding.instance.scaleFactor = Pref.uiScale;
   await Future.wait([
     _initDownPath(),
@@ -377,6 +380,7 @@ class MyApp extends StatelessWidget {
       ),
       navigatorObservers: [
         routeObserver,
+        if (TvPlatform.isTv) TvNavigationObserver(),
         FlutterSmartDialog.observer,
       ],
       scrollBehavior: PlatformUtils.isDesktop
@@ -409,6 +413,12 @@ class MyApp extends StatelessWidget {
           viewPadding: tmpPadding,
         ),
         child: child!,
+      );
+    }
+    if (TvPlatform.isTv) {
+      child = TvNavigation(
+        onBack: _onBack,
+        child: child,
       );
     }
     if (PlatformUtils.isDesktop) {

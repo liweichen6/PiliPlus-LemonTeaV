@@ -15,9 +15,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M1: Platform** | Epic 1.2 | `1.2.1` | Create `lib/tv/tv_platform.dart` (Hive seeding + Soft-keyboard gate) | ✅ Done | `c6d8e2c16` |
 | **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ✅ Done | `35ceaa5c3` |
 | **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ✅ Done | `2b51b7b32` |
-| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ✅ Done | *(this commit)* |
-| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ⏳ Next | — |
-| **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ⏸️ Pending | — |
+| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ✅ Done | `540aaa9f5` |
+| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ✅ Done | *(this commit)* |
+| **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ⏳ Next | — |
 | **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ⏸️ Pending | — |
@@ -88,7 +88,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.
 
 ### [2026-10-21] Task 2.2.1: Add `TvNavigationObserver` with Route Focus Restore & Login QR Auto-Tab
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`540aaa9f5`)
 * **Files Changed**:
   * `[MODIFY] lib/tv/tv_navigation.dart`
 * **Changes Summary**:
@@ -96,3 +96,14 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Added automatic post-frame tab switching for `/loginPage` on TV via `Get.find<LoginPageController>().tabController.animateTo(2)` (`扫码登录`), requiring **0 edits** to `lib/pages/login/`.
 * **Verification**:
   * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.
+
+### [2026-10-21] Task 2.2.2: Wire `TvPlatform` & `TvNavigation` into `lib/main.dart`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/main.dart`
+* **Changes Summary**:
+  * Added `await TvPlatform.initialize();` immediately after `GStorage.init()`.
+  * Added `if (TvPlatform.isTv) TvNavigationObserver()` to `GetMaterialApp.navigatorObservers`.
+  * Wrapped the widget returned by `MyApp._builder` in `TvNavigation(onBack: _onBack, child: child)` when `TvPlatform.isTv` is true.
+* **Verification**:
+  * `flutter analyze lib/main.dart` passed with `No issues found!`.
