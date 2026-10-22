@@ -10,22 +10,39 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
+import java.lang.ref.WeakReference
+
 class TvBridge private constructor(
-    private val activity: Activity,
+    activity: Activity,
 ) : MethodChannel.MethodCallHandler {
+    private val activityRef = WeakReference(activity)
+    private val activity: Activity? get() = activityRef.get()
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "getTvEnvironment" -> {
+                val act = activity
+                if (act == null) {
+                    result.success(
+                        mapOf(
+                            "isTelevision" to false,
+                            "isTelevisionUiMode" to false,
+                            "hasLeanbackFeature" to false,
+                            "hasTouchscreen" to true,
+                            "smallestScreenWidthDp" to 0,
+                        ),
+                    )
+                    return
+                }
                 val uiModeManager =
-                    activity.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+                    act.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
                 val isTelevisionUiMode =
                     uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
-                val pm = activity.packageManager
+                val pm = act.packageManager
                 val hasLeanbackFeature = pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
                 val hasTouchscreen = pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
                 val smallestScreenWidthDp =
-                    activity.resources.configuration.smallestScreenWidthDp
+                    act.resources.configuration.smallestScreenWidthDp
                 result.success(
                     mapOf(
                         "isTelevision" to (isTelevisionUiMode || hasLeanbackFeature),
@@ -38,19 +55,25 @@ class TvBridge private constructor(
             }
 
             "isTelevision" -> {
+                val act = activity
+                if (act == null) {
+                    result.success(false)
+                    return
+                }
                 val uiModeManager =
-                    activity.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+                    act.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
                 val isTelevisionUiMode =
                     uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
                 val hasLeanbackFeature =
-                    activity.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                    act.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
                 result.success(isTelevisionUiMode || hasLeanbackFeature)
             }
 
             "showSoftKeyboard" -> {
+                val act = activity
                 val imm =
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                val targetView = activity.currentFocus ?: activity.window?.decorView
+                    act?.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                val targetView = act?.currentFocus ?: act?.window?.decorView
                 if (imm != null && targetView != null) {
                     targetView.post {
                         targetView.requestFocus()
@@ -70,9 +93,10 @@ class TvBridge private constructor(
             }
 
             "hideSoftKeyboard" -> {
+                val act = activity
                 val imm =
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                val token = (activity.currentFocus ?: activity.window?.decorView)?.windowToken
+                    act?.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                val token = (act?.currentFocus ?: act?.window?.decorView)?.windowToken
                 if (imm != null && token != null) {
                     imm.hideSoftInputFromWindow(token, 0)
                     result.success(true)

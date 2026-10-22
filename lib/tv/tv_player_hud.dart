@@ -63,6 +63,14 @@ class TvPlayerHud extends StatefulWidget {
   State<TvPlayerHud> createState() => _TvPlayerHudState();
 }
 
+bool _isSelectKey(LogicalKeyboardKey key) {
+  return key == LogicalKeyboardKey.select ||
+      key == LogicalKeyboardKey.enter ||
+      key == LogicalKeyboardKey.numpadEnter ||
+      key == LogicalKeyboardKey.space ||
+      key == LogicalKeyboardKey.gameButtonA;
+}
+
 class _TvPlayerHudState extends State<TvPlayerHud> {
   static final DateFormat _clockFormat = DateFormat('HH:mm');
 
@@ -75,11 +83,11 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   );
 
   StreamSubscription<bool>? _fullScreenSub;
-  ModalRoute<dynamic>? _route;
   bool _hudVisible = false;
   Timer? _autoHideTimer;
   Timer? _seekPreviewTimer;
   String? _seekPreviewText;
+  Duration? _virtualSeekTarget;
   int _consecutiveSeekSteps = 0;
   DateTime? _lastSeekKeyTime;
 
@@ -124,19 +132,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final ModalRoute<dynamic>? nextRoute = ModalRoute.of(context);
-    if (nextRoute != _route) {
-      // ignore: deprecated_member_use
-      _route?.removeScopedWillPopCallback(_onWillPop);
-      _route = nextRoute;
-      // ignore: deprecated_member_use
-      _route?.addScopedWillPopCallback(_onWillPop);
-    }
-  }
-
-  @override
   void didUpdateWidget(TvPlayerHud oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.plPlayerController != widget.plPlayerController) {
@@ -147,23 +142,14 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   @override
   void dispose() {
-    // ignore: deprecated_member_use
-    _route?.removeScopedWillPopCallback(_onWillPop);
     _fullScreenSub?.cancel();
     _autoHideTimer?.cancel();
     _seekPreviewTimer?.cancel();
+    _virtualSeekTarget = null;
     _surfaceFocusNode.dispose();
     _playPauseFocusNode.dispose();
     _quickFullscreenFocusNode.dispose();
     super.dispose();
-  }
-
-  Future<bool> _onWillPop() async {
-    if (_hudVisible) {
-      _hideHud();
-      return false;
-    }
-    return true;
   }
 
   void _bindFullScreenListener() {
@@ -172,6 +158,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       if (isFullScreen) {
         _pl.showControls.value = false;
       }
+      setState(() {});
       if (!_hudVisible) {
         _syncFocusForMode(
           isFullScreen,
@@ -226,6 +213,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   void _hideHud({bool restoreFocus = true}) {
     _autoHideTimer?.cancel();
+    _virtualSeekTarget = null;
     if (_hudVisible && mounted) {
       setState(() {
         _hudVisible = false;
@@ -245,14 +233,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     });
   }
 
-  bool _isSelectKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.gameButtonA;
-  }
-
   bool _isMenuKey(LogicalKeyboardKey key) {
     return key == LogicalKeyboardKey.contextMenu ||
         key == LogicalKeyboardKey.info ||
@@ -261,6 +241,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   }
 
   void _togglePlayPause() {
+    _virtualSeekTarget = null;
     if (_pl.isLive || (widget.canPlay?.call() ?? true)) {
       if (_hasPlayer) {
         _pl.onDoubleTapCenter();
@@ -277,6 +258,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       _consecutiveSeekSteps = math.min(_consecutiveSeekSteps + 1, 12);
     } else {
       _consecutiveSeekSteps = 1;
+      _virtualSeekTarget = null;
     }
     _lastSeekKeyTime = now;
 
@@ -294,10 +276,12 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     final totalDuration = state.duration.inSeconds > 0
         ? state.duration
         : Duration(seconds: _pl.duration.value);
-    final targetMs = (state.position + delta).inMilliseconds
+    final startPos = _virtualSeekTarget ?? state.position;
+    final targetMs = (startPos + delta).inMilliseconds
         .clamp(0, math.max<int>(0, totalDuration.inMilliseconds))
         .toInt();
     final target = Duration(milliseconds: targetMs);
+    _virtualSeekTarget = target;
 
     _pl.onForwardBackward(target);
 
@@ -312,6 +296,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       if (mounted) {
         setState(() {
           _seekPreviewText = null;
+          _virtualSeekTarget = null;
         });
       }
     });
@@ -346,9 +331,9 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       }
     }
 
-    // Android dispatches Navigator.maybePop() after KEYCODE_BACK; let _onWillPop
-    // and the page's PopScope handle LogicalKeyboardKey.goBack once so one Back
-    // press never both closes the HUD/fullscreen and pops the route.
+    // Android dispatches Navigator.maybePop() after KEYCODE_BACK; let PopScope
+    // handle LogicalKeyboardKey.goBack once so one Back press never both closes
+    // the HUD/fullscreen and pops the route.
     if (key == LogicalKeyboardKey.goBack ||
         key == LogicalKeyboardKey.browserBack) {
       if (_hudVisible) {
@@ -496,39 +481,45 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return result;
   }
 
+  Future<void> _showTvDialog(Widget Function(BuildContext) builder) async {
+    _hideHud(restoreFocus: false);
+    await showDialog<void>(
+      context: context,
+      builder: builder,
+    );
+    if (mounted) {
+      _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+    }
+  }
+
   Future<void> _showEpisodeDialog() async {
     final episodes = _collectEpisodes();
     if (episodes.isEmpty) {
       SmartDialog.showToast('当前视频无分P或剧集');
       return;
     }
-    _hideHud(restoreFocus: false);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return _TvOptionListDialog(
-          title: '选集 (${episodes.length})',
-          items: [
-            for (final ep in episodes)
-              _TvDialogOptionItem(
-                title: ep.label,
-                selected: ep.isCurrent,
-                onSelect: () {
-                  Navigator.of(dialogContext).pop();
-                  if (widget.introController
-                      case final PgcIntroController pgcCtr) {
-                    pgcCtr.onChangeEpisode(ep.item);
-                  } else if (widget.introController
-                      case final UgcIntroController ugcCtr) {
-                    ugcCtr.onChangeEpisode(ep.item);
-                  }
-                },
-              ),
-          ],
-        );
-      },
-    );
-    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '选集 (${episodes.length})',
+        items: [
+          for (final ep in episodes)
+            _TvDialogOptionItem(
+              title: ep.label,
+              selected: ep.isCurrent,
+              onSelect: () {
+                Navigator.of(dialogContext).pop();
+                if (widget.introController
+                    case final PgcIntroController pgcCtr) {
+                  pgcCtr.onChangeEpisode(ep.item);
+                } else if (widget.introController
+                    case final UgcIntroController ugcCtr) {
+                  ugcCtr.onChangeEpisode(ep.item);
+                }
+              },
+            ),
+        ],
+      );
+    });
   }
 
   Future<void> _showQualityDialog() async {
@@ -539,28 +530,23 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         return;
       }
       final currentQn = liveCtr.currentQn.value;
-      _hideHud(restoreFocus: false);
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          return _TvOptionListDialog(
-            title: '选择直播画质',
-            items: [
-              for (final LiveQuality qn in liveCtr.acceptQnList)
-                _TvDialogOptionItem(
-                  title: qn.desc,
-                  selected: currentQn?.code == qn.code,
-                  onSelect: () {
-                    Navigator.of(dialogContext).pop();
-                    liveCtr.changeQn(qn);
-                    SmartDialog.showToast('画质已切换为：${qn.desc}');
-                  },
-                ),
-            ],
-          );
-        },
-      );
-      if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+      await _showTvDialog((dialogContext) {
+        return _TvOptionListDialog(
+          title: '选择直播画质',
+          items: [
+            for (final LiveQuality qn in liveCtr.acceptQnList)
+              _TvDialogOptionItem(
+                title: qn.desc,
+                selected: currentQn?.code == qn.code,
+                onSelect: () {
+                  Navigator.of(dialogContext).pop();
+                  liveCtr.changeQn(qn);
+                  SmartDialog.showToast('画质已切换为：${qn.desc}');
+                },
+              ),
+          ],
+        );
+      });
       return;
     }
 
@@ -576,105 +562,87 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     final availableQa =
         videoCtr.data.dash!.video?.map((e) => e.id).toSet() ?? const <int?>{};
     final currentQaCode = videoCtr.currentVideoQa.value?.code;
-    _hideHud(restoreFocus: false);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return _TvOptionListDialog(
-          title: '选择视频画质',
-          items: [
-            for (final fmt in formats)
-              if (fmt.quality != null && availableQa.contains(fmt.quality))
-                _TvDialogOptionItem(
-                  title: fmt.newDesc ?? VideoQuality.fromCode(fmt.quality!).desc,
-                  subtitle: fmt.format,
-                  selected: currentQaCode == fmt.quality,
-                  onSelect: () async {
-                    Navigator.of(dialogContext).pop();
-                    final quality = fmt.quality!;
-                    final newQa = VideoQuality.fromCode(quality);
-                    videoCtr
-                      ..plPlayerController.cacheVideoQa = newQa.code
-                      ..currentVideoQa.value = newQa
-                      ..updatePlayer();
-                    SmartDialog.showToast('画质已切换为：${newQa.desc}');
-                    if (!_pl.tempPlayerConf) {
-                      GStorage.setting.put(
-                        await ConnectivityUtils.isWiFi
-                            ? SettingBoxKey.defaultVideoQa
-                            : SettingBoxKey.defaultVideoQaCellular,
-                        quality,
-                      );
-                    }
-                  },
-                ),
-          ],
-        );
-      },
-    );
-    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '选择视频画质',
+        items: [
+          for (final fmt in formats)
+            if (fmt.quality != null && availableQa.contains(fmt.quality))
+              _TvDialogOptionItem(
+                title: fmt.newDesc ?? VideoQuality.fromCode(fmt.quality!).desc,
+                subtitle: fmt.format,
+                selected: currentQaCode == fmt.quality,
+                onSelect: () async {
+                  Navigator.of(dialogContext).pop();
+                  final quality = fmt.quality!;
+                  final newQa = VideoQuality.fromCode(quality);
+                  videoCtr
+                    ..plPlayerController.cacheVideoQa = newQa.code
+                    ..currentVideoQa.value = newQa
+                    ..updatePlayer();
+                  SmartDialog.showToast('画质已切换为：${newQa.desc}');
+                  if (!_pl.tempPlayerConf) {
+                    GStorage.setting.put(
+                      await ConnectivityUtils.isWiFi
+                          ? SettingBoxKey.defaultVideoQa
+                          : SettingBoxKey.defaultVideoQaCellular,
+                      quality,
+                    );
+                  }
+                },
+              ),
+        ],
+      );
+    });
   }
 
   Future<void> _showSpeedDialog() async {
     if (_pl.isLive) return;
     final speeds = _pl.speedList;
     final currentSpeed = _pl.playbackSpeed;
-    _hideHud(restoreFocus: false);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return _TvOptionListDialog(
-          title: '选择播放倍速',
-          items: [
-            for (final s in speeds)
-              _TvDialogOptionItem(
-                title: '${s}x',
-                selected: (s - currentSpeed).abs() < 0.01,
-                onSelect: () {
-                  Navigator.of(dialogContext).pop();
-                  _pl.setPlaybackSpeed(s);
-                  SmartDialog.showToast('播放倍速：${s}x');
-                },
-              ),
-          ],
-        );
-      },
-    );
-    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '选择播放倍速',
+        items: [
+          for (final s in speeds)
+            _TvDialogOptionItem(
+              title: '${s}x',
+              selected: (s - currentSpeed).abs() < 0.01,
+              onSelect: () {
+                Navigator.of(dialogContext).pop();
+                _pl.setPlaybackSpeed(s);
+                SmartDialog.showToast('播放倍速：${s}x');
+              },
+            ),
+        ],
+      );
+    });
   }
 
   Future<void> _showVideoFitDialog() async {
     final currentFit = _pl.videoFit.value;
-    _hideHud(restoreFocus: false);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return _TvOptionListDialog(
-          title: '选择画面比例',
-          items: [
-            for (final fit in VideoFitType.values)
-              _TvDialogOptionItem(
-                title: fit.desc,
-                selected: fit == currentFit,
-                onSelect: () {
-                  Navigator.of(dialogContext).pop();
-                  _pl.toggleVideoFit(fit);
-                  SmartDialog.showToast('画面比例：${fit.desc}');
-                },
-              ),
-          ],
-        );
-      },
-    );
-    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '选择画面比例',
+        items: [
+          for (final fit in VideoFitType.values)
+            _TvDialogOptionItem(
+              title: fit.desc,
+              selected: fit == currentFit,
+              onSelect: () {
+                Navigator.of(dialogContext).pop();
+                _pl.toggleVideoFit(fit);
+                SmartDialog.showToast('画面比例：${fit.desc}');
+              },
+            ),
+        ],
+      );
+    });
   }
 
   Future<void> _showDanmakuSettingsDialog() async {
-    _hideHud(restoreFocus: false);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
+    await _showTvDialog((dialogContext) {
+      return StatefulBuilder(
           builder: (context, setDialogState) {
             void applyDanmakuOption() {
               _pl.danmakuController?.updateOption(
@@ -846,7 +814,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         );
       },
     );
-    if (mounted) _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
   }
 
   Widget _buildSettingGroup({
@@ -892,14 +859,15 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final isFullScreen = _pl.isFullScreen.value;
-      if (isFullScreen && _pl.showControls.value) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _pl.showControls.value = false;
-        });
-      }
-      return Focus(
+    final isFullScreen = _isFullScreen;
+    return PopScope(
+      canPop: !_hudVisible,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _hudVisible) {
+          _hideHud();
+        }
+      },
+      child: Focus(
         focusNode: _surfaceFocusNode,
         autofocus: isFullScreen,
         skipTraversal: !isFullScreen || _hudVisible,
@@ -948,8 +916,8 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
             if (_hudVisible) _buildFullHudOverlay(isFullScreen: isFullScreen),
           ],
         ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _buildSplitScreenQuickStrip() {
@@ -1436,14 +1404,6 @@ class _TvHudPillButton extends StatefulWidget {
 class _TvHudPillButtonState extends State<_TvHudPillButton> {
   bool _focused = false;
 
-  bool _isSelectKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.gameButtonA;
-  }
-
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
@@ -1530,14 +1490,6 @@ class _TvTripleLikePill extends StatefulWidget {
 class _TvTripleLikePillState extends State<_TvTripleLikePill> {
   bool _focused = false;
   bool _selectKeyDown = false;
-
-  bool _isSelectKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.gameButtonA;
-  }
 
   @override
   Widget build(BuildContext context) {
