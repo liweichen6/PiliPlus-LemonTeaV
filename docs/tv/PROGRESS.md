@@ -21,9 +21,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ✅ Done | `e6990d48e` |
 | **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ✅ Done | `fffaee51a` |
 | **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ✅ Done | `142f5ae6d` |
-| **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ✅ Done | *(this commit)* |
-| **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ⏳ Next | — |
-| **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ⏸️ Pending | — |
+| **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ✅ Done | `cbf030b75` |
+| **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ✅ Done | *(this commit)* |
+| **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ⏳ Next | — |
 | **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ⏸️ Pending | — |
 
 ---
@@ -151,7 +151,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `./tool/tv_patch.sh apply`, `./tool/tv_patch.sh status`, and `flutter analyze lib/tv/` passed with `No issues found!`.
 
 ### [2026-10-21] Task 4.1.1: Implement `lib/tv/tv_player_hud.dart` with Controller Auto-Discovery
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`cbf030b75`)
 * **Files Changed**:
   * `[NEW] lib/tv/tv_player_hud.dart`
 * **Changes Summary**:
@@ -161,3 +161,11 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Verification**:
   * `flutter analyze lib/tv/tv_player_hud.dart` passed with `No issues found!`.
 
+### [2026-10-21] Task 4.1.2: Add `TvPlayerHud` Micro-Hook in `lib/pages/video/widgets/player_focus.dart`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/pages/video/widgets/player_focus.dart`
+* **Changes Summary**:
+  * Added early return in `PlayerFocus.build(BuildContext context)` wrapping `child` in `TvPlayerHud` when `TvPlatform.isTv` is true.
+* **Verification**:
+  * `flutter analyze lib/pages/video/widgets/player_focus.dart` passed with `No issues found!`.

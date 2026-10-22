@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'package:PiliPlus/pages/common/common_intro_controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
+import 'package:PiliPlus/tv/tv_player_hud.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -44,6 +46,17 @@ class PlayerFocus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (TvPlatform.isTv) {
+      return TvPlayerHud(
+        plPlayerController: plPlayerController,
+        introController: introController,
+        onSendDanmaku: onSendDanmaku,
+        canPlay: canPlay,
+        onSkipSegment: onSkipSegment,
+        onRefresh: onRefresh,
+        child: child,
+      );
+    }
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
