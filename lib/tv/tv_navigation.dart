@@ -25,55 +25,190 @@ import 'package:material_ui/material_ui.dart';
 ///    intermediate left-aligned rows.
 /// 4. Prevents Left/Right from jumping diagonally to rows above or below when
 ///    at the horizontal edge of a row inside a dialog.
-class TvFocusTraversalPolicy extends FocusTraversalPolicy {
-  TvFocusTraversalPolicy({super.requestFocusCallback});
+class _TvNodeMeta {
+  const _TvNodeMeta({
+    required this.rect,
+    required this.isFocusable,
+    required this.ancestorsComplete,
+    required this.verticalScrollable,
+    required this.horizontalScrollable,
+    required this.enclosingListTile,
+    required this.enclosingInkResponse,
+    required this.enclosingWrap,
+  });
 
-  final ReadingOrderTraversalPolicy _readingOrderPolicy =
-      ReadingOrderTraversalPolicy();
+  final Rect rect;
+  final bool isFocusable;
+  final bool ancestorsComplete;
+  final ScrollableState? verticalScrollable;
+  final ScrollableState? horizontalScrollable;
+  final Element? enclosingListTile;
+  final Element? enclosingInkResponse;
+  final Element? enclosingWrap;
+}
 
-  /// Returns `true` when [node] is mounted, attached, has non-zero geometry
-  /// across its ancestor `RenderBox` chain, intersects the visible viewport,
-  /// and belongs to an enabled interactive widget.
-  static bool isEffectivelyFocusable(FocusNode node) =>
-      _isEffectivelyFocusable(node);
+class _TvTraversalCache {
+  final Map<FocusNode, _TvNodeMeta> _nodeMeta = <FocusNode, _TvNodeMeta>{};
+  final Map<RenderBox, Rect> _boxRects = <RenderBox, Rect>{};
+  final Map<ScrollableState, Rect?> _scrollableRects =
+      <ScrollableState, Rect?>{};
 
-  static bool _isEffectivelyFocusable(FocusNode node) {
-    if (!node.canRequestFocus || node.skipTraversal) return false;
+  Rect boxRect(RenderBox box) => _boxRects.putIfAbsent(
+    box,
+    () => box.localToGlobal(Offset.zero) & box.size,
+  );
+
+  Rect? scrollableRect(ScrollableState? scrollable) {
+    if (scrollable == null) return null;
+    return _scrollableRects.putIfAbsent(scrollable, () {
+      final RenderObject? ro = scrollable.context.findRenderObject();
+      if (ro is RenderBox && ro.attached && ro.hasSize) {
+        return boxRect(ro);
+      }
+      return null;
+    });
+  }
+
+  _TvNodeMeta _metaWithAncestors(FocusNode node) {
+    final _TvNodeMeta? existing = _nodeMeta[node];
+    if (existing != null && existing.ancestorsComplete) {
+      return existing;
+    }
+    return evaluateNode(node, includeAncestorsIfUnfocusable: true);
+  }
+
+  Rect rectOf(FocusNode node) =>
+      (_nodeMeta[node] ?? evaluateNode(node)).rect;
+
+  ScrollableState? verticalScrollableOf(FocusNode node) =>
+      _metaWithAncestors(node).verticalScrollable;
+
+  ScrollableState? horizontalScrollableOf(FocusNode node) =>
+      _metaWithAncestors(node).horizontalScrollable;
+
+  Element? enclosingListTileOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingListTile;
+
+  Element? enclosingInkResponseOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingInkResponse;
+
+  Element? enclosingWrapOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingWrap;
+
+  bool isEffectivelyFocusable(FocusNode node) =>
+      evaluateNode(node).isFocusable;
+
+  _TvNodeMeta evaluateNode(
+    FocusNode node, {
+    bool includeAncestorsIfUnfocusable = false,
+  }) {
+    final _TvNodeMeta? cached = _nodeMeta[node];
+    if (cached != null &&
+        (!includeAncestorsIfUnfocusable || cached.ancestorsComplete)) {
+      return cached;
+    }
+
     final BuildContext? context = node.context;
-    if (context == null || !context.mounted) return false;
-    final RenderObject? renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox ||
-        !renderObject.attached ||
-        !renderObject.hasSize) {
-      return false;
-    }
-    final Size size = renderObject.size;
-    if (size.width <= 1.0 || size.height <= 1.0) {
-      return false;
+    if (context == null || !context.mounted) {
+      const meta = _TvNodeMeta(
+        rect: Rect.zero,
+        isFocusable: false,
+        ancestorsComplete: true,
+        verticalScrollable: null,
+        horizontalScrollable: null,
+        enclosingListTile: null,
+        enclosingInkResponse: null,
+        enclosingWrap: null,
+      );
+      _nodeMeta[node] = meta;
+      return meta;
     }
 
-    final Rect globalRect = node.rect;
-    if (globalRect.isEmpty ||
-        globalRect.width <= 1.0 ||
-        globalRect.height <= 1.0 ||
-        globalRect.hasNaN ||
-        globalRect.isInfinite) {
-      return false;
+    final RenderObject? renderObject = context.findRenderObject();
+    final Rect globalRect =
+        (renderObject is RenderBox &&
+            renderObject.attached &&
+            renderObject.hasSize)
+        ? boxRect(renderObject)
+        : node.rect;
+
+    bool focusable =
+        node.canRequestFocus &&
+        !node.skipTraversal &&
+        renderObject is RenderBox &&
+        renderObject.attached &&
+        renderObject.hasSize &&
+        renderObject.size.width > 1.0 &&
+        renderObject.size.height > 1.0 &&
+        !globalRect.isEmpty &&
+        globalRect.width > 1.0 &&
+        globalRect.height > 1.0 &&
+        !globalRect.hasNaN &&
+        !globalRect.isInfinite;
+
+    if (!focusable && !includeAncestorsIfUnfocusable) {
+      final meta = _TvNodeMeta(
+        rect: globalRect,
+        isFocusable: false,
+        ancestorsComplete: false,
+        verticalScrollable: null,
+        horizontalScrollable: null,
+        enclosingListTile: null,
+        enclosingInkResponse: null,
+        enclosingWrap: null,
+      );
+      _nodeMeta[node] = meta;
+      return meta;
     }
 
     Rect visible = globalRect;
-    bool focusable = true;
     bool checkedOwner = false;
     bool insideScrollable = false;
     bool hasNonZeroTranslation = false;
+    bool ancestorsComplete = true;
+    ScrollableState? verticalScrollable;
+    ScrollableState? horizontalScrollable;
+    Element? enclosingListTile;
+    Element? enclosingInkResponse;
+    Element? enclosingWrap;
+
+    bool stopOrContinue() {
+      if (includeAncestorsIfUnfocusable) return true;
+      ancestorsComplete = false;
+      return false;
+    }
 
     context.visitAncestorElements((Element element) {
       if (element is StatefulElement && element.state is ScrollableState) {
         final scrollable = element.state as ScrollableState;
-        if (_canUserScroll(scrollable)) {
+        if (TvFocusTraversalPolicy._canUserScroll(scrollable)) {
           insideScrollable = true;
+          if (verticalScrollable == null &&
+              (scrollable.axisDirection == AxisDirection.down ||
+                  scrollable.axisDirection == AxisDirection.up)) {
+            verticalScrollable = scrollable;
+          }
+          if (horizontalScrollable == null &&
+              (scrollable.axisDirection == AxisDirection.right ||
+                  scrollable.axisDirection == AxisDirection.left)) {
+            horizontalScrollable = scrollable;
+          }
         }
       }
+
+      final Widget widget = element.widget;
+      if (enclosingListTile == null &&
+          (widget is ListTile || widget is custom_list_tile.ListTile)) {
+        enclosingListTile = element;
+      }
+      if (enclosingInkResponse == null && widget is InkResponse) {
+        enclosingInkResponse = element;
+      }
+      if (enclosingWrap == null && widget is Wrap) {
+        enclosingWrap = element;
+      }
+
+      if (!focusable) return true;
 
       final RenderObject? ancestorRo = element.renderObject;
       if (ancestorRo is RenderBox &&
@@ -81,7 +216,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           ancestorRo.hasSize) {
         if (ancestorRo.size.width < 1.0 || ancestorRo.size.height < 1.0) {
           focusable = false;
-          return false;
+          return stopOrContinue();
         }
         if (ancestorRo is RenderFractionalTranslation &&
             (ancestorRo.translation.dx.abs() > 0.01 ||
@@ -99,42 +234,40 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
                     ancestorRo.clipBehavior != Clip.none) ||
                 (ancestorRo is RenderClipPath &&
                     ancestorRo.clipBehavior != Clip.none))) {
-          final Rect clipBounds =
-              ancestorRo.localToGlobal(Offset.zero) & ancestorRo.size;
+          final Rect clipBounds = boxRect(ancestorRo);
           if (!clipBounds.hasNaN && !clipBounds.isInfinite) {
             visible = visible.intersect(clipBounds);
             if (visible.width <= 1.0 || visible.height <= 1.0) {
               focusable = false;
-              return false;
+              return stopOrContinue();
             }
           }
         }
       }
 
-      final Widget widget = element.widget;
       if (widget is Offstage && widget.offstage) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (widget is Visibility && !widget.visible) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (widget is IgnorePointer && widget.ignoring) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (widget is ExcludeFocus && widget.excluding) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (widget is IconButton && widget.onPressed == null) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (widget is ButtonStyleButton && !widget.enabled) {
         focusable = false;
-        return false;
+        return stopOrContinue();
       }
       if (!checkedOwner) {
         if (widget is InkResponse) {
@@ -149,26 +282,25 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
               widget.onSecondaryTapUp != null ||
               widget.onSecondaryTapDown != null;
           focusable = enabled && widget.canRequestFocus;
-          if (!focusable) return false;
+          if (!focusable) return stopOrContinue();
         } else if (widget is FocusableActionDetector) {
           checkedOwner = true;
           focusable = widget.enabled;
-          if (!focusable) return false;
+          if (!focusable) return stopOrContinue();
         } else if (widget is TextField) {
           checkedOwner = true;
           final bool enabled =
               widget.enabled ?? widget.decoration?.enabled ?? true;
           focusable = enabled && widget.canRequestFocus;
-          if (!focusable) return false;
+          if (!focusable) return stopOrContinue();
         } else if (widget is Focus) {
           checkedOwner = true;
         }
       }
       return true;
     });
-    if (!focusable) return false;
 
-    if (!insideScrollable || hasNonZeroTranslation) {
+    if (focusable && (!insideScrollable || hasNonZeroTranslation)) {
       final view = View.maybeOf(context);
       if (view != null && view.devicePixelRatio > 0) {
         final Size logicalSize = view.physicalSize / view.devicePixelRatio;
@@ -176,221 +308,209 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           final Rect viewport = Offset.zero & logicalSize;
           visible = visible.intersect(viewport);
           if (visible.width <= 1.0 || visible.height <= 1.0) {
-            return false;
+            focusable = false;
           }
         }
       }
     }
-    return true;
+
+    final meta = _TvNodeMeta(
+      rect: globalRect,
+      isFocusable: focusable,
+      ancestorsComplete: ancestorsComplete,
+      verticalScrollable: verticalScrollable,
+      horizontalScrollable: horizontalScrollable,
+      enclosingListTile: enclosingListTile,
+      enclosingInkResponse: enclosingInkResponse,
+      enclosingWrap: enclosingWrap,
+    );
+    _nodeMeta[node] = meta;
+    return meta;
   }
 
-  static bool _isVisibleInEnclosingScrollables(FocusNode node) {
-    final ScrollableState? vert = _verticalScrollableOf(node);
+  bool isVisibleInEnclosingScrollables(FocusNode node) {
+    final ScrollableState? vert = verticalScrollableOf(node);
     if (vert != null) {
-      final Rect? vertRect = _scrollableRect(vert);
-      if (vertRect != null && !_isVisibleInScrollable(node, vertRect)) {
+      final Rect? vertRect = scrollableRect(vert);
+      if (vertRect != null &&
+          !TvFocusTraversalPolicy._isRectVisibleInScrollable(
+            rectOf(node),
+            vertRect,
+          )) {
         return false;
       }
     }
-    final ScrollableState? horiz = _horizontalScrollableOf(node);
+    final ScrollableState? horiz = horizontalScrollableOf(node);
     if (horiz != null) {
-      final Rect? horizRect = _scrollableRect(horiz);
+      final Rect? horizRect = scrollableRect(horiz);
       if (horizRect != null &&
-          !_isVisibleHorizontallyInScrollable(node, horizRect)) {
+          !TvFocusTraversalPolicy._isRectVisibleHorizontallyInScrollable(
+            rectOf(node),
+            horizRect,
+          )) {
         return false;
       }
     }
     return true;
   }
+}
+
+class _TvPolicyFrameState {
+  bool traversalLockedThisFrame = false;
+  FocusNode? lastPolicyScrolledNode;
+  _TvTraversalCache? activeCache;
+}
+
+class TvFocusTraversalPolicy extends FocusTraversalPolicy {
+  TvFocusTraversalPolicy({super.requestFocusCallback});
+
+  final ReadingOrderTraversalPolicy _readingOrderPolicy =
+      ReadingOrderTraversalPolicy();
+  final _TvPolicyFrameState _frameState = _TvPolicyFrameState();
+
+  /// Whether a directional traversal step has already occurred during the
+  /// current frame.
+  bool get isTraversalLockedThisFrame => _frameState.traversalLockedThisFrame;
+
+  T _withCache<T>(T Function(_TvTraversalCache cache) action) {
+    final _TvTraversalCache? existing = _frameState.activeCache;
+    if (existing != null) return action(existing);
+    final cache = _TvTraversalCache();
+    _frameState.activeCache = cache;
+    try {
+      return action(cache);
+    } finally {
+      _frameState.activeCache = null;
+    }
+  }
+
+  /// Consumes and clears the marker indicating [node] was just scrolled into
+  /// view by [inDirection] via [requestFocusCallback].
+  bool consumePolicyScrolledNode(FocusNode node) {
+    if (identical(_frameState.lastPolicyScrolledNode, node)) {
+      _frameState.lastPolicyScrolledNode = null;
+      return true;
+    }
+    return false;
+  }
+
+  /// Returns `true` when [node] is mounted, attached, has non-zero geometry
+  /// across its ancestor `RenderBox` chain, intersects the visible viewport,
+  /// and belongs to an enabled interactive widget.
+  static bool isEffectivelyFocusable(FocusNode node) =>
+      _TvTraversalCache().isEffectivelyFocusable(node);
 
   @override
   FocusNode? findFirstFocus(
     FocusNode currentNode, {
     bool ignoreCurrentFocus = false,
-  }) {
+  }) => _withCache((_TvTraversalCache cache) {
     final FocusNode? candidate = super.findFirstFocus(
       currentNode,
       ignoreCurrentFocus: ignoreCurrentFocus,
     );
     if (candidate != null &&
-        _isEffectivelyFocusable(candidate) &&
-        _isVisibleInEnclosingScrollables(candidate)) {
+        cache.isEffectivelyFocusable(candidate) &&
+        cache.isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
     final List<FocusNode> candidates = currentNode.traversalDescendants
-        .where(_isEffectivelyFocusable)
+        .where(cache.isEffectivelyFocusable)
         .toList();
     if (candidates.isEmpty) return null;
     final List<FocusNode> visibleInScrollables = candidates
-        .where(_isVisibleInEnclosingScrollables)
+        .where(cache.isVisibleInEnclosingScrollables)
         .toList();
     final List<FocusNode> pool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
         : candidates;
-    return sortDescendants(pool, currentNode).firstOrNull;
-  }
+    return _sortDescendantsWithCache(pool, currentNode, cache).firstOrNull;
+  });
+
+  List<FocusNode> _sortDescendantsWithCache(
+    Iterable<FocusNode> descendants,
+    FocusNode currentNode,
+    _TvTraversalCache cache,
+  ) => _readingOrderPolicy
+      .sortDescendants(
+        descendants.where(
+          (FocusNode node) =>
+              node == currentNode ||
+              !node.canRequestFocus ||
+              cache.isEffectivelyFocusable(node),
+        ),
+        currentNode,
+      )
+      .toList();
 
   @override
   Iterable<FocusNode> sortDescendants(
     Iterable<FocusNode> descendants,
     FocusNode currentNode,
-  ) => _readingOrderPolicy.sortDescendants(
-    descendants.where(
-      (FocusNode node) =>
-          node == currentNode ||
-          !node.canRequestFocus ||
-          _isEffectivelyFocusable(node),
-    ),
-    currentNode,
+  ) => _withCache(
+    (_TvTraversalCache cache) =>
+        _sortDescendantsWithCache(descendants, currentNode, cache),
   );
 
   @override
   FocusNode? findFirstFocusInDirection(
     FocusNode currentNode,
     TraversalDirection direction,
-  ) {
+  ) => _withCache((_TvTraversalCache cache) {
     final FocusNode? candidate = _readingOrderPolicy.findFirstFocusInDirection(
       currentNode,
       direction,
     );
     if (candidate != null &&
-        _isEffectivelyFocusable(candidate) &&
-        _isVisibleInEnclosingScrollables(candidate)) {
+        cache.isEffectivelyFocusable(candidate) &&
+        cache.isVisibleInEnclosingScrollables(candidate)) {
       return candidate;
     }
     final List<FocusNode> candidates = currentNode.traversalDescendants
-        .where(_isEffectivelyFocusable)
+        .where(cache.isEffectivelyFocusable)
         .toList();
     if (candidates.isEmpty) return null;
     final List<FocusNode> visibleInScrollables = candidates
-        .where(_isVisibleInEnclosingScrollables)
+        .where(cache.isVisibleInEnclosingScrollables)
         .toList();
     final List<FocusNode> pool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
         : candidates;
-    return sortDescendants(pool, currentNode).firstOrNull;
-  }
+    return _sortDescendantsWithCache(pool, currentNode, cache).firstOrNull;
+  });
 
   static bool _canUserScroll(ScrollableState scrollable) {
     return scrollable.widget.physics is! NeverScrollableScrollPhysics;
   }
 
-  static ScrollableState? _verticalScrollableOf(FocusNode node) {
-    final BuildContext? context = node.context;
-    if (context == null) return null;
-    ScrollableState? result;
-    context.visitAncestorElements((Element element) {
-      if (element is StatefulElement && element.state is ScrollableState) {
-        final scrollable = element.state as ScrollableState;
-        if (_canUserScroll(scrollable) &&
-            (scrollable.axisDirection == AxisDirection.down ||
-                scrollable.axisDirection == AxisDirection.up)) {
-          result = scrollable;
-          return false;
-        }
-      }
-      return true;
-    });
-    return result;
-  }
-
-  static ScrollableState? _horizontalScrollableOf(FocusNode node) {
-    final BuildContext? context = node.context;
-    if (context == null) return null;
-    ScrollableState? result;
-    context.visitAncestorElements((Element element) {
-      if (element is StatefulElement && element.state is ScrollableState) {
-        final scrollable = element.state as ScrollableState;
-        if (_canUserScroll(scrollable) &&
-            (scrollable.axisDirection == AxisDirection.right ||
-                scrollable.axisDirection == AxisDirection.left)) {
-          result = scrollable;
-          return false;
-        }
-      }
-      return true;
-    });
-    return result;
-  }
-
-  static Element? _enclosingWrapOf(FocusNode node) {
-    final BuildContext? context = node.context;
-    if (context == null) return null;
-    Element? result;
-    context.visitAncestorElements((Element element) {
-      if (element.widget is Wrap) {
-        result = element;
-        return false;
-      }
-      return true;
-    });
-    return result;
-  }
-
-  static Rect? _scrollableRect(ScrollableState? scrollable) {
-    if (scrollable == null) return null;
-    final RenderObject? ro = scrollable.context.findRenderObject();
-    if (ro is RenderBox && ro.attached && ro.hasSize) {
-      return ro.localToGlobal(Offset.zero) & ro.size;
-    }
-    return null;
-  }
-
-  static bool _isVisibleInScrollable(FocusNode node, Rect scrollableRect) {
-    final Rect r = node.rect;
+  static bool _isRectVisibleInScrollable(Rect r, Rect scrollableRect) {
     return r.bottom > scrollableRect.top + 1.0 &&
         r.top < scrollableRect.bottom - 1.0 &&
         r.center.dy >= scrollableRect.top - 1.0 &&
         r.center.dy <= scrollableRect.bottom + 1.0;
   }
 
-  static bool _isVisibleHorizontallyInScrollable(
-    FocusNode node,
+  static bool _isRectVisibleHorizontallyInScrollable(
+    Rect r,
     Rect scrollableRect,
   ) {
-    final Rect r = node.rect;
     return r.right > scrollableRect.left + 1.0 &&
         r.left < scrollableRect.right - 1.0 &&
         r.center.dx >= scrollableRect.left - 1.0 &&
         r.center.dx <= scrollableRect.right + 1.0;
   }
 
-  static Element? _enclosingListTileOf(FocusNode node) {
-    final BuildContext? context = node.context;
-    if (context == null) return null;
-    Element? result;
-    context.visitAncestorElements((Element element) {
-      if (element.widget is ListTile ||
-          element.widget is custom_list_tile.ListTile) {
-        result = element;
-        return false;
-      }
-      return true;
-    });
-    return result;
-  }
-
-  static Element? _enclosingInkResponseOf(FocusNode node) {
-    final BuildContext? context = node.context;
-    if (context == null) return null;
-    Element? result;
-    context.visitAncestorElements((Element element) {
-      if (element.widget is InkResponse) {
-        result = element;
-        return false;
-      }
-      return true;
-    });
-    return result;
-  }
-
   /// Returns true when [secondary] is a small action widget (e.g. a trailing
   /// IconButton/Switch or an overlaid VideoPopupMenu) whose center lies inside
   /// a much larger primary container [container] (e.g. a ListTile or VideoCard).
-  static bool _isEmbeddedSecondaryOf(FocusNode secondary, FocusNode container) {
+  static bool _isEmbeddedSecondaryOf(
+    FocusNode secondary,
+    FocusNode container,
+    _TvTraversalCache cache,
+  ) {
     if (secondary == container) return false;
-    final Rect cr = container.rect;
-    final Rect sr = secondary.rect;
+    final Rect cr = cache.rectOf(container);
+    final Rect sr = cache.rectOf(secondary);
     if (!cr.contains(sr.center)) return false;
     final bool isMicroButton = sr.width <= 36.0 && sr.height <= 36.0;
     return isMicroButton ||
@@ -404,12 +524,13 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   static List<FocusNode> _filterOutEmbeddedSecondaryActions(
     List<FocusNode> candidates,
     FocusNode focusedChild,
+    _TvTraversalCache cache,
   ) {
     if (candidates.length <= 1) return candidates;
     return candidates.where((FocusNode node) {
       for (final FocusNode other in candidates) {
         if (other == node || other == focusedChild) continue;
-        if (_isEmbeddedSecondaryOf(node, other)) {
+        if (_isEmbeddedSecondaryOf(node, other, cache)) {
           return false;
         }
       }
@@ -418,6 +539,13 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   }
 
   void _focusNode(FocusNode node, TraversalDirection direction) {
+    _frameState.lastPolicyScrolledNode = node;
+    if (!_frameState.traversalLockedThisFrame) {
+      _frameState.traversalLockedThisFrame = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _frameState.traversalLockedThisFrame = false;
+      });
+    }
     requestFocusCallback(
       node,
       alignmentPolicy: switch (direction) {
@@ -434,97 +562,104 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
   @override
   bool inDirection(FocusNode currentNode, TraversalDirection direction) {
+    if (_frameState.traversalLockedThisFrame) return true;
     final FocusScopeNode? nearestScope = currentNode.nearestScope;
     if (nearestScope == null) return false;
     nearestScope.directionalTraversalEdgeBehavior = TraversalEdgeBehavior.stop;
-    final FocusNode? focusedChild = nearestScope.focusedChild;
-    if (focusedChild == null) {
-      final FocusNode? firstFocus =
-          findFirstFocusInDirection(currentNode, direction) ??
-          findFirstFocus(currentNode);
-      if (firstFocus != null) {
-        _focusNode(firstFocus, direction);
+    return _withCache((_TvTraversalCache cache) {
+      final FocusNode? focusedChild = nearestScope.focusedChild;
+      if (focusedChild == null) {
+        final FocusNode? firstFocus =
+            findFirstFocusInDirection(currentNode, direction) ??
+            findFirstFocus(currentNode);
+        if (firstFocus != null) {
+          _focusNode(firstFocus, direction);
+          return true;
+        }
+        return false;
+      }
+
+      cache.evaluateNode(focusedChild, includeAncestorsIfUnfocusable: true);
+      final ScrollableState? focusedScrollable = cache.verticalScrollableOf(
+        focusedChild,
+      );
+      final Rect? focusedScrollableRect = cache.scrollableRect(
+        focusedScrollable,
+      );
+      final ScrollableState? focusedHorizScrollable = cache
+          .horizontalScrollableOf(focusedChild);
+      final Rect target = cache.rectOf(focusedChild);
+
+      final List<FocusNode> rawDescendants = nearestScope.traversalDescendants
+          .where(
+            (FocusNode node) =>
+                node.context != null && cache.isEffectivelyFocusable(node),
+          )
+          .toList();
+      final Set<FocusNode> rawSet = rawDescendants.toSet();
+      final Set<FocusNode> nonLeafNodes = <FocusNode>{};
+      for (final FocusNode node in rawDescendants) {
+        final Element? nodeListTile = cache.enclosingListTileOf(node);
+        final Rect nr = cache.rectOf(node);
+        for (final FocusNode ancestor in node.ancestors) {
+          if (!rawSet.contains(ancestor)) continue;
+          final Rect ar = cache.rectOf(ancestor);
+          final bool sameSizeWrapper =
+              (ar.width - nr.width).abs() < 8.0 &&
+              (ar.height - nr.height).abs() < 8.0;
+          final bool isEnclosingListTileRow =
+              nodeListTile != null &&
+              !sameSizeWrapper &&
+              cache.enclosingListTileOf(ancestor) == nodeListTile;
+          final bool isPrimaryInkContainer =
+              !sameSizeWrapper &&
+              cache.enclosingInkResponseOf(ancestor) != null &&
+              _isEmbeddedSecondaryOf(node, ancestor, cache);
+          if (!isEnclosingListTileRow && !isPrimaryInkContainer) {
+            nonLeafNodes.add(ancestor);
+          }
+        }
+      }
+
+      final List<FocusNode> allNodes = rawDescendants
+          .where(
+            (FocusNode node) =>
+                node != focusedChild && !nonLeafNodes.contains(node),
+          )
+          .toList();
+      if (allNodes.isEmpty) return false;
+
+      final FocusNode? chosen = switch (direction) {
+        TraversalDirection.down || TraversalDirection.up =>
+          _findVerticalCandidate(
+            focusedChild: focusedChild,
+            target: target,
+            focusedScrollable: focusedScrollable,
+            focusedScrollableRect: focusedScrollableRect,
+            focusedHorizScrollable: focusedHorizScrollable,
+            allNodes: allNodes,
+            direction: direction,
+            cache: cache,
+          ),
+        TraversalDirection.left || TraversalDirection.right =>
+          _findHorizontalCandidate(
+            focusedChild: focusedChild,
+            target: target,
+            focusedScrollable: focusedScrollable,
+            focusedScrollableRect: focusedScrollableRect,
+            focusedHorizScrollable: focusedHorizScrollable,
+            allNodes: allNodes,
+            direction: direction,
+            cache: cache,
+          ),
+      };
+
+      if (chosen != null) {
+        _focusNode(chosen, direction);
         return true;
       }
       return false;
-    }
-
-    final ScrollableState? focusedScrollable = _verticalScrollableOf(
-      focusedChild,
-    );
-    final Rect? focusedScrollableRect = _scrollableRect(focusedScrollable);
-    final ScrollableState? focusedHorizScrollable = _horizontalScrollableOf(
-      focusedChild,
-    );
-    final Rect target = focusedChild.rect;
-
-    final List<FocusNode> rawDescendants = nearestScope.traversalDescendants
-        .where(
-          (FocusNode node) =>
-              node.context != null && _isEffectivelyFocusable(node),
-        )
-        .toList();
-    final Set<FocusNode> rawSet = rawDescendants.toSet();
-    final Set<FocusNode> nonLeafNodes = <FocusNode>{};
-    for (final FocusNode node in rawDescendants) {
-      final Element? nodeListTile = _enclosingListTileOf(node);
-      final Rect nr = node.rect;
-      for (final FocusNode ancestor in node.ancestors) {
-        if (!rawSet.contains(ancestor)) continue;
-        final Rect ar = ancestor.rect;
-        final bool sameSizeWrapper =
-            (ar.width - nr.width).abs() < 8.0 &&
-            (ar.height - nr.height).abs() < 8.0;
-        final bool isEnclosingListTileRow =
-            nodeListTile != null &&
-            !sameSizeWrapper &&
-            _enclosingListTileOf(ancestor) == nodeListTile;
-        final bool isPrimaryInkContainer =
-            !sameSizeWrapper &&
-            _enclosingInkResponseOf(ancestor) != null &&
-            _isEmbeddedSecondaryOf(node, ancestor);
-        if (!isEnclosingListTileRow && !isPrimaryInkContainer) {
-          nonLeafNodes.add(ancestor);
-        }
-      }
-    }
-
-    final List<FocusNode> allNodes = rawDescendants
-        .where(
-          (FocusNode node) =>
-              node != focusedChild && !nonLeafNodes.contains(node),
-        )
-        .toList();
-    if (allNodes.isEmpty) return false;
-
-    final FocusNode? chosen = switch (direction) {
-      TraversalDirection.down || TraversalDirection.up =>
-        _findVerticalCandidate(
-          focusedChild: focusedChild,
-          target: target,
-          focusedScrollable: focusedScrollable,
-          focusedScrollableRect: focusedScrollableRect,
-          focusedHorizScrollable: focusedHorizScrollable,
-          allNodes: allNodes,
-          direction: direction,
-        ),
-      TraversalDirection.left || TraversalDirection.right =>
-        _findHorizontalCandidate(
-          focusedChild: focusedChild,
-          target: target,
-          focusedScrollable: focusedScrollable,
-          focusedScrollableRect: focusedScrollableRect,
-          focusedHorizScrollable: focusedHorizScrollable,
-          allNodes: allNodes,
-          direction: direction,
-        ),
-    };
-
-    if (chosen != null) {
-      _focusNode(chosen, direction);
-      return true;
-    }
-    return false;
+    });
   }
 
   FocusNode? _findVerticalCandidate({
@@ -535,20 +670,25 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     required ScrollableState? focusedHorizScrollable,
     required List<FocusNode> allNodes,
     required TraversalDirection direction,
+    required _TvTraversalCache cache,
   }) {
     final bool isDown = direction == TraversalDirection.down;
     final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
       allNodes,
       focusedChild,
+      cache,
     ).where((FocusNode node) {
-      final ScrollableState? nodeHorizScrollable = _horizontalScrollableOf(
+      final ScrollableState? nodeHorizScrollable = cache.horizontalScrollableOf(
         node,
       );
       if (nodeHorizScrollable != null &&
           nodeHorizScrollable != focusedHorizScrollable) {
-        final Rect? horizRect = _scrollableRect(nodeHorizScrollable);
+        final Rect? horizRect = cache.scrollableRect(nodeHorizScrollable);
         if (horizRect != null &&
-            !_isVisibleHorizontallyInScrollable(node, horizRect)) {
+            !_isRectVisibleHorizontallyInScrollable(
+              cache.rectOf(node),
+              horizRect,
+            )) {
           return false;
         }
       }
@@ -561,10 +701,9 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       final List<FocusNode> sameScrollable = primaryNodes.where((
         FocusNode node,
       ) {
-        if (_verticalScrollableOf(node) != focusedScrollable) return false;
-        return isDown
-            ? node.rect.center.dy >= target.bottom
-            : node.rect.center.dy <= target.top;
+        if (cache.verticalScrollableOf(node) != focusedScrollable) return false;
+        final Rect r = cache.rectOf(node);
+        return isDown ? r.center.dy >= target.bottom : r.center.dy <= target.top;
       }).toList();
       if (sameScrollable.isNotEmpty) {
         return _pickFromClosestRow(
@@ -572,6 +711,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           candidates: sameScrollable,
           isDown: isDown,
           preferLeadingOnRow: false,
+          cache: cache,
         );
       }
     }
@@ -596,11 +736,12 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final List<FocusNode> fallbackScrollableCandidates = <FocusNode>[];
 
     for (final FocusNode node in primaryNodes) {
-      final ScrollableState? nodeScrollable = _verticalScrollableOf(node);
+      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
       if (focusedScrollable != null && nodeScrollable == focusedScrollable) {
         continue;
       }
-      final Rect? nodeScrollableRect = _scrollableRect(nodeScrollable);
+      final Rect nr = cache.rectOf(node);
+      final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
       if (nodeScrollable != null && nodeScrollableRect != null) {
         final bool overlapsHorizontally =
             referenceHorizontalRect.right > nodeScrollableRect.left + 2.0 &&
@@ -612,10 +753,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             : target.center.dy >= nodeScrollableRect.bottom - 4.0 ||
                   nodeScrollableRect.bottom <= exitBoundary + 4.0;
         if (!scrollableInDirection) continue;
-        if (_isVisibleInScrollable(node, nodeScrollableRect)) {
+        if (_isRectVisibleInScrollable(nr, nodeScrollableRect)) {
           final bool nodeInDirection = isDown
-              ? node.rect.center.dy >= target.bottom
-              : node.rect.center.dy <= target.top;
+              ? nr.center.dy >= target.bottom
+              : nr.center.dy <= target.top;
           if (nodeInDirection) {
             externalCandidates.add(node);
           }
@@ -625,13 +766,12 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       } else {
         if (focusedScrollableRect != null) {
           final bool overlapsFocusedScrollableHorizontally =
-              node.rect.right > focusedScrollableRect.left + 2.0 &&
-              node.rect.left < focusedScrollableRect.right - 2.0;
+              nr.right > focusedScrollableRect.left + 2.0 &&
+              nr.left < focusedScrollableRect.right - 2.0;
           if (!overlapsFocusedScrollableHorizontally) continue;
         } else {
           final bool overlapsTargetHorizontally =
-              node.rect.right > target.left - 4.0 &&
-              node.rect.left < target.right + 4.0;
+              nr.right > target.left - 4.0 && nr.left < target.right + 4.0;
           if (!overlapsTargetHorizontally) {
             // Reject candidates that belong to a separate side-by-side column
             // which already has items or a scrollable at target's vertical band.
@@ -640,13 +780,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             ) {
               if (other == node) return false;
               final Rect otherBounds =
-                  _scrollableRect(_verticalScrollableOf(other)) ?? other.rect;
+                  cache.scrollableRect(cache.verticalScrollableOf(other)) ??
+                  cache.rectOf(other);
               final bool overlapsTargetVertically =
                   otherBounds.bottom > target.top + 1.0 &&
                   otherBounds.top < target.bottom - 1.0;
               final bool overlapsNodeHorizontally =
-                  otherBounds.right > node.rect.left + 1.0 &&
-                  otherBounds.left < node.rect.right - 1.0;
+                  otherBounds.right > nr.left + 1.0 &&
+                  otherBounds.left < nr.right - 1.0;
               final bool disjointFromTargetHorizontally =
                   otherBounds.left >= target.right - 2.0 ||
                   otherBounds.right <= target.left + 2.0;
@@ -658,10 +799,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           }
         }
         final bool nodeInDirection = isDown
-            ? node.rect.center.dy >= exitBoundary &&
-                  node.rect.center.dy > target.center.dy
-            : node.rect.center.dy <= exitBoundary &&
-                  node.rect.center.dy < target.center.dy;
+            ? nr.center.dy >= exitBoundary && nr.center.dy > target.center.dy
+            : nr.center.dy <= exitBoundary && nr.center.dy < target.center.dy;
         if (nodeInDirection) {
           externalCandidates.add(node);
         }
@@ -678,6 +817,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       candidates: pool,
       isDown: isDown,
       preferLeadingOnRow: isDown && focusedScrollable == null,
+      cache: cache,
     );
   }
 
@@ -686,50 +826,61 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     required List<FocusNode> candidates,
     required bool isDown,
     required bool preferLeadingOnRow,
+    required _TvTraversalCache cache,
   }) {
     FocusNode closestVertical = candidates.first;
+    Rect closestRect = cache.rectOf(closestVertical);
     for (final FocusNode node in candidates.skip(1)) {
+      final Rect nr = cache.rectOf(node);
       if (isDown) {
-        if (node.rect.center.dy < closestVertical.rect.center.dy) {
+        if (nr.center.dy < closestRect.center.dy) {
           closestVertical = node;
+          closestRect = nr;
         }
       } else {
-        if (node.rect.center.dy > closestVertical.rect.center.dy) {
+        if (nr.center.dy > closestRect.center.dy) {
           closestVertical = node;
+          closestRect = nr;
         }
       }
     }
 
-    final Rect rowBounds = closestVertical.rect;
+    final Rect rowBounds = closestRect;
     final List<FocusNode> row = candidates.where((FocusNode node) {
-      final Rect r = node.rect;
+      final Rect r = cache.rectOf(node);
       return r.top < rowBounds.bottom - 1.0 && r.bottom > rowBounds.top + 1.0;
     }).toList();
 
     if (row.length <= 1) return closestVertical;
-    row.sort((FocusNode a, FocusNode b) => a.rect.left.compareTo(b.rect.left));
-    if (preferLeadingOnRow && _verticalScrollableOf(row.first) != null) {
+    row.sort(
+      (FocusNode a, FocusNode b) =>
+          cache.rectOf(a).left.compareTo(cache.rectOf(b).left),
+    );
+    if (preferLeadingOnRow && cache.verticalScrollableOf(row.first) != null) {
       return row.first;
     }
 
     final List<FocusNode> overlapping = row.where((FocusNode node) {
-      final Rect r = node.rect;
+      final Rect r = cache.rectOf(node);
       return r.right > referenceRect.left + 1.0 &&
           r.left < referenceRect.right - 1.0;
     }).toList();
 
     if (overlapping.isNotEmpty) {
+      final Rect firstRect = cache.rectOf(overlapping.first);
       if (overlapping.length > 1 &&
-          referenceRect.left <= overlapping.first.rect.center.dx &&
-          referenceRect.right >= overlapping[1].rect.center.dx &&
-          referenceRect.width > overlapping.first.rect.width * 1.5) {
+          referenceRect.left <= firstRect.center.dx &&
+          referenceRect.right >= cache.rectOf(overlapping[1]).center.dx &&
+          referenceRect.width > firstRect.width * 1.5) {
         return overlapping.first;
       }
       overlapping.sort(
         (FocusNode a, FocusNode b) =>
-            (a.rect.center.dx - referenceRect.center.dx).abs().compareTo(
-              (b.rect.center.dx - referenceRect.center.dx).abs(),
-            ),
+            (cache.rectOf(a).center.dx - referenceRect.center.dx)
+                .abs()
+                .compareTo(
+                  (cache.rectOf(b).center.dx - referenceRect.center.dx).abs(),
+                ),
       );
       return overlapping.first;
     }
@@ -741,10 +892,12 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     }
 
     row.sort((FocusNode a, FocusNode b) {
-      final int cmp = horizontalGap(a.rect).compareTo(horizontalGap(b.rect));
+      final Rect ra = cache.rectOf(a);
+      final Rect rb = cache.rectOf(b);
+      final int cmp = horizontalGap(ra).compareTo(horizontalGap(rb));
       if (cmp != 0) return cmp;
-      return (a.rect.center.dx - referenceRect.center.dx).abs().compareTo(
-        (b.rect.center.dx - referenceRect.center.dx).abs(),
+      return (ra.center.dx - referenceRect.center.dx).abs().compareTo(
+        (rb.center.dx - referenceRect.center.dx).abs(),
       );
     });
     return row.first;
@@ -758,24 +911,26 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     required ScrollableState? focusedHorizScrollable,
     required List<FocusNode> allNodes,
     required TraversalDirection direction,
+    required _TvTraversalCache cache,
   }) {
     final bool isRight = direction == TraversalDirection.right;
 
     // 0. Support stepping between a ListTile container and its trailing
     // focusable descendant (e.g. refresh IconButton or Switch).
-    final Element? focusedListTile = _enclosingListTileOf(focusedChild);
+    final Element? focusedListTile = cache.enclosingListTileOf(focusedChild);
     if (focusedListTile != null) {
       if (isRight) {
         final List<FocusNode> trailingChildren = allNodes.where((
           FocusNode node,
         ) {
           return node.ancestors.contains(focusedChild) &&
-              _enclosingListTileOf(node) == focusedListTile &&
-              node.rect.center.dx > target.center.dx + 8.0;
+              cache.enclosingListTileOf(node) == focusedListTile &&
+              cache.rectOf(node).center.dx > target.center.dx + 8.0;
         }).toList();
         if (trailingChildren.isNotEmpty) {
           trailingChildren.sort(
-            (FocusNode a, FocusNode b) => a.rect.left.compareTo(b.rect.left),
+            (FocusNode a, FocusNode b) =>
+                cache.rectOf(a).left.compareTo(cache.rectOf(b).left),
           );
           return trailingChildren.first;
         }
@@ -784,12 +939,13 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           FocusNode node,
         ) {
           return focusedChild.ancestors.contains(node) &&
-              _enclosingListTileOf(node) == focusedListTile &&
-              node.rect.center.dx < target.center.dx - 8.0;
+              cache.enclosingListTileOf(node) == focusedListTile &&
+              cache.rectOf(node).center.dx < target.center.dx - 8.0;
         }).toList();
         if (parentContainers.isNotEmpty) {
           parentContainers.sort(
-            (FocusNode a, FocusNode b) => b.rect.left.compareTo(a.rect.left),
+            (FocusNode a, FocusNode b) =>
+                cache.rectOf(b).left.compareTo(cache.rectOf(a).left),
           );
           return parentContainers.first;
         }
@@ -799,6 +955,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
       allNodes,
       focusedChild,
+      cache,
     );
 
     // 1. If currently inside a horizontal scrollable, traverse remaining items
@@ -807,10 +964,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       final List<FocusNode> sameHorizScrollable = primaryNodes.where((
         FocusNode node,
       ) {
-        if (_horizontalScrollableOf(node) != focusedHorizScrollable) {
+        if (cache.horizontalScrollableOf(node) != focusedHorizScrollable) {
           return false;
         }
-        final Rect r = node.rect;
+        final Rect r = cache.rectOf(node);
         final bool sameRow =
             r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
         if (!sameRow) return false;
@@ -820,18 +977,20 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       }).toList();
       if (sameHorizScrollable.isNotEmpty) {
         sameHorizScrollable.sort((FocusNode a, FocusNode b) {
+          final Rect ra = cache.rectOf(a);
+          final Rect rb = cache.rectOf(b);
           final double distA = math.max(
             0.0,
-            isRight ? a.rect.left - target.right : target.left - a.rect.right,
+            isRight ? ra.left - target.right : target.left - ra.right,
           );
           final double distB = math.max(
             0.0,
-            isRight ? b.rect.left - target.right : target.left - b.rect.right,
+            isRight ? rb.left - target.right : target.left - rb.right,
           );
           final int cmp = distA.compareTo(distB);
           if (cmp != 0) return cmp;
-          return (a.rect.center.dy - target.center.dy).abs().compareTo(
-            (b.rect.center.dy - target.center.dy).abs(),
+          return (ra.center.dy - target.center.dy).abs().compareTo(
+            (rb.center.dy - target.center.dy).abs(),
           );
         });
         return sameHorizScrollable.first;
@@ -841,26 +1000,27 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final List<FocusNode> directionalNodes = primaryNodes.where((
       FocusNode node,
     ) {
+      final Rect nr = cache.rectOf(node);
       final bool inHorizDirection = isRight
-          ? node.rect.center.dx >= target.right
-          : node.rect.center.dx <= target.left;
+          ? nr.center.dx >= target.right
+          : nr.center.dx <= target.left;
       if (!inHorizDirection) return false;
-      final ScrollableState? nodeScrollable = _verticalScrollableOf(node);
+      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
       if (nodeScrollable != null && nodeScrollable != focusedScrollable) {
-        final Rect? nodeScrollableRect = _scrollableRect(nodeScrollable);
+        final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
         if (nodeScrollableRect != null &&
-            !_isVisibleInScrollable(node, nodeScrollableRect)) {
+            !_isRectVisibleInScrollable(nr, nodeScrollableRect)) {
           return false;
         }
       }
-      final ScrollableState? nodeHorizScrollable = _horizontalScrollableOf(
+      final ScrollableState? nodeHorizScrollable = cache.horizontalScrollableOf(
         node,
       );
       if (nodeHorizScrollable != null &&
           nodeHorizScrollable != focusedHorizScrollable) {
-        final Rect? horizRect = _scrollableRect(nodeHorizScrollable);
+        final Rect? horizRect = cache.scrollableRect(nodeHorizScrollable);
         if (horizRect != null &&
-            !_isVisibleHorizontallyInScrollable(node, horizRect)) {
+            !_isRectVisibleHorizontallyInScrollable(nr, horizRect)) {
           return false;
         }
       }
@@ -871,28 +1031,30 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
     // 2. Prefer candidates on the same visual row (vertically overlapping target).
     final List<FocusNode> inBand = directionalNodes.where((FocusNode node) {
-      final Rect r = node.rect;
+      final Rect r = cache.rectOf(node);
       return r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
     }).toList();
 
     if (inBand.isNotEmpty) {
       inBand.sort((FocusNode a, FocusNode b) {
+        final Rect ra = cache.rectOf(a);
+        final Rect rb = cache.rectOf(b);
         final double distA = math.max(
           0.0,
-          isRight ? a.rect.left - target.right : target.left - a.rect.right,
+          isRight ? ra.left - target.right : target.left - ra.right,
         );
         final double distB = math.max(
           0.0,
-          isRight ? b.rect.left - target.right : target.left - b.rect.right,
+          isRight ? rb.left - target.right : target.left - rb.right,
         );
         final int cmp = distA.compareTo(distB);
         if (cmp != 0) return cmp;
-        final int centerCmp = (a.rect.center.dx - target.center.dx)
-            .abs()
-            .compareTo((b.rect.center.dx - target.center.dx).abs());
+        final int centerCmp = (ra.center.dx - target.center.dx).abs().compareTo(
+          (rb.center.dx - target.center.dx).abs(),
+        );
         if (centerCmp != 0) return centerCmp;
-        return (a.rect.center.dy - target.center.dy).abs().compareTo(
-          (b.rect.center.dy - target.center.dy).abs(),
+        return (ra.center.dy - target.center.dy).abs().compareTo(
+          (rb.center.dy - target.center.dy).abs(),
         );
       });
       return inBand.first;
@@ -900,32 +1062,32 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
     // 3. Only fall back to out-of-band candidates when crossing between
     // genuinely side-by-side panels (not vertically stacked rows/sections).
-    final Element? focusedWrap = _enclosingWrapOf(focusedChild);
+    final Element? focusedWrap = cache.enclosingWrapOf(focusedChild);
     final List<FocusNode> sideBySide = directionalNodes.where((FocusNode node) {
-      final ScrollableState? nodeScrollable = _verticalScrollableOf(node);
+      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
       if (focusedScrollable != null && nodeScrollable == focusedScrollable) {
         return false;
       }
-      if (focusedWrap != null && _enclosingWrapOf(node) == focusedWrap) {
+      if (focusedWrap != null && cache.enclosingWrapOf(node) == focusedWrap) {
         return false;
       }
-      if (node.rect.right > target.left + 1.0 &&
-          node.rect.left < target.right - 1.0) {
+      final Rect nr = cache.rectOf(node);
+      if (nr.right > target.left + 1.0 && nr.left < target.right - 1.0) {
         return false;
       }
       if (focusedScrollableRect != null) {
         final bool overlapsFocusedScrollableVertically =
-            node.rect.center.dy >= focusedScrollableRect.top + 4.0 &&
-            node.rect.center.dy <= focusedScrollableRect.bottom - 4.0;
+            nr.center.dy >= focusedScrollableRect.top + 4.0 &&
+            nr.center.dy <= focusedScrollableRect.bottom - 4.0;
         final bool outsideFocusedScrollableHorizontally = isRight
-            ? node.rect.left >= focusedScrollableRect.right - 2.0
-            : node.rect.right <= focusedScrollableRect.left + 2.0;
+            ? nr.left >= focusedScrollableRect.right - 2.0
+            : nr.right <= focusedScrollableRect.left + 2.0;
         if (!overlapsFocusedScrollableVertically ||
             !outsideFocusedScrollableHorizontally) {
           return false;
         }
       }
-      final Rect? nodeScrollableRect = _scrollableRect(nodeScrollable);
+      final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
       if (nodeScrollableRect != null) {
         final bool targetOverlapsNodeScrollableVertically =
             target.center.dy >= nodeScrollableRect.top + 4.0 &&
@@ -939,16 +1101,17 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         }
       }
       if (focusedScrollable == null && nodeScrollable == null) {
-        final double minY = math.min(target.bottom, node.rect.bottom);
-        final double maxY = math.max(target.top, node.rect.top);
-        final double gapLeft = isRight ? target.right : node.rect.right;
-        final double gapRight = isRight ? node.rect.left : target.left;
+        final double minY = math.min(target.bottom, nr.bottom);
+        final double maxY = math.max(target.top, nr.top);
+        final double gapLeft = isRight ? target.right : nr.right;
+        final double gapRight = isRight ? nr.left : target.left;
         final bool separatedByIntermediateSection = primaryNodes.any((
           FocusNode other,
         ) {
           if (other == node) return false;
           final Rect r =
-              _scrollableRect(_verticalScrollableOf(other)) ?? other.rect;
+              cache.scrollableRect(cache.verticalScrollableOf(other)) ??
+              cache.rectOf(other);
           final bool verticallyBetween =
               r.center.dy > minY - 2.0 && r.center.dy < maxY + 2.0;
           final bool spansAcrossGap =
@@ -963,16 +1126,18 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     if (sideBySide.isEmpty) return null;
 
     sideBySide.sort((FocusNode a, FocusNode b) {
-      final int vCmp = (a.rect.center.dy - target.center.dy).abs().compareTo(
-        (b.rect.center.dy - target.center.dy).abs(),
+      final Rect ra = cache.rectOf(a);
+      final Rect rb = cache.rectOf(b);
+      final int vCmp = (ra.center.dy - target.center.dy).abs().compareTo(
+        (rb.center.dy - target.center.dy).abs(),
       );
       if (vCmp != 0) return vCmp;
       final double hDistA = isRight
-          ? a.rect.left - target.right
-          : target.left - a.rect.right;
+          ? ra.left - target.right
+          : target.left - ra.right;
       final double hDistB = isRight
-          ? b.rect.left - target.right
-          : target.left - b.rect.right;
+          ? rb.left - target.right
+          : target.left - rb.right;
       return hDistA.compareTo(hDistB);
     });
     return sideBySide.first;
@@ -1034,14 +1199,20 @@ class TvNavigation extends StatefulWidget {
 }
 
 class _TvNavigationState extends State<TvNavigation> {
+  static const int _kDirectionalRepeatMinIntervalMs = 45;
+
   final GlobalKey _key = GlobalKey();
   final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
   late final Map<Type, Action<Intent>> _actions = <Type, Action<Intent>>{
     DirectionalFocusIntent: _TvDirectionalFocusAction(_policy),
     _TvVerticalFocusIntent: _TvVerticalFocusAction(_policy),
   };
-  Rect? _rect;
+  final ValueNotifier<Rect?> _rectNotifier = ValueNotifier<Rect?>(null);
+  late final Stopwatch _repeatClock =
+      WidgetsBinding.instance.samplingClock.stopwatch()..start();
+  int? _lastDirectionalStepMs;
   bool _rectSyncScheduled = false;
+  bool _focusSyncScheduled = false;
 
   @override
   void initState() {
@@ -1059,6 +1230,7 @@ class _TvNavigationState extends State<TvNavigation> {
   @override
   void dispose() {
     FocusManager.instance.removeListener(_onFocus);
+    _rectNotifier.dispose();
     super.dispose();
   }
 
@@ -1094,12 +1266,18 @@ class _TvNavigationState extends State<TvNavigation> {
         (a.bottom - b.bottom).abs() < 0.5;
   }
 
+  void _updateRect(Rect? next) {
+    if (!_sameRect(next, _rectNotifier.value)) {
+      _rectNotifier.value = next;
+    }
+  }
+
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv || _rectSyncScheduled) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
     if (node is FocusScopeNode) return;
     final Rect? rect = _computeFocusedRect(node);
-    if (_sameRect(rect, _rect)) return;
+    if (_sameRect(rect, _rectNotifier.value)) return;
     _rectSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _rectSyncScheduled = false;
@@ -1107,15 +1285,15 @@ class _TvNavigationState extends State<TvNavigation> {
       final Rect? latest = _computeFocusedRect(
         FocusManager.instance.primaryFocus,
       );
-      if (!_sameRect(latest, _rect)) {
-        setState(() => _rect = latest);
-      }
+      _updateRect(latest);
     });
   }
 
   void _onFocus() {
-    if (!TvPlatform.isTv) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    if (!TvPlatform.isTv || _focusSyncScheduled) return;
+    _focusSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusSyncScheduled = false;
       if (!mounted) return;
       final FocusNode? node = FocusManager.instance.primaryFocus;
       if (node is FocusScopeNode) {
@@ -1127,28 +1305,54 @@ class _TvNavigationState extends State<TvNavigation> {
         } else {
           node.nextFocus();
         }
-        if (_rect != null) setState(() => _rect = null);
+        _updateRect(null);
         return;
       }
       final BuildContext? context = node?.context;
-      if (context != null && context.mounted && node != null && node is! FocusScopeNode) {
+      if (context != null &&
+          context.mounted &&
+          node != null &&
+          node is! FocusScopeNode) {
         TvNavigationObserver.rememberFocusedNode(node);
-        await Scrollable.ensureVisible(
-          context,
-          duration: const Duration(milliseconds: 120),
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-        );
+        if (!_policy.consumePolicyScrolledNode(node)) {
+          Scrollable.ensureVisible(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+          );
+        }
       }
       if (!mounted || node != FocusManager.instance.primaryFocus) return;
-      final Rect? rect = _computeFocusedRect(node);
-      setState(() => _rect = rect);
+      _updateRect(_computeFocusedRect(node));
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
+  static bool _isDirectionalKey(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.arrowUp ||
+      key == LogicalKeyboardKey.arrowDown ||
+      key == LogicalKeyboardKey.arrowLeft ||
+      key == LogicalKeyboardKey.arrowRight;
+
   KeyEventResult _handleKeyEvent(FocusNode _, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final LogicalKeyboardKey key = event.logicalKey;
+    if (_isDirectionalKey(key)) {
+      if (event is KeyDownEvent || event is KeyRepeatEvent) {
+        if (_policy.isTraversalLockedThisFrame) {
+          return KeyEventResult.handled;
+        }
+        final int nowMs = _repeatClock.elapsedMilliseconds;
+        if (event is KeyRepeatEvent &&
+            _lastDirectionalStepMs != null &&
+            nowMs - _lastDirectionalStepMs! <
+                _kDirectionalRepeatMinIntervalMs) {
+          return KeyEventResult.handled;
+        }
+        _lastDirectionalStepMs = nowMs;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final bool isSelectKey =
         key == LogicalKeyboardKey.select ||
         key == LogicalKeyboardKey.enter ||
@@ -1168,32 +1372,32 @@ class _TvNavigationState extends State<TvNavigation> {
       data: MediaQuery.of(
         context,
       ).copyWith(navigationMode: NavigationMode.directional),
-      child: Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        onKeyEvent: _handleKeyEvent,
-        child: Shortcuts(
-          shortcuts: const <ShortcutActivator, Intent>{
-            SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
-            SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
-            SingleActivator(LogicalKeyboardKey.arrowUp): _TvVerticalFocusIntent(
-              TraversalDirection.up,
-            ),
-            SingleActivator(LogicalKeyboardKey.arrowDown):
-                _TvVerticalFocusIntent(
-                  TraversalDirection.down,
-                ),
-            SingleActivator(LogicalKeyboardKey.arrowLeft):
-                _TvVerticalFocusIntent(
-                  TraversalDirection.left,
-                ),
-            SingleActivator(LogicalKeyboardKey.arrowRight):
-                _TvVerticalFocusIntent(
-                  TraversalDirection.right,
-                ),
-          },
-          child: Actions(
-            actions: _actions,
+      child: Shortcuts(
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): _TvVerticalFocusIntent(
+            TraversalDirection.up,
+          ),
+          SingleActivator(LogicalKeyboardKey.arrowDown):
+              _TvVerticalFocusIntent(
+                TraversalDirection.down,
+              ),
+          SingleActivator(LogicalKeyboardKey.arrowLeft):
+              _TvVerticalFocusIntent(
+                TraversalDirection.left,
+              ),
+          SingleActivator(LogicalKeyboardKey.arrowRight):
+              _TvVerticalFocusIntent(
+                TraversalDirection.right,
+              ),
+        },
+        child: Actions(
+          actions: _actions,
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: _handleKeyEvent,
             child: Stack(
               key: _key,
               fit: StackFit.expand,
@@ -1202,21 +1406,20 @@ class _TvNavigationState extends State<TvNavigation> {
                   policy: _policy,
                   child: widget.child,
                 ),
-                if (_rect case final Rect rect)
-                  Positioned.fromRect(
-                    rect: rect.inflate(2),
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: const Color(0xFFFFD166),
-                            width: 3,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: ValueListenableBuilder<Rect?>(
+                        valueListenable: _rectNotifier,
+                        builder: (BuildContext context, Rect? rect, _) {
+                          return CustomPaint(
+                            painter: _TvFocusRingPainter(rect),
+                          );
+                        },
                       ),
                     ),
                   ),
+                ),
               ],
             ),
           ),
@@ -1224,6 +1427,32 @@ class _TvNavigationState extends State<TvNavigation> {
       ),
     );
   }
+}
+
+class _TvFocusRingPainter extends CustomPainter {
+  const _TvFocusRingPainter(this.rect);
+
+  final Rect? rect;
+
+  static final Paint _borderPaint = Paint()
+    ..color = const Color(0xFFFFD166)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 3.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect? r = rect;
+    if (r == null || r.isEmpty) return;
+    final RRect rrect = RRect.fromRectAndRadius(
+      r.inflate(2.0),
+      const Radius.circular(12.0),
+    );
+    canvas.drawRRect(rrect, _borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(_TvFocusRingPainter oldDelegate) =>
+      !_TvNavigationState._sameRect(rect, oldDelegate.rect);
 }
 
 /// Route observer that:
