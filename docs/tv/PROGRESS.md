@@ -14,9 +14,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M1: Platform** | Epic 1.1 | `1.1.1` | Implement `TvBridge.kt` & Leanback Manifest | ✅ Done | `198612d11` |
 | **M1: Platform** | Epic 1.2 | `1.2.1` | Create `lib/tv/tv_platform.dart` (Hive seeding + Soft-keyboard gate) | ✅ Done | `c6d8e2c16` |
 | **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ✅ Done | `35ceaa5c3` |
-| **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ✅ Done | *(this commit)* |
-| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ⏳ Next | — |
-| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ⏸️ Pending | — |
+| **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ✅ Done | `2b51b7b32` |
+| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ✅ Done | *(this commit)* |
+| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ⏳ Next | — |
 | **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ⏸️ Pending | — |
@@ -78,11 +78,21 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze lib/utils/connectivity_utils.dart` passed with `No issues found!`.
 
 ### [2026-10-21] Task 2.1.1: Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` & `TvNavigation`)
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`2b51b7b32`)
 * **Files Changed**:
   * `[NEW] lib/tv/tv_navigation.dart`
 * **Changes Summary**:
   * Implemented `TvFocusTraversalPolicy` with 2D row/column directional traversal, `RenderBox` ancestor size & viewport intersection introspection (eliminating edits to `animated_height.dart` and `app_bar_ani.dart`), nested focus deduplication, micro-button (`<= 36x36`) filtering, scrollable boundary/dialog escape, and `consumeKeyboardToken()` on focus transition.
   * Implemented `TvNavigation` wrapper setting `NavigationMode.directional`, intercepting `Select`/`Enter` on focused `EditableText` nodes to invoke `TvPlatform.requestSoftKeyboard()`, and rendering the `#FFFFD166` focus ring overlay.
+* **Verification**:
+  * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.
+
+### [2026-10-21] Task 2.2.1: Add `TvNavigationObserver` with Route Focus Restore & Login QR Auto-Tab
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+* **Changes Summary**:
+  * Added `TvNavigationObserver` using `Expando<FocusNode>` to memorize the last active `FocusNode` per `ModalRoute` and restore focus when popping routes/dialogs.
+  * Added automatic post-frame tab switching for `/loginPage` on TV via `Get.find<LoginPageController>().tabController.animateTo(2)` (`扫码登录`), requiring **0 edits** to `lib/pages/login/`.
 * **Verification**:
   * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.

@@ -2,9 +2,11 @@ import 'dart:math' as math;
 
 import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
     as custom_list_tile;
+import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
@@ -1048,7 +1050,8 @@ class _TvNavigationState extends State<TvNavigation> {
         return;
       }
       final BuildContext? context = node?.context;
-      if (context != null && context.mounted && node is! FocusScopeNode) {
+      if (context != null && context.mounted && node != null && node is! FocusScopeNode) {
+        TvNavigationObserver.rememberFocusedNode(node);
         await Scrollable.ensureVisible(
           context,
           duration: const Duration(milliseconds: 120),
@@ -1139,5 +1142,83 @@ class _TvNavigationState extends State<TvNavigation> {
         ),
       ),
     );
+  }
+}
+
+/// Route observer that:
+/// 1. Memorizes the last focused [FocusNode] for each [Route] before pushing a
+///    new route or dialog and restores it when popping back.
+/// 2. Automatically switches `/loginPage` to tab index `2` (`扫码登录`) on TV
+///    via `Get.find<LoginPageController>()` without touching `lib/pages/login/`.
+class TvNavigationObserver extends NavigatorObserver {
+  static final Expando<FocusNode> _savedFocusByRoute = Expando<FocusNode>(
+    'tvSavedFocusByRoute',
+  );
+
+  /// Records [node] as the last active focus node for its enclosing [ModalRoute].
+  static void rememberFocusedNode(FocusNode node) {
+    if (node is FocusScopeNode) return;
+    final BuildContext? context = node.context;
+    if (context == null || !context.mounted) return;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null) {
+      _savedFocusByRoute[route] = node;
+    }
+  }
+
+  static void _switchLoginPageToQrTab({int remainingRetries = 2}) {
+    if (!TvPlatform.isTv) return;
+    if (Get.isRegistered<LoginPageController>()) {
+      final LoginPageController ctr = Get.find<LoginPageController>();
+      if (ctr.tabController.index != 2) {
+        ctr.tabController.animateTo(2);
+      }
+      return;
+    }
+    if (remainingRetries > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _switchLoginPageToQrTab(remainingRetries: remainingRetries - 1);
+      });
+    }
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    if (!TvPlatform.isTv) return;
+    if (previousRoute != null) {
+      final FocusNode? current = FocusManager.instance.primaryFocus;
+      if (current != null &&
+          current is! FocusScopeNode &&
+          (current.context?.mounted ?? false)) {
+        final ModalRoute<dynamic>? owner = ModalRoute.of(current.context!);
+        if (owner == null || owner == previousRoute) {
+          _savedFocusByRoute[previousRoute] = current;
+        }
+      }
+    }
+
+    if (route.settings.name == '/loginPage') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _switchLoginPageToQrTab();
+      });
+    }
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    if (!TvPlatform.isTv || previousRoute == null) return;
+    final FocusNode? savedNode = _savedFocusByRoute[previousRoute];
+    if (savedNode == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (savedNode.canRequestFocus &&
+          (savedNode.context?.mounted ?? false) &&
+          TvFocusTraversalPolicy.isEffectivelyFocusable(savedNode)) {
+        savedNode
+          ..requestFocus()
+          ..consumeKeyboardToken();
+      }
+    });
   }
 }
