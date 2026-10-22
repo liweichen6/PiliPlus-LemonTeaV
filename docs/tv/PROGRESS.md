@@ -16,9 +16,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ✅ Done | `35ceaa5c3` |
 | **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ✅ Done | `2b51b7b32` |
 | **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ✅ Done | `540aaa9f5` |
-| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ✅ Done | *(this commit)* |
-| **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ⏳ Next | — |
-| **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ⏸️ Pending | — |
+| **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ✅ Done | `d053ad2e5` |
+| **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ✅ Done | *(this commit)* |
+| **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ⏳ Next | — |
 | **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ⏸️ Pending | — |
 | **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ⏸️ Pending | — |
@@ -98,7 +98,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.
 
 ### [2026-10-21] Task 2.2.2: Wire `TvPlatform` & `TvNavigation` into `lib/main.dart`
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`d053ad2e5`)
 * **Files Changed**:
   * `[MODIFY] lib/main.dart`
 * **Changes Summary**:
@@ -107,3 +107,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Wrapped the widget returned by `MyApp._builder` in `TvNavigation(onBack: _onBack, child: child)` when `TvPlatform.isTv` is true.
 * **Verification**:
   * `flutter analyze lib/main.dart` passed with `No issues found!`.
+
+### [2026-10-21] Task 3.1.1: Create `lib/scripts/tv_gesture_detector.patch`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[NEW] lib/scripts/tv_gesture_detector.patch`
+* **Changes Summary**:
+  * Patched `GestureDetector.build` in `packages/flutter/lib/src/widgets/gesture_detector.dart` so standalone `GestureDetector` widgets (`!excludeFromSemantics && (onTap != null || onLongPress != null)`) in `NavigationMode.directional` wrap `RawGestureDetector` in a `Focus` node that activates `onTap` on `KeyDownEvent` and `onLongPress` on `KeyRepeatEvent` for `Select`/`Enter` when holding primary focus.
+* **Verification**:
+  * `git apply --check lib/scripts/tv_gesture_detector.patch` against `$FLUTTER_ROOT` passed with exit code `0`.
+

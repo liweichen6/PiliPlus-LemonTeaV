@@ -1,0 +1,60 @@
+diff --git a/packages/flutter/lib/src/widgets/gesture_detector.dart b/packages/flutter/lib/src/widgets/gesture_detector.dart
+--- a/packages/flutter/lib/src/widgets/gesture_detector.dart
++++ b/packages/flutter/lib/src/widgets/gesture_detector.dart
+@@ -12,7 +12,10 @@ import 'package:flutter/foundation.dart';
+ import 'package:flutter/gestures.dart';
+ import 'package:flutter/rendering.dart';
++import 'package:flutter/services.dart';
+ 
+ import 'basic.dart';
++import 'focus_manager.dart';
++import 'focus_scope.dart';
+ import 'framework.dart';
+ import 'media_query.dart';
+ import 'scroll_configuration.dart';
+@@ -1260,13 +1263,44 @@ class GestureDetector extends StatelessWidget {
+             },
+           );
+     }
+ 
+-    return RawGestureDetector(
++    Widget result = RawGestureDetector(
+       gestures: gestures,
+       behavior: behavior,
+       excludeFromSemantics: excludeFromSemantics,
+       child: child,
+     );
++    if (!excludeFromSemantics &&
++        (onTap != null || onLongPress != null) &&
++        MediaQuery.maybeNavigationModeOf(context) == NavigationMode.directional) {
++      result = Focus(
++        onKeyEvent: (FocusNode node, KeyEvent event) {
++          if (!node.hasPrimaryFocus) {
++            return KeyEventResult.ignored;
++          }
++          final LogicalKeyboardKey key = event.logicalKey;
++          final bool isSelectKey =
++              key == LogicalKeyboardKey.select ||
++              key == LogicalKeyboardKey.enter ||
++              key == LogicalKeyboardKey.numpadEnter ||
++              key == LogicalKeyboardKey.gameButtonA;
++          if (!isSelectKey) {
++            return KeyEventResult.ignored;
++          }
++          if (event is KeyDownEvent && onTap != null) {
++            onTap!();
++            return KeyEventResult.handled;
++          }
++          if (event is KeyRepeatEvent && onLongPress != null) {
++            onLongPress!();
++            return KeyEventResult.handled;
++          }
++          return KeyEventResult.ignored;
++        },
++        child: result,
++      );
++    }
++    return result;
+   }
+ 
+   @override
