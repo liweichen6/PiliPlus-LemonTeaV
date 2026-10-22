@@ -22,9 +22,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ✅ Done | `fffaee51a` |
 | **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ✅ Done | `142f5ae6d` |
 | **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ✅ Done | `cbf030b75` |
-| **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ✅ Done | *(this commit)* |
-| **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ⏳ Next | — |
-| **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ⏸️ Pending | — |
+| **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ✅ Done | `e65f57eb4` |
+| **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ✅ Done | *(this commit)* |
+| **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ⏳ Next | — |
 
 ---
 
@@ -162,10 +162,22 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze lib/tv/tv_player_hud.dart` passed with `No issues found!`.
 
 ### [2026-10-21] Task 4.1.2: Add `TvPlayerHud` Micro-Hook in `lib/pages/video/widgets/player_focus.dart`
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`e65f57eb4`)
 * **Files Changed**:
   * `[MODIFY] lib/pages/video/widgets/player_focus.dart`
 * **Changes Summary**:
   * Added early return in `PlayerFocus.build(BuildContext context)` wrapping `child` in `TvPlayerHud` when `TvPlatform.isTv` is true.
 * **Verification**:
   * `flutter analyze lib/pages/video/widgets/player_focus.dart` passed with `No issues found!`.
+
+### [2026-10-21] Task 5.1.1: Update `.github/workflows/` to Sync `lemonteaau/PiliPlus` & Build Android APKs
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] .github/workflows/sync-upstream-build.yml`
+  * `[MODIFY] .github/workflows/build.yml`
+* **Changes Summary**:
+  * Updated `sync-upstream-build.yml` to fetch and merge `https://github.com/lemonteaau/PiliPlus.git` (`main`) and build Android APKs only (removing iOS, Windows, macOS, and Linux jobs).
+  * Updated `build.yml` `workflow_dispatch` inputs so Android APK builds are enabled by default and desktop/iOS targets default to `false`.
+* **Verification**:
+  * YAML syntax check passed for both workflow files.
+
