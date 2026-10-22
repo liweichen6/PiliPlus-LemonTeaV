@@ -13,9 +13,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M0: Docs** | Epic 0.1 | `0.1.1` | Create `docs/tv/` Planning Suite | ✅ Done | `da93d93b2` |
 | **M1: Platform** | Epic 1.1 | `1.1.1` | Implement `TvBridge.kt` & Leanback Manifest | ✅ Done | `198612d11` |
 | **M1: Platform** | Epic 1.2 | `1.2.1` | Create `lib/tv/tv_platform.dart` (Hive seeding + Soft-keyboard gate) | ✅ Done | `c6d8e2c16` |
-| **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ✅ Done | *(this commit)* |
-| **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ⏳ Next | — |
-| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ⏸️ Pending | — |
+| **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ✅ Done | `35ceaa5c3` |
+| **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ✅ Done | *(this commit)* |
+| **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ⏳ Next | — |
 | **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ⏸️ Pending | — |
 | **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ⏸️ Pending | — |
@@ -69,10 +69,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze lib/tv/tv_platform.dart` passed with `No issues found!`.
 
 ### [2026-10-21] Task 1.2.2: Support Wired Ethernet in `ConnectivityUtils.isWiFi`
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`35ceaa5c3`)
 * **Files Changed**:
   * `[MODIFY] lib/utils/connectivity_utils.dart`
 * **Changes Summary**:
   * Updated `ConnectivityUtils.isWiFi` to allow `TvPlatform.isTv` alongside `PlatformUtils.isMobile` and treat `ConnectivityResult.ethernet` as broadband when `TvPlatform.isTv` is true.
 * **Verification**:
   * `flutter analyze lib/utils/connectivity_utils.dart` passed with `No issues found!`.
+
+### [2026-10-21] Task 2.1.1: Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` & `TvNavigation`)
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[NEW] lib/tv/tv_navigation.dart`
+* **Changes Summary**:
+  * Implemented `TvFocusTraversalPolicy` with 2D row/column directional traversal, `RenderBox` ancestor size & viewport intersection introspection (eliminating edits to `animated_height.dart` and `app_bar_ani.dart`), nested focus deduplication, micro-button (`<= 36x36`) filtering, scrollable boundary/dialog escape, and `consumeKeyboardToken()` on focus transition.
+  * Implemented `TvNavigation` wrapper setting `NavigationMode.directional`, intercepting `Select`/`Enter` on focused `EditableText` nodes to invoke `TvPlatform.requestSoftKeyboard()`, and rendering the `#FFFFD166` focus ring overlay.
+* **Verification**:
+  * `flutter analyze lib/tv/tv_navigation.dart` passed with `No issues found!`.
