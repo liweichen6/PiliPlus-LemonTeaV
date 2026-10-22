@@ -25,6 +25,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ✅ Done | `e65f57eb4` |
 | **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ✅ Done | `758b6fa5b` |
 | **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ✅ Done | `9da6200ed` |
+| **M6: D-Pad Perf** | Epic 6.1 | `6.1.1` | Document Milestone 6 D-pad performance hardening plan in `docs/tv/` | ✅ Done | `HEAD` |
+| **M6: D-Pad Perf** | Epic 6.1 | `6.1.2` | Harden `TvFocusTraversalPolicy` & `TvNavigation` for high-frequency D-pad input | ⏳ Pending | - |
+| **M6: D-Pad Perf** | Epic 6.1 | `6.1.3` | Add rapid D-pad stress & zero-rebuild tests and verify on dual TV devices | ⏳ Pending | - |
 
 ---
 
@@ -206,4 +209,14 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub` passed all 66 tests across the repository (`test/tv_navigation_test.dart` + existing test suites).
   * `flutter analyze --no-pub` passed with `No issues found!`.
   * Built release APKs (`flutter build apk --release --split-per-abi --no-pub`) and verified installation, Leanback launcher resolution, cold/warm launch, fullscreen auto-enter, `TvPlayerHud` overlay/dialogs, single-press Back HUD dismissal and fullscreen-to-split-screen transition, and D-pad navigation with zero runtime exceptions on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`).
+
+### [2026-10-22] Task 6.1.1: Document Milestone 6 Plan in `docs/tv/`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Changes Summary**:
+  * Added **Milestone 6: D-Pad High-Frequency Input & Traversal Performance Hardening** (`Epic 6.1`, `Task 6.1.1`, `Task 6.1.2`, `Task 6.1.3`) to `docs/tv/PLAN.md` and `docs/tv/PROGRESS.md`.
+  * Documented the 4 root causes of rapid D-pad lag/ANR (root widget rebuilds via `_TvNavigationState.setState`, duplicate/competing `120ms` `Scrollable.ensureVisible` animations in `_onFocus`, uncached $O(N^2 \times D)$ `localToGlobal` and `visitAncestorElements` walks in `TvFocusTraversalPolicy.inDirection`, and unthrottled same-frame/key-repeat bursts) and the self-contained remediation architecture.
+
 

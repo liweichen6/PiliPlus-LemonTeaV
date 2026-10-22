@@ -18,6 +18,7 @@
 | **M3: Build-Time SDK & Widget Patch Pipeline** | Epic 3.1, Epic 3.2 | Task 3.1.1, Task 3.1.2, Task 3.1.3, Task 3.2.1 | Framework-level TV patches (`tv_gesture_detector.patch`, `tv_radio_group.patch`, `tv_ink_well.patch`) integrated into `lib/scripts/patch.ps1` + local `tool/tv_patch.sh` helper. |
 | **M4: Self-Contained 10-Foot Player HUD** | Epic 4.1 | Task 4.1.1, Task 4.1.2 | `lib/tv/tv_player_hud.dart` with GetX/controller auto-discovery (transport controls, seek acceleration, danmaku/quality/episode/speed OSD, triple-like) and 4-line hook in `player_focus.dart`. |
 | **M5: CI/CD Upstream Sync & End-to-End Verification** | Epic 5.1, Epic 5.2 | Task 5.1.1, Task 5.2.1 | Configure `.github/workflows/sync-upstream-build.yml` to sync from `lemonteaau/PiliPlus` & build Android APKs, add unit tests for `lib/tv/`, and verify full APK build + Android TV D-pad flows. |
+| **M6: D-Pad High-Frequency Input & Traversal Performance Hardening** | Epic 6.1 | Task 6.1.1, Task 6.1.2, Task 6.1.3 | Eliminate root widget rebuilds (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), deduplicate conflicting `120ms` `ensureVisible` animations, cache `O(N·D)` traversal metadata (`_TvTraversalCache`), throttle rapid D-pad repeats, and verify under high-frequency D-pad stress on both TV devices. |
 
 ---
 
@@ -278,3 +279,52 @@ Verify that all patches apply cleanly, `flutter analyze` and unit tests pass, re
     2. **Physical Android TV Device** via ADB (`$TV_DEVICE_ADDR`, matching its `ro.product.cpu.abi` ABI).
   * Record sanitized verification results in `docs/tv/PROGRESS.md` (with no IP addresses, ports, or local machine paths).
 * **Commit Message**: `test(tv): add TV control layer widget tests and complete dual-device verification`
+
+---
+
+## Milestone 6: D-Pad High-Frequency Input & Traversal Performance Hardening
+
+### Epic 6.1: Focus Traversal Caching, Overlay Isolation & Input Pacing
+Eliminate UI thread freezes, root widget rebuild storms, and Input Dispatching ANRs under rapid D-pad clicking or key-repeat holding while keeping all changes 100% self-contained inside `lib/tv/tv_navigation.dart` and `test/tv_navigation_test.dart`.
+
+#### Task 6.1.1: Document Milestone 6 Plan in `docs/tv/`
+* **Files**:
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Implementation Details**:
+  * Add Milestone 6 (`Epic 6.1`, `Task 6.1.1`, `Task 6.1.2`, `Task 6.1.3`) to `docs/tv/PLAN.md` and `docs/tv/PROGRESS.md`.
+* **Commit Message**: `docs(tv): add Milestone 6 D-pad input and traversal performance hardening plan`
+
+#### Task 6.1.2: Harden `TvFocusTraversalPolicy` & `TvNavigation` for High-Frequency D-Pad Input
+* **Files**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Implementation Details**:
+  * **Single-Pass Traversal Metadata Snapshot (`_TvNodeMeta` & `_TvTraversalCache`)**:
+    * Collect each candidate node's `rect`, `verticalScrollable`, `horizontalScrollable`, `enclosingListTile`, `enclosingInkResponse`, and `enclosingWrap` in a single `visitAncestorElements` walk per node at the start of `inDirection()`.
+    * Memoize ancestor `RenderBox` global bounds (`Map<RenderBox, Rect>`) and `ScrollableState` global rects (`Map<ScrollableState, Rect?>`) so `localToGlobal` is computed at most once per `RenderBox` per traversal pass.
+    * Refactor `inDirection`, `_filterOutEmbeddedSecondaryActions`, `_findVerticalCandidate`, `_pickFromClosestRow`, and `_findHorizontalCandidate` to perform $O(1)$ metadata lookups instead of repeated `node.rect` and `visitAncestorElements` walks.
+  * **Isolate Focus Ring Overlay (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`)**:
+    * Replace `Rect? _rect` and `_TvNavigationState.setState()` with `ValueNotifier<Rect?> _rectNotifier` driving a `Positioned.fill` → `IgnorePointer` → `RepaintBoundary` → `ValueListenableBuilder<Rect?>` → `CustomPaint(painter: _TvFocusRingPainter(rect))` layer so focus ring updates never rebuild `TvNavigation` or relayout the root `RenderStack`.
+  * **Deduplicate `_onFocus` & Eliminate Competing `120ms` Scroll Animations**:
+    * Guard `_onFocus` post-frame scheduling with `bool _focusSyncScheduled` so multiple `FocusManager` notifications in a single frame coalesce into one callback.
+    * Track the last node scrolled by `TvFocusTraversalPolicy._focusNode` (`FocusNode? _lastPolicyScrolledNode`) so `_onFocus` does not start a second conflicting `Scrollable.ensureVisible` animation on directional focus steps; use synchronous `ScrollPositionAlignmentPolicy.explicit` (`Duration.zero`) for non-policy focus changes.
+  * **Frame-Paced Directional Traversal & Key-Repeat Throttling**:
+    * Gate `TvFocusTraversalPolicy.inDirection` to at most one directional step per rendered frame (`_traversalLockedThisFrame`, cleared via `addPostFrameCallback`) so buffered same-frame key events cannot traverse on stale pre-layout `RenderBox` coordinates.
+    * Throttle held directional `KeyRepeatEvent`s (`arrowUp`, `arrowDown`, `arrowLeft`, `arrowRight`) in `_TvNavigationState._handleKeyEvent` to a `45ms` minimum interval (~22 steps/sec max repeat rate) while allowing distinct `KeyDownEvent` clicks to execute on every frame.
+* **Verification**:
+  * Run `flutter analyze --no-pub lib/tv/tv_navigation.dart`.
+* **Commit Message**: `perf(tv-focus): cache traversal metadata, isolate focus ring repaint, and pace rapid D-pad input`
+
+#### Task 6.1.3: Add Rapid D-Pad Stress & Zero-Root-Rebuild Tests and Verify on Dual TV Devices
+* **Files**:
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Implementation Details**:
+  * Add widget tests in `test/tv_navigation_test.dart` verifying:
+    1. Zero `TvNavigation` child rebuilds across multiple D-pad focus moves and list scrolls (`buildCount == 1`).
+    2. High-frequency D-pad burst & key-repeat throttling across a scrollable `ListView.builder` (30 rapid directional events with same-frame bursts and `KeyRepeatEvent`s) completing with zero exceptions and deterministic focus progression.
+  * Run `flutter analyze --no-pub` and `flutter test --no-pub`.
+  * Build split-ABI release APKs and stress-test rapid D-pad clicking and key-repeat holding on both `<vm-tv>` (`arm64-v8a`) and `<physical-tv>` (`armeabi-v7a`).
+* **Commit Message**: `test(tv-focus): add rapid D-pad stress and zero-rebuild tests and verify on TV devices`
+
