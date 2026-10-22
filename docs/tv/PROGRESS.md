@@ -53,6 +53,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M3: Docs & Hygiene** | Epic M3.2 | `M3.2` | Patch Revert Discipline, Atomic Git Commits & Sanitization (F12) | ✅ Done | Git history on `main` |
 | **M5: Dual Device** | Epic M5.1 | `M5.1` | Dual-Device Release APK Build & Live Verification (`<vm-tv>`, `<physical-tv>`) (F16) | ✅ Done | Android APK / Devices |
 | **M5: Dual Device** | Epic M5.2 | `M5.2` | Privacy Sanitization Verification Audit (F17) | ✅ Done | Repository |
+| **Release & Docs** | Epic M5.3 | `M5.3` | Point In-App Update Check & `sourceCodeUrl` to `liweichen6/PiliPlus-LemonTeaV` | ✅ Done | `bf0f3af54` |
+| **Release & Docs** | Epic M5.3 | `M5.4` | Set `applicationId` to `com.lemontea.piliplus.tv` & Launcher Label to `PiliPlus TV` | ✅ Done | `f00bddcc7` |
+| **Release & Docs** | Epic M5.3 | `M5.5` | Add Upstream Sync & Local Build Guide to `docs/tv/` and Update Bilingual Root READMEs | ✅ Done | `docs/tv/*`, `README*.md` |
 
 ---
 
@@ -169,6 +172,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   2. Installed `app-arm64-v8a-release.apk` on `<vm-tv>` and `app-armeabi-v7a-release.apk` on `<physical-tv>` via `adb install -r`.
   3. Verified live D-pad navigation, rapid key-repeat stress bursts, settings scrolling below `评论设置`, and 10-foot player HUD interactions with `0` `FlutterError`, `EXCEPTION`, or `ANR` entries in `adb logcat`.
   4. Reverted all patches via `./tool/tv_patch.sh revert` (`38/38` `[NOT APPLIED]`) and verified `0` privacy matches across the repository and git history.
+  5. Updated `Constants.sourceCodeUrl` (`lib/common/constants.dart`) and `Api.latestApp` (`lib/http/api.dart`) to point to `liweichen6/PiliPlus-LemonTeaV` (`commit bf0f3af54`).
+  6. Updated `applicationId` to `com.lemontea.piliplus.tv` and launcher label to `PiliPlus TV` (`commit f00bddcc7`) so `PiliPlus TV` coexists side-by-side with `com.example.piliplus` and `com.lemontea.piliplus`.
+  7. Added upstream sync, local APK build, and CI/CD signing documentation to `docs/tv/README.md` and updated root `README.md` and `README.en.md`.
 
 ---
 

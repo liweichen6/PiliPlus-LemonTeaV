@@ -22,11 +22,12 @@ flowchart TD
         T2D["tool/tv_patch.sh<br/>(Reversible local developer script for macOS/Linux to apply/revert patches)"]
     end
 
-    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks — Only 3 Dart Files (< 15 Lines)"]
-        T3A["android/app/src/main/AndroidManifest.xml + MainActivity.kt<br/>(Leanback launcher intent + TvBridge registration)"]
+    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks & App Identity (< 20 Lines)"]
+        T3A["android/app/.../AndroidManifest.xml, build.gradle.kts, MainActivity.kt, string.xml<br/>(applicationId: com.lemontea.piliplus.tv, label: PiliPlus TV, Leanback launcher + TvBridge)"]
         T3B["lib/main.dart (3 lines)<br/>(TvPlatform.initialize, TvNavigationObserver, TvNavigation wrapper)"]
         T3C["lib/utils/connectivity_utils.dart (1 line)<br/>(Treat ConnectivityResult.ethernet as Wi-Fi on TV)"]
         T3D["lib/pages/video/widgets/player_focus.dart (4 lines)<br/>(Wrap PlayerFocus with TvPlayerHud on TV)"]
+        T3E["lib/common/constants.dart & lib/http/api.dart (2 lines)<br/>(Point sourceCodeUrl & latestApp update check to liweichen6/PiliPlus-LemonTeaV)"]
     end
 
     Tier1 --> Tier3
