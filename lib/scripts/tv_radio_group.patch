@@ -1,0 +1,47 @@
+diff --git a/packages/flutter/lib/src/widgets/radio_group.dart b/packages/flutter/lib/src/widgets/radio_group.dart
+--- a/packages/flutter/lib/src/widgets/radio_group.dart
++++ b/packages/flutter/lib/src/widgets/radio_group.dart
+@@ -13,6 +13,7 @@ import 'binding.dart';
+ import 'focus_manager.dart';
+ import 'focus_traversal.dart';
+ import 'framework.dart';
++import 'media_query.dart';
+ import 'shortcuts.dart';
+ 
+ /// A group for radios.
+@@ -209,20 +210,24 @@ class _RadioGroupState<T> extends State<RadioGroup<T>> implements RadioGroupRegi
+   Widget build(BuildContext context) {
+     assert(_debugScheduleSingleSelectionCheck());
+ 
++    Widget result = _RadioGroupStateScope<T>(
++      state: this,
++      groupValue: widget.groupValue,
++      child: widget.child,
++    );
++    if (MediaQuery.maybeNavigationModeOf(context) != NavigationMode.directional) {
++      result = Shortcuts.manager(
++        manager: _radioGroupShortcutManager,
++        child: FocusTraversalGroup(
++          policy: _SkipUnselectedRadioPolicy<T>(_radios, widget.groupValue),
++          child: result,
++        ),
++      );
++    }
+     return Semantics(
+       container: true,
+       role: SemanticsRole.radioGroup,
+-      child: Shortcuts.manager(
+-        manager: _radioGroupShortcutManager,
+-        child: FocusTraversalGroup(
+-          policy: _SkipUnselectedRadioPolicy<T>(_radios, widget.groupValue),
+-          child: _RadioGroupStateScope<T>(
+-            state: this,
+-            groupValue: widget.groupValue,
+-            child: widget.child,
+-          ),
+-        ),
+-      ),
++      child: result,
+     );
+   }
+ }
