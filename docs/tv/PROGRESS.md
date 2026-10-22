@@ -11,9 +11,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | Milestone | Epic | Task ID | Task Title | Status | Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **M0: Docs** | Epic 0.1 | `0.1.1` | Create `docs/tv/` Planning Suite | ✅ Done | `da93d93b2` |
-| **M1: Platform** | Epic 1.1 | `1.1.1` | Implement `TvBridge.kt` & Leanback Manifest | ✅ Done | *(this commit)* |
-| **M1: Platform** | Epic 1.2 | `1.2.1` | Create `lib/tv/tv_platform.dart` (Hive seeding + Soft-keyboard gate) | ⏳ Next | — |
-| **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ⏸️ Pending | — |
+| **M1: Platform** | Epic 1.1 | `1.1.1` | Implement `TvBridge.kt` & Leanback Manifest | ✅ Done | `198612d11` |
+| **M1: Platform** | Epic 1.2 | `1.2.1` | Create `lib/tv/tv_platform.dart` (Hive seeding + Soft-keyboard gate) | ✅ Done | *(this commit)* |
+| **M1: Platform** | Epic 1.2 | `1.2.2` | Support Wired Ethernet in `ConnectivityUtils.isWiFi` | ⏳ Next | — |
 | **M2: Focus** | Epic 2.1 | `2.1.1` | Implement `lib/tv/tv_navigation.dart` (`TvFocusTraversalPolicy` + `RenderBox` introspection) | ⏸️ Pending | — |
 | **M2: Focus** | Epic 2.2 | `2.2.1` | Add `TvNavigationObserver` (Focus restore + Login QR auto-tab) | ⏸️ Pending | — |
 | **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ⏸️ Pending | — |
@@ -44,7 +44,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   4. **TV Defaults & Settings**: Seed TV-optimal defaults into Hive `GStorage.setting` on first TV launch inside `TvPlatform.initialize()` (**0 edits** to `storage_pref.dart` or `setting/view.dart`).
 
 ### [2026-10-21] Task 1.1.1: Implement `TvBridge.kt` and Leanback Manifest Configuration
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`198612d11`)
 * **Files Changed**:
   * `[NEW] android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt`
   * `[NEW] android/app/src/main/res/drawable/tv_banner.xml`
@@ -56,3 +56,14 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Registered `TvBridge.register(flutterEngine, this)` in `MainActivity.configureFlutterEngine` (1 line added).
 * **Verification**:
   * `xmllint --noout android/app/src/main/AndroidManifest.xml android/app/src/main/res/drawable/tv_banner.xml` passed cleanly.
+
+### [2026-10-21] Task 1.2.1: Create `lib/tv/tv_platform.dart` with Hive Seeding & Soft-Keyboard Gate
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[NEW] lib/tv/tv_platform.dart`
+* **Changes Summary**:
+  * Implemented `TvPlatform` querying `com.example.piliplus/tv` (`getTvEnvironment` with fallback to `isTelevision`) and supporting `--dart-define=PILI_FORCE_TV=true`.
+  * Implemented `seedTvDefaultsToBox` to seed TV-optimal defaults (`horizontalScreen`, `useSideBar`, `enableVerticalExpand`, `enableAutoEnter`, `autoPlayEnable`, `enableShowDanmaku`, `fullScreenMode`, `recommendCardWidth`, `defaultTextScale`, `showFsScreenshotBtn`, `showFsLockBtn`, `themeMode`) into `GStorage.setting` on first TV launch without overwriting user-configured keys.
+  * Installed `_TvTextInputGateControl` (`TextInputControl`) when `TvPlatform.isTv` to suppress automatic virtual keyboard popups during D-pad traversal, and exposed `TvPlatform.requestSoftKeyboard()` / `TvPlatform.hideSoftKeyboard()` for explicit `Select`/`Enter` activation on focused `EditableText` widgets.
+* **Verification**:
+  * `flutter analyze lib/tv/tv_platform.dart` passed with `No issues found!`.
