@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.lemontea.piliplus"
+        applicationId = "com.lemontea.piliplus.tv"
         minSdk = flutter.minSdkVersion
         targetSdk = 37
         versionCode = flutter.versionCode
@@ -71,7 +71,7 @@ android {
                 resValue(
                     type = "string",
                     name = "app_name",
-                    value = "PiliPlus dev",
+                    value = "PiliPlus TV dev",
                 )
             }
             proguardFiles(
