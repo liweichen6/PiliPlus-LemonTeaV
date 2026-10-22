@@ -103,6 +103,10 @@ $GeetestIOSPatch = "lib/scripts/geetest_ios.patch"
 
 $DoubleTapGesturePatch = "lib/scripts/double_tap_gesture.patch"
 
+$TvGestureDetectorPatch = "lib/scripts/tv_gesture_detector.patch"
+$TvRadioGroupPatch = "lib/scripts/tv_radio_group.patch"
+$TvInkWellPatch = "lib/scripts/tv_ink_well.patch"
+
 if ($platform.ToLower() -eq "ios") {
     git apply $BottomSheetIOSPiliPlusPatch
     if ($LASTEXITCODE -eq 0) {
@@ -137,7 +141,8 @@ $patches = @($ModalBarrierPatch, $TextSelectionPatch, $MouseCursorPatch,
             $ScrollPositionPatch, $ScrollablePatch, $ScrollableGesturePatch,
             $DraggableScrollableSheetPatch, $ScaffoldPatch, $TextPatch,
             $TextPainterPatch, $SliverPatch, $RefreshIndicatorPatch,
-            $DoubleTapGesturePatch)
+            $DoubleTapGesturePatch, $TvGestureDetectorPatch,
+            $TvRadioGroupPatch, $TvInkWellPatch)
 
 switch ($platform.ToLower()) {
     "android" {
@@ -214,9 +219,11 @@ $RefreshIndicatorPatchMaterial = "lib/scripts/material/refresh_indicator.patch"
 
 $TabsPatchMaterial = "lib/scripts/material/tabs.patch"
 
+$TvInkWellPatchMaterial = "lib/scripts/material/tv_ink_well.patch"
+
 $patches_material = @($ModalBarrierPatchMaterial, $NavigationDrawerPatchMaterial, $PopupMenuPatchMaterial,
                     $FABPatchMaterial, $TextFieldPatchMaterial, $ScaffoldPatchMaterial, $RefreshIndicatorPatchMaterial,
-                    $TabsPatchMaterial)
+                    $TabsPatchMaterial, $TvInkWellPatchMaterial)
 
 $PubCacheDir = "~/.pub-cache"
 

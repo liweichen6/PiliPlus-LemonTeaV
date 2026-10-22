@@ -19,9 +19,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M2: Focus** | Epic 2.2 | `2.2.2` | Wire `TvPlatform` & `TvNavigation` into `lib/main.dart` | ✅ Done | `d053ad2e5` |
 | **M3: Patches** | Epic 3.1 | `3.1.1` | Create `lib/scripts/tv_gesture_detector.patch` | ✅ Done | `643893b9c` |
 | **M3: Patches** | Epic 3.1 | `3.1.2` | Create `lib/scripts/tv_radio_group.patch` | ✅ Done | `e6990d48e` |
-| **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ✅ Done | *(this commit)* |
-| **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ⏳ Next | — |
-| **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ⏸️ Pending | — |
+| **M3: Patches** | Epic 3.1 | `3.1.3` | Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch` | ✅ Done | `fffaee51a` |
+| **M3: Patches** | Epic 3.2 | `3.2.1` | Register TV patches in `patch.ps1` and add `tool/tv_patch.sh` | ✅ Done | *(this commit)* |
+| **M4: Player HUD** | Epic 4.1 | `4.1.1` | Implement `lib/tv/tv_player_hud.dart` with controller auto-discovery | ⏳ Next | — |
 | **M4: Player HUD** | Epic 4.1 | `4.1.2` | Add 4-line `TvPlayerHud` hook in `player_focus.dart` | ⏸️ Pending | — |
 | **M5: CI & Verify** | Epic 5.1 | `5.1.1` | Update `.github/workflows/` to sync `lemonteaau/PiliPlus` & build Android APKs | ⏸️ Pending | — |
 | **M5: CI & Verify** | Epic 5.2 | `5.2.1` | Add TV widget tests (`test/tv_navigation_test.dart`) & verify full build | ⏸️ Pending | — |
@@ -127,7 +127,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `git apply --check lib/scripts/tv_radio_group.patch` against `$FLUTTER_ROOT` passed with exit code `0`.
 
 ### [2026-10-21] Task 3.1.3: Create `lib/scripts/material/tv_ink_well.patch` & `lib/scripts/tv_ink_well.patch`
-* **Status**: ✅ Completed
+* **Status**: ✅ Completed (`fffaee51a`)
 * **Files Changed**:
   * `[NEW] lib/scripts/material/tv_ink_well.patch`
   * `[NEW] lib/scripts/tv_ink_well.patch`
@@ -139,5 +139,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Verification**:
   * `git apply --check lib/scripts/material/tv_ink_well.patch` (against `material_ui`) and `git apply --check lib/scripts/tv_ink_well.patch` (against `$FLUTTER_ROOT`) both passed with exit code `0`.
 
-
-
+### [2026-10-21] Task 3.2.1: Register TV Patches in `lib/scripts/patch.ps1` and Create `tool/tv_patch.sh`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/scripts/patch.ps1`
+  * `[NEW] tool/tv_patch.sh`
+* **Changes Summary**:
+  * Registered `tv_gesture_detector.patch`, `tv_radio_group.patch`, and `tv_ink_well.patch` in `lib/scripts/patch.ps1` (`$patches`), and `material/tv_ink_well.patch` in `$patches_material`.
+  * Added idempotent `tool/tv_patch.sh` (`apply`, `revert`, `status`) for local developer patching of `$FLUTTER_ROOT` and `material_ui` in pub-cache.
+* **Verification**:
+  * `./tool/tv_patch.sh apply`, `./tool/tv_patch.sh status`, and `flutter analyze lib/tv/` passed with `No issues found!`.
