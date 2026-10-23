@@ -1,4 +1,4 @@
-> **Disclaimer**: This repo is entirely a product of wish coding, primarily completed by Argon High. (`此 repo 完全是 wish coding 的产物，主要由 Argon High 完成`)
+> **Disclaimer**: This repo is entirely a product of wish coding, primarily completed by Argon High.
 
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png" alt="PiliPlus TV logo">
@@ -75,7 +75,7 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 
 | Document | Description |
 | :--- | :--- |
-| [**docs/tv/README.md**](docs/tv/README.md) | **TV module overview, upstream sync guide (GitHub Actions & local CLI), local APK build guide, and signing setup** |
+| [**docs/tv/README.en.md**](docs/tv/README.en.md) ([中文](docs/tv/README.md)) | **TV module overview, upstream sync guide (GitHub Actions & local CLI), local APK build guide, and signing setup** |
 | [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance optimizations (`F1`–`F9`), and 15 preserved TV invariants (`C1`–`C15`) |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | Complete milestone, epic, and task roadmap across Phase 1 (Foundation) and Phase 2 (Optimization) |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | Task-by-task changelog, performance benchmark tables, and dual-device verification logs |

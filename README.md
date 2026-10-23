@@ -75,7 +75,7 @@
 
 | 文档 | 内容说明 |
 | :--- | :--- |
-| [**docs/tv/README.md**](docs/tv/README.md) | **TV 模块总览、上游同步指南（GitHub Actions 与本地命令）、本地 APK 构建指南与签名配置说明** |
+| [**docs/tv/README.md**](docs/tv/README.md)（[English](docs/tv/README.en.md)） | **TV 模块总览、上游同步指南（GitHub Actions 与本地命令）、本地 APK 构建指南与签名配置说明** |
 | [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**、核心性能优化机制（`F1`–`F9`）与 15 项 TV 功能不变量（`C1`–`C15`） |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | 完整实施与性能优化路线图（Phase 1 基础移植 & Phase 2 深度优化） |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | 任务级演进日志、性能基准测试对比与真机/模拟器双端验证记录 |
