@@ -91,8 +91,8 @@ jobs:
             # Tag now, while this commit is still the head of main. GITHUB_TOKEN may
             # not tag a commit whose workflow files differ from main's, so tagging at
             # publish time fails when a workflow edit lands on main during the build.
-            git tag "$release_tag" "$after"
-            git push origin "$release_tag"
+            git tag -f "$release_tag" "$after"
+            git push --force origin "refs/tags/$release_tag"
           fi
 
   android:
