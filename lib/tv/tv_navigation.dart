@@ -1371,10 +1371,110 @@ class _TvNavigationState extends State<TvNavigation> {
     }
   }
 
+  static Offset _accumulatedParentOffset(RenderBox ro, RenderBox rootRo) {
+    double dx = 0.0;
+    double dy = 0.0;
+    RenderObject? current = ro;
+    while (current != null && !identical(current, rootRo)) {
+      final pd = current.parentData;
+      if (pd is BoxParentData) {
+        dx += pd.offset.dx;
+        dy += pd.offset.dy;
+      }
+      if (current is RenderFractionalTranslation && current.hasSize) {
+        dx += current.translation.dx * current.size.width;
+        dy += current.translation.dy * current.size.height;
+      }
+      current = current.parent;
+    }
+    return Offset(dx, dy);
+  }
+
+  static bool _isScopeInactive(FocusScopeNode scope) {
+    FocusScopeNode? current = scope;
+    while (current != null) {
+      if (current.skipTraversal) return true;
+      current = current.enclosingScope;
+    }
+    return false;
+  }
+
+  static FocusScopeNode? _findActiveSiblingScope(FocusScopeNode scope) {
+    FocusScopeNode inactiveRoot = scope;
+    FocusScopeNode? current = scope.enclosingScope;
+    while (current != null) {
+      if (current.skipTraversal) {
+        inactiveRoot = current;
+      }
+      current = current.enclosingScope;
+    }
+
+    FocusScopeNode? searchIn(FocusNode root) {
+      FocusScopeNode? result;
+      void visit(FocusNode parent) {
+        for (final FocusNode child in parent.children) {
+          if (child is FocusScopeNode) {
+            if (child != inactiveRoot &&
+                !_isScopeInactive(child) &&
+                child.canRequestFocus) {
+              result = child;
+            }
+          } else {
+            visit(child);
+          }
+        }
+      }
+
+      visit(root);
+      return result;
+    }
+
+    final FocusNode? parent = inactiveRoot.parent;
+    if (parent != null) {
+      final FocusScopeNode? found = searchIn(parent);
+      if (found != null) return found;
+    }
+    final FocusScopeNode? enclosing = inactiveRoot.enclosingScope;
+    if (enclosing != null && !identical(enclosing, parent)) {
+      return searchIn(enclosing);
+    }
+    return null;
+  }
+
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv || _rectSyncScheduled) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
     if (node == null || node is FocusScopeNode) {
+      if (node is FocusScopeNode && !_focusSyncScheduled) {
+        FocusScopeNode targetScope = node;
+        if (_isScopeInactive(node)) {
+          targetScope = _findActiveSiblingScope(node) ?? node;
+        }
+        final FocusNode? first = _policy.findFirstFocus(targetScope);
+        if (first != null) {
+          _focusSyncScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _focusSyncScheduled = false;
+            if (!mounted) return;
+            final FocusNode resolvedFirst =
+                _policy.findFirstFocus(targetScope) ?? first;
+            if (FocusManager.instance.primaryFocus == node &&
+                !_isScopeInactive(targetScope) &&
+                targetScope.canRequestFocus &&
+                resolvedFirst.canRequestFocus &&
+                (resolvedFirst.context?.mounted ?? false)) {
+              if (targetScope != node) {
+                targetScope.enclosingScope?.setFirstFocus(targetScope);
+              }
+              resolvedFirst
+                ..requestFocus()
+                ..consumeKeyboardToken();
+              _updateRect(_computeFocusedRect(resolvedFirst));
+            }
+          });
+          return;
+        }
+      }
       _lastFocusedNode = null;
       _lastTargetBox = null;
       _lastTargetSize = null;
@@ -1392,6 +1492,38 @@ class _TvNavigationState extends State<TvNavigation> {
       return;
     }
 
+    final FocusScopeNode? currentScope = node.nearestScope;
+    if (currentScope != null &&
+        _isScopeInactive(currentScope) &&
+        !_focusSyncScheduled) {
+      final FocusScopeNode? targetScope = _findActiveSiblingScope(currentScope);
+      if (targetScope != null) {
+        final FocusNode? first = _policy.findFirstFocus(targetScope);
+        if (first != null) {
+          TvNavigationObserver.rememberFocusedNode(node);
+          _focusSyncScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _focusSyncScheduled = false;
+            if (!mounted) return;
+            final FocusNode resolvedFirst =
+                _policy.findFirstFocus(targetScope) ?? first;
+            if (FocusManager.instance.primaryFocus == node &&
+                !_isScopeInactive(targetScope) &&
+                targetScope.canRequestFocus &&
+                resolvedFirst.canRequestFocus &&
+                (resolvedFirst.context?.mounted ?? false)) {
+              targetScope.enclosingScope?.setFirstFocus(targetScope);
+              resolvedFirst
+                ..requestFocus()
+                ..consumeKeyboardToken();
+              _updateRect(_computeFocusedRect(resolvedFirst));
+            }
+          });
+          return;
+        }
+      }
+    }
+
     final BuildContext? context = node.context;
     if (context == null || !context.mounted) return;
     final RenderObject? ro = context.findRenderObject();
@@ -1399,10 +1531,7 @@ class _TvNavigationState extends State<TvNavigation> {
     final RenderObject? rootRo = _key.currentContext?.findRenderObject();
     if (rootRo is! RenderBox || !rootRo.attached || !rootRo.hasSize) return;
 
-    final Offset? parentOffset =
-        ro.parentData is BoxParentData
-            ? (ro.parentData as BoxParentData).offset
-            : null;
+    final Offset parentOffset = _accumulatedParentOffset(ro, rootRo);
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     final double? scrollPixels =
         scrollable?.position.hasPixels == true
@@ -1450,16 +1579,46 @@ class _TvNavigationState extends State<TvNavigation> {
       if (!mounted) return;
       final FocusNode? node = FocusManager.instance.primaryFocus;
       if (node is FocusScopeNode) {
-        final FocusNode? first = _policy.findFirstFocus(node);
+        FocusScopeNode targetScope = node;
+        if (_isScopeInactive(node)) {
+          targetScope = _findActiveSiblingScope(node) ?? node;
+        }
+        final FocusNode? first = _policy.findFirstFocus(targetScope);
         if (first != null) {
+          if (targetScope != node) {
+            targetScope.enclosingScope?.setFirstFocus(targetScope);
+          }
           first
             ..requestFocus()
             ..consumeKeyboardToken();
         } else {
-          node.nextFocus();
+          targetScope.nextFocus();
         }
         _updateRect(null);
         return;
+      }
+      final FocusScopeNode? currentScope = node?.nearestScope;
+      if (node != null &&
+          currentScope != null &&
+          _isScopeInactive(currentScope)) {
+        final FocusScopeNode? targetScope = _findActiveSiblingScope(
+          currentScope,
+        );
+        if (targetScope != null) {
+          final FocusNode? first = _policy.findFirstFocus(targetScope);
+          if (first != null &&
+              targetScope.canRequestFocus &&
+              first.canRequestFocus &&
+              (first.context?.mounted ?? false)) {
+            TvNavigationObserver.rememberFocusedNode(node);
+            targetScope.enclosingScope?.setFirstFocus(targetScope);
+            first
+              ..requestFocus()
+              ..consumeKeyboardToken();
+            _updateRect(_computeFocusedRect(first));
+            return;
+          }
+        }
       }
       final BuildContext? context = node?.context;
       if (context != null &&
@@ -1521,10 +1680,14 @@ class _TvNavigationState extends State<TvNavigation> {
   @override
   Widget build(BuildContext context) {
     if (!TvPlatform.isTv) return widget.child;
+    Widget child = widget.child;
+    MediaQueryData mediaQuery = MediaQuery.of(context);
+    while (child is MediaQuery) {
+      mediaQuery = child.data;
+      child = child.child;
+    }
     return MediaQuery(
-      data: MediaQuery.of(
-        context,
-      ).copyWith(navigationMode: NavigationMode.directional),
+      data: mediaQuery.copyWith(navigationMode: NavigationMode.directional),
       child: Shortcuts(
         shortcuts: const <ShortcutActivator, Intent>{
           SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
@@ -1557,7 +1720,7 @@ class _TvNavigationState extends State<TvNavigation> {
               children: <Widget>[
                 FocusTraversalGroup(
                   policy: _policy,
-                  child: widget.child,
+                  child: child,
                 ),
                 Positioned.fill(
                   child: IgnorePointer(

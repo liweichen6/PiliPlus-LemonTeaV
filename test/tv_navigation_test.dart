@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/radio_widget.dart';
 import 'package:PiliPlus/models/common/theme/theme_type.dart';
+import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
+import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
@@ -437,6 +440,7 @@ void main() {
         // Navigate down from selected Option 1 to unselected Option 2.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
+        expect(selectedValue, 1);
 
         // Select Option 2 via D-pad Enter.
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -1368,6 +1372,852 @@ void main() {
         expect(rectAfter, expectedRect1);
         expect(rectAfter, isNot(equals(rectBefore)));
         expect(painterAfter.shouldRepaint(painterBefore), isTrue);
+      },
+    );
+
+    testWidgets(
+      'MyApp._builder MediaQuery wrapping order preserves NavigationMode.directional across routes and showDialog',
+      (tester) async {
+        NavigationMode? routeNavigationMode;
+        NavigationMode? dialogNavigationMode;
+        TextScaler? routeTextScaler;
+        TextScaler? dialogTextScaler;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) {
+              // Mirrors MyApp._builder in lib/main.dart at HEAD: MediaQuery
+              // wraps child first, and TvNavigation wraps the resulting
+              // MediaQuery at the tail of _builder without touching upstream's
+              // uiScale if/else block.
+              final mediaQuery = MediaQuery.of(context);
+              child = MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: TextScaler.noScaling,
+                ),
+                child: child!,
+              );
+              if (TvPlatform.isTv) {
+                child = TvNavigation(child: child);
+              }
+              return child;
+            },
+            home: Builder(
+              builder: (context) {
+                routeNavigationMode = MediaQuery.navigationModeOf(context);
+                routeTextScaler = MediaQuery.textScalerOf(context);
+                return Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      autofocus: true,
+                      onPressed: () {
+                        showDialog<void>(
+                          context: context,
+                          builder: (dialogContext) {
+                            dialogNavigationMode = MediaQuery.navigationModeOf(
+                              dialogContext,
+                            );
+                            dialogTextScaler = MediaQuery.textScalerOf(
+                              dialogContext,
+                            );
+                            return AlertDialog(
+                              title: const Text('Dialog'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dialogContext),
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                      child: const Text('Open Dialog'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(routeNavigationMode, NavigationMode.directional);
+        expect(routeTextScaler, TextScaler.noScaling);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(dialogNavigationMode, NavigationMode.directional);
+        expect(dialogTextScaler, TextScaler.noScaling);
+      },
+    );
+
+    testWidgets(
+      'switchAccountDialog pattern (RadioGroup + RadioWidget / WrapRadioOptionsGroup) allows D-pad focus escape in single-option, multi-option, and Detailed (详细) states',
+      (tester) async {
+        Map<String, String> options = <String, String>{'0': '0'};
+        final List<String> sectionTitles = <String>[
+          '主站（推荐、搜索、个人动态等）',
+          '番剧 / 影视',
+          '直播',
+          '心跳记录（观看历史）',
+        ];
+        List<String> selectedMids = List<String>.filled(
+          sectionTitles.length,
+          '0',
+        );
+        bool quickSelect = true;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.of(context);
+              child = MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: TextScaler.noScaling,
+                ),
+                child: child!,
+              );
+              return TvNavigation(child: child);
+            },
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    autofocus: true,
+                    onPressed: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (dialogContext) => StatefulBuilder(
+                          builder: (context, setState) => AlertDialog(
+                            title: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text.rich(
+                                  style: TextStyle(height: 1.5),
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(text: '选择账号'),
+                                      TextSpan(
+                                        text: '\n0代表匿名',
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                Builder(
+                                  builder: (btnContext) => TextButton(
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        quickSelect = !quickSelect;
+                                      });
+                                    },
+                                    child: Text(quickSelect ? '详细' : '快速'),
+                                  ),
+                                ),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  tooltip: '登录',
+                                  onPressed: () {},
+                                  iconSize: 18,
+                                  icon: const Icon(Icons.login_outlined),
+                                ),
+                              ],
+                            ),
+                            titlePadding: const EdgeInsets.only(
+                              left: 22,
+                              top: 16,
+                              right: 22,
+                              bottom: 3,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 5,
+                            ),
+                            actionsPadding: const EdgeInsets.only(
+                              left: 16,
+                              right: 16,
+                              bottom: 10,
+                            ),
+                            content: SingleChildScrollView(
+                              child: AnimatedSize(
+                                curve: Curves.easeIn,
+                                alignment: Alignment.topCenter,
+                                duration: const Duration(milliseconds: 200),
+                                child: quickSelect
+                                    ? Builder(
+                                        builder: (context) =>
+                                            RadioGroup<String>(
+                                              groupValue: selectedMids[0],
+                                              onChanged: (v) {
+                                                if (v != null) {
+                                                  setState(() {
+                                                    selectedMids.fillRange(
+                                                      0,
+                                                      selectedMids.length,
+                                                      v,
+                                                    );
+                                                  });
+                                                }
+                                              },
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: options.entries
+                                                    .map(
+                                                      (entry) =>
+                                                          RadioWidget<String>(
+                                                            value: entry.key,
+                                                            title: entry.value,
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .max,
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  left: 12,
+                                                                  top: 2,
+                                                                  bottom: 2,
+                                                                ),
+                                                          ),
+                                                    )
+                                                    .toList(),
+                                              ),
+                                            ),
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: List<Widget>.generate(
+                                          sectionTitles.length,
+                                          (index) => Builder(
+                                            builder: (context) =>
+                                                RadioGroup<String>(
+                                                  groupValue:
+                                                      selectedMids[index],
+                                                  onChanged: (v) {
+                                                    if (v != null) {
+                                                      setState(() {
+                                                        selectedMids[index] = v;
+                                                      });
+                                                    }
+                                                  },
+                                                  child:
+                                                      WrapRadioOptionsGroup<
+                                                        String
+                                                      >(
+                                                        groupTitle:
+                                                            sectionTitles[index],
+                                                        options: options,
+                                                      ),
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('取消'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('确定'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('切换账号'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        bool isFocusInside(Finder target) {
+          final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+          if (ctx == null) return false;
+          return find
+              .ancestor(
+                of: find.byElementPredicate((e) => e == ctx),
+                matching: target,
+                matchRoot: true,
+              )
+              .evaluate()
+              .isNotEmpty;
+        }
+
+        // 1. Single-option state (logged-out: only '0').
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        final Finder detailBtn = find.widgetWithText(TextButton, '详细');
+        final Finder quickBtn = find.widgetWithText(TextButton, '快速');
+        final Finder loginBtn = find.byTooltip('登录');
+        final Finder anonRadio = find.widgetWithText(
+          RadioWidget<String>,
+          '0',
+        );
+        final Finder cancelBtn = find.widgetWithText(TextButton, '取消');
+        final Finder confirmBtn = find.widgetWithText(TextButton, '确定');
+
+        // Initial focus lands on header button ('详细'), and Right/Left navigates to/from '登录'.
+        expect(isFocusInside(detailBtn), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(loginBtn), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(detailBtn), isTrue);
+
+        // Navigate down to '0' RadioWidget.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(anonRadio), isTrue);
+
+        // Press D-pad Down from single RadioWidget -> must escape to dialog actions ('取消' or '确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Down from single RadioWidget to escape to 取消/确定',
+        );
+
+        // Verify horizontal traversal between '取消' and '确定'.
+        if (isFocusInside(confirmBtn)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+          expect(isFocusInside(cancelBtn), isTrue);
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+          expect(isFocusInside(confirmBtn), isTrue);
+        } else {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+          expect(isFocusInside(confirmBtn), isTrue);
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+          expect(isFocusInside(cancelBtn), isTrue);
+        }
+
+        // Press D-pad Up back to '0' RadioWidget, then Up again -> must escape to header ('详细'/'登录').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(anonRadio), isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(detailBtn) || isFocusInside(loginBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Up from single RadioWidget to escape to 详细/登录',
+        );
+        if (isFocusInside(loginBtn)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+        }
+        expect(isFocusInside(detailBtn), isTrue);
+
+        // Toggle '详细' mode (quickSelect = false -> 4 AccountType RadioGroup sections).
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(quickSelect, isFalse);
+        expect(isFocusInside(quickBtn), isTrue);
+        expect(anonRadio, findsNWidgets(4));
+
+        // Step Down through all 4 AccountType RadioGroup sections in single-option Detailed mode.
+        for (int i = 0; i < 4; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(
+            isFocusInside(anonRadio.at(i)),
+            isTrue,
+            reason: 'Expected focus on section $i RadioWidget in Detailed mode',
+          );
+        }
+
+        // Step Down from the 4th section -> must escape to dialog actions ('取消' or '确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Down from 4th section RadioWidget to escape to 取消/确定',
+        );
+
+        // Step Up from footer back through all 4 sections (3 -> 2 -> 1 -> 0) and Up to header ('快速'/'登录').
+        for (int i = 3; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expect(
+            isFocusInside(anonRadio.at(i)),
+            isTrue,
+            reason:
+                'Expected D-pad Up to focus section $i RadioWidget in Detailed mode',
+          );
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(quickBtn) || isFocusInside(loginBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Up from section 0 RadioWidget to escape to 快速/登录',
+        );
+
+        // Close dialog.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        // 2. Multi-option state ('0' and '1001') in both Quick and Detailed modes.
+        options = <String, String>{'0': '0', '1001': '1001'};
+        selectedMids = List<String>.filled(sectionTitles.length, '0');
+        quickSelect = true;
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        final Finder user1001Radio = find.widgetWithText(
+          RadioWidget<String>,
+          '1001',
+        );
+
+        // Step down from header -> '0' -> '1001' in Quick mode.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(anonRadio), isTrue);
+        expect(selectedMids[0], '0');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(user1001Radio), isTrue);
+        // Moving focus to '1001' must NOT auto-select '1001' before pressing Select.
+        expect(selectedMids[0], '0');
+
+        // Press Select to choose '1001'.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(selectedMids[0], '1001');
+
+        // Press Down again to escape RadioGroup to footer buttons ('取消'/'确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Down from last RadioWidget to escape to 取消/确定',
+        );
+
+        // Navigate Up back to header ('详细'), toggle Detailed mode, and verify multi-option WrapRadioOptionsGroup traversal.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        if (isFocusInside(loginBtn)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+        }
+        expect(isFocusInside(detailBtn), isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(quickSelect, isFalse);
+        expect(anonRadio, findsNWidgets(4));
+        expect(user1001Radio, findsNWidgets(4));
+
+        // Down from '快速' -> section 0 ('0' or '1001').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(anonRadio.at(0)) || isFocusInside(user1001Radio.at(0)),
+          isTrue,
+        );
+        if (isFocusInside(user1001Radio.at(0))) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+        }
+        expect(isFocusInside(anonRadio.at(0)), isTrue);
+
+        // Right within section 0 Wrap row -> section 0 '1001'.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(isFocusInside(user1001Radio.at(0)), isTrue);
+
+        // Down across sections 1, 2, 3 -> then Down to footer ('取消'/'确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(anonRadio.at(1)) || isFocusInside(user1001Radio.at(1)),
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(anonRadio.at(2)) || isFocusInside(user1001Radio.at(2)),
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(anonRadio.at(3)) || isFocusInside(user1001Radio.at(3)),
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(
+          isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
+          isTrue,
+          reason:
+              'Expected D-pad Down from 4th section in multi-option Detailed mode to escape to 取消/确定',
+        );
+      },
+    );
+
+    testWidgets(
+      'SliderDialog and DualSliderDialog adjust value with D-pad Left/Right and escape with D-pad Up/Down to dialog actions',
+      (tester) async {
+        double? sliderResult;
+        (double, double)? dualSliderResult;
+
+        bool isFocusInside(Finder target) {
+          final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+          if (ctx == null) return false;
+          return find
+              .ancestor(
+                of: find.byElementPredicate((e) => e == ctx),
+                matching: target,
+                matchRoot: true,
+              )
+              .evaluate()
+              .isNotEmpty;
+        }
+
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.of(context);
+              child = MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: TextScaler.noScaling,
+                ),
+                child: child!,
+              );
+              return TvNavigation(child: child);
+            },
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Column(
+                  children: [
+                    ElevatedButton(
+                      autofocus: true,
+                      onPressed: () async {
+                        sliderResult = await showDialog<double>(
+                          context: context,
+                          builder: (_) => const SliderDialog(
+                            title: Text('图片质量'),
+                            value: 50,
+                            min: 1,
+                            max: 100,
+                            divisions: 99,
+                            precise: 0,
+                            suffix: '%',
+                          ),
+                        );
+                      },
+                      child: const Text('Open SliderDialog'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        dualSliderResult = await showDialog<(double, double)>(
+                          context: context,
+                          builder: (_) => const DualSliderDialog(
+                            title: Text('Dual Slider'),
+                            description1: Text('Min'),
+                            description2: Text('Max'),
+                            value1: 20,
+                            value2: 80,
+                            min: 0,
+                            max: 100,
+                            divisions: 20,
+                            precise: 0,
+                          ),
+                        );
+                      },
+                      child: const Text('Open DualSliderDialog'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Open SliderDialog ('图片质量').
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        // Slider has primary focus; Right increases by 1 division (50 -> 51 -> 52), Left decreases (52 -> 51).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+
+        // Down escapes Slider to dialog actions ('取消' / '确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+
+        final Finder confirmBtn = find.widgetWithText(TextButton, '确定');
+        if (!isFocusInside(confirmBtn)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+        }
+        expect(isFocusInside(confirmBtn), isTrue);
+
+        // Press Select on '确定' -> resolves SliderDialog with 51.0.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(sliderResult, 51.0);
+
+        // 2. Move down to 'Open DualSliderDialog' and open it.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        // First slider focused: press Right (20 -> 25).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+
+        // Press Down to move from Slider 1 to Slider 2, then Left (80 -> 75).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+
+        // Press Down to escape Slider 2 to dialog actions ('取消' / '确定').
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        final Finder dualConfirmBtn = find.widgetWithText(TextButton, '确定');
+        if (!isFocusInside(dualConfirmBtn)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+        }
+        expect(isFocusInside(dualConfirmBtn), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(dualSliderResult, (25.0, 75.0));
+      },
+    );
+
+    testWidgets(
+      'showMenu with requestFocus: false (PopupListTile pattern) requests focus on TV and allows D-pad item selection',
+      (tester) async {
+        int selectedItem = 1;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.of(context);
+              child = MediaQuery(
+                data: mediaQuery.copyWith(
+                  navigationMode: NavigationMode.traditional,
+                ),
+                child: MediaQuery(
+                  data: mediaQuery.copyWith(
+                    navigationMode: NavigationMode.traditional,
+                    textScaler: TextScaler.noScaling,
+                  ),
+                  child: child!,
+                ),
+              );
+              return TvNavigation(child: child);
+            },
+            home: StatefulBuilder(
+              builder: (context, setState) => Scaffold(
+                body: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FocusScope(
+                    debugLabel: 'NestedSettingsScope',
+                    child: Builder(
+                      builder: (tileContext) {
+                        expect(
+                          MediaQuery.navigationModeOf(tileContext),
+                          NavigationMode.directional,
+                        );
+                        expect(
+                          MediaQuery.textScalerOf(tileContext),
+                          TextScaler.noScaling,
+                        );
+                        return ListTile(
+                          autofocus: true,
+                          title: const Text('动态页UP主显示位置'),
+                          subtitle: Text('当前: $selectedItem'),
+                          onTap: () async {
+                            final RenderBox button =
+                                tileContext.findRenderObject()! as RenderBox;
+                            final RenderBox overlay =
+                                Navigator.of(
+                                      tileContext,
+                                    ).overlay!.context.findRenderObject()!
+                                    as RenderBox;
+                            final RelativeRect position = RelativeRect.fromRect(
+                              Rect.fromPoints(
+                                button.localToGlobal(
+                                  button.size.topRight(Offset.zero),
+                                  ancestor: overlay,
+                                ),
+                                button.localToGlobal(
+                                  button.size.bottomRight(Offset.zero),
+                                  ancestor: overlay,
+                                ),
+                              ),
+                              Offset.zero & overlay.size,
+                            );
+                            final int? res = await showMenu<int>(
+                              context: tileContext,
+                              initialValue: selectedItem,
+                              requestFocus: false,
+                              position: position,
+                              items: const [
+                                PopupMenuItem<int>(
+                                  value: 1,
+                                  child: Text('顶部'),
+                                ),
+                                PopupMenuItem<int>(
+                                  value: 2,
+                                  child: Text('左侧常驻'),
+                                ),
+                                PopupMenuItem<int>(
+                                  value: 3,
+                                  child: Text('右侧常驻'),
+                                ),
+                                PopupMenuItem<int>(
+                                  value: 4,
+                                  child: Text('底栏'),
+                                ),
+                              ],
+                            );
+                            if (res != null) {
+                              setState(() => selectedItem = res);
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final Finder ringFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+
+        // Activate ListTile inside nested FocusScope via D-pad Select to open popup menu near screen bottom.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(const Duration(milliseconds: 16));
+        final CustomPainter earlyMenuPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+
+        await tester.pumpAndSettle();
+        final CustomPainter settledMenuPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+
+        // As _PopupMenu expands near the bottom of the screen, _PopupMenuRouteLayout
+        // shifts its CustomSingleChildLayout ancestor upward; focus ring rect must
+        // track the ancestor BoxParentData offset change instead of staying at the
+        // early animation position.
+        expect(settledMenuPainter.shouldRepaint(earlyMenuPainter), isTrue);
+
+        // Verify primary focus moved into the first PopupMenuItem ('顶部').
+        final FocusNode? menuFocus = FocusManager.instance.primaryFocus;
+        expect(menuFocus, isNotNull);
+        expect(menuFocus is FocusScopeNode, isFalse);
+        expect(
+          find.descendant(
+            of: find.byElementPredicate((e) => e == menuFocus!.context),
+            matching: find.text('顶部'),
+          ),
+          findsOneWidget,
+        );
+
+        // Navigate down to second PopupMenuItem ('左侧常驻', value: 2) and select with D-pad Select.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        expect(selectedItem, 2);
+
+        // Verify primary focus returns to the triggering ListTile after showMenu closes.
+        final FocusNode? restoredFocus = FocusManager.instance.primaryFocus;
+        expect(restoredFocus, isNotNull);
+        expect(
+          find.descendant(
+            of: find.byElementPredicate((e) => e == restoredFocus!.context),
+            matching: find.text('动态页UP主显示位置'),
+          ),
+          findsOneWidget,
+        );
+
+        // Edge case: same-frame focus change + showMenu(requestFocus: false,
+        // popUpAnimationStyle: AnimationStyle.noAnimation) where _onFocus()
+        // sets _focusSyncScheduled = true before drawFrame() runs and no
+        // animation frames follow.
+        restoredFocus!.unfocus();
+        await tester.pump();
+        restoredFocus.requestFocus();
+        final BuildContext tileCtx = tester.element(
+          find.text('动态页UP主显示位置'),
+        );
+        // ignore: unawaited_futures
+        showMenu<int>(
+          context: tileCtx,
+          requestFocus: false,
+          popUpAnimationStyle: AnimationStyle.noAnimation,
+          position: const RelativeRect.fromLTRB(100, 100, 100, 100),
+          items: const [
+            PopupMenuItem<int>(value: 10, child: Text('无动画项A')),
+            PopupMenuItem<int>(value: 20, child: Text('无动画项B')),
+          ],
+        );
+        await tester.pump();
+        final FocusNode? noAnimMenuFocus = FocusManager.instance.primaryFocus;
+        expect(noAnimMenuFocus, isNotNull);
+        expect(
+          find.descendant(
+            of: find.byElementPredicate((e) => e == noAnimMenuFocus!.context),
+            matching: find.text('无动画项A'),
+          ),
+          findsOneWidget,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
       },
     );
   });

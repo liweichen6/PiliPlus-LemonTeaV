@@ -18,7 +18,7 @@ flowchart TD
     subgraph Tier2["Tier 2: Build-Time SDK & Package Patches (lib/scripts/) — 0 Upstream Repo Diffs"]
         T2A["lib/scripts/tv_gesture_detector.patch<br/>(Flutter SDK GestureDetector: static key handler _handleDirectionalKeyEvent,<br/>auto-wrap onTap with Focus + Select/Enter activation in directional mode)"]
         T2B["lib/scripts/tv_radio_group.patch<br/>(Flutter SDK RadioGroup: disable arrow-key loop trapping in directional mode)"]
-        T2C["lib/scripts/material/tv_ink_well.patch & tv_ink_well.patch<br/>(material_ui & SDK InkResponse: synthesize onTapDown/onTapUp for triple-like<br/>& center TapUpDetails for PopupListTile)"]
+        T2C["lib/scripts/material/tv_ink_well.patch & lib/scripts/tv_ink_well.patch<br/>(material_ui & SDK InkResponse: synthesize onTapDown/onTapUp for triple-like<br/>and center TapUpDetails for PopupListTile in directional mode)"]
         T2D["tool/tv_patch.sh<br/>(Reversible local developer script for macOS/Linux to apply/revert patches)"]
     end
 
@@ -41,7 +41,7 @@ flowchart TD
 ### 2.1 F1: Idle Frame Callback Stationary Caching & Direct ValueListenable Connection
 * **Problem**: In Flutter, `WidgetsBinding.instance.addPersistentFrameCallback(_syncFocusRectAfterLayout)` runs after every layout phase. During active video playback, danmaku rendering, or UI animations, the persistent callback fired 60–120 times per second. In the unoptimized baseline, `_syncFocusRectAfterLayout` climbed 50–100 `RenderObject` ancestors on every frame via `target.localToGlobal(Offset.zero, ancestor: root)` even when the focused widget was completely stationary.
 * **Solution**:
-  1. **Multi-Attribute Stationary Caching**: Cache `_lastFocusedNode`, `_lastTargetBox`, `_lastTargetSize`, `_lastRootSize`, `_lastParentDataOffset`, and enclosing `ScrollPosition.pixels`. If all attributes match the previous frame and `_rectNotifier.value != null`, the callback exits immediately without walking the RenderObject tree.
+  1. **Multi-Attribute Stationary Caching**: Cache `_lastFocusedNode`, `_lastTargetBox`, `_lastTargetSize`, `_lastRootSize`, `_lastParentDataOffset` (computed via `_accumulatedParentOffset(ro, rootRo)` summing `BoxParentData.offset` and `RenderFractionalTranslation` offsets up the ancestor chain so ancestor layout shifts like `_PopupMenuRouteLayout` are tracked), and enclosing `ScrollPosition.pixels`. If all attributes match the previous frame and `_rectNotifier.value != null`, the callback exits immediately without invoking `localToGlobal` or allocating a `Matrix4`.
   2. **Direct ValueListenable Repaint Connection**: In `_TvFocusRingPainter`, initialize `super.repaint` with `_rectNotifier` (`_TvFocusRingPainter({required this.rect, super.repaint})`). This ensures that the CustomPainter repaints immediately when `_rectNotifier` notifies listeners, while preserving `shouldRepaint(oldDelegate)` to prevent unnecessary repaints on stationary frames.
 
 ### 2.2 F2: Opposite Half-Plane Spatial Pre-Filtering
@@ -161,4 +161,4 @@ The optimization strictly maintains 100% functional parity with the established 
 | **Back Button Navigation** | Deprecated `ModalRoute.addScopedWillPopCallback` generating warnings. | Modern Flutter `PopScope` integration with `onPopInvokedWithResult`. | **Zero deprecation warnings**; compliant with Flutter 3.22+ navigation standards. |
 | **Android Native Memory Safety** | Strong `Activity` reference in `TvBridge` prevented garbage collection on configuration changes. | `WeakReference<Activity>` with null-safe platform channel fallbacks. | **Zero Activity memory leaks** across orientation/display mode transitions. |
 | **Patch Closure Overhead** | Anonymous closure allocated per `GestureDetector` build in directional mode. | Static method `_handleDirectionalKeyEvent` in `tv_gesture_detector.patch`. | **Zero closure allocations** during directional widget rebuilds. |
-| **Automated Test Coverage** | 15 TV navigation tests. | 34 TV tests (20 navigation/benchmarks + 14 Player HUD/dialogs) + 89 full repository tests. | **100% test pass rate** with authentic performance benchmarks. |
+| **Automated Test Coverage** | 15 TV navigation tests. | 38 TV tests (24 navigation/benchmarks/M6 regressions + 14 Player HUD/dialogs) + 93 full repository tests. | **100% test pass rate** with authentic performance benchmarks. |
