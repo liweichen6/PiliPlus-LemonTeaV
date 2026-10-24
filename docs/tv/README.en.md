@@ -9,11 +9,11 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 ## 1. Design Goals
 
 1. **Near-Zero Upstream Merge Conflicts**: Keep upstream modifications to an absolute minimum (**only 5 Dart files in `lib/`, `< 20 lines` total**) so automated weekly merges from `lemonteaau/PiliPlus` run cleanly without manual conflict resolution.
-2. **10-Foot D-Pad First Experience**: Provide spatial 2D directional focus traversal (`TvFocusTraversalPolicy`), zero-rebuild focus ring rendering (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), automatic scroll-into-view (`cacheExtent` pre-rendering), closed-loop escape from scrollable dialogs/lists, and a dedicated 10-foot TV Player HUD (`TvPlayerHud`).
-3. **Framework-Level Widget Adaptation (`patch.ps1` / `tool/tv_patch.sh`)**: Fix Flutter/Material D-pad limitations (`GestureDetector` lacking focus, `RadioGroup` trapping arrow keys, `InkResponse` missing keyboard activation for `onTapDown`/`onTapUp` hold-to-triple-like and coordinate menus) at the build-time patch layer rather than editing 40+ upstream business pages.
+2. **10-Foot D-Pad First Experience**: Provide spatial 2D directional focus traversal (`TvFocusTraversalPolicy`), zero-rebuild focus ring rendering (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), automatic scroll-into-view (`cacheExtent` pre-rendering), kept-alive offscreen `PageView`/`TabBarView` focus isolation, closed-loop escape from scrollable dialogs/popups/lists, and a dedicated 10-foot TV Player HUD (`TvPlayerHud`) with progressive virtual seek and Hold-Select `3.0x` temporary speed.
+3. **Framework-Level Widget Adaptation (`patch.ps1` / `tool/tv_patch.sh`)**: Fix Flutter/Material D-pad limitations (`GestureDetector` lacking focus, `RadioGroup` trapping arrow keys, `InkResponse` missing keyboard activation for `onTapDown`/`onTapUp` hold-to-triple-like and coordinate menus, plus respecting `enabled && canRequestFocus` in directional mode) at the build-time patch layer rather than editing 40+ upstream business pages.
 4. **Universal APK & Side-by-Side Coexistence**:
    - **Application ID**: `com.lemontea.piliplus.tv` (Launcher label: **`PiliPlus TV`**) — coexists side-by-side with official PiliPlus (`com.example.piliplus`) and LemonTea PiliPlus (`com.lemontea.piliplus`).
-   - **Adaptive Runtime**: Automatically activates the TV control layer on Android TV / Leanback devices (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or non-touchscreen) while behaving identically to upstream touch PiliPlus on phones and tablets.
+   - **Adaptive Runtime**: Automatically activates the TV control layer on Android TV / Leanback devices (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `--dart-define=PILI_FORCE_TV=true`) while behaving identically to upstream touch PiliPlus on phones and tablets.
 
 ---
 
@@ -22,8 +22,9 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | Document | Purpose |
 | :--- | :--- |
 | [**README.en.md**](./README.en.md) ([中文](./README.md)) | Overview, package identity, upstream sync guide, local APK build guide, and CI/CD signing setup. |
-| [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization mechanisms (`F1`–`F9`), and capability invariants (`C1`–`C15`). |
-| [**PLAN.md**](./PLAN.md) | Complete implementation & optimization roadmap organized by **Phase → Milestone → Epic → Task**, with verification criteria and privacy rules. |
+| [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M7`), and 21 capability invariants (`C1`–`C21`). |
+| [**REVIEW.md**](./REVIEW.md) | **Comprehensive Android TV Layer Code & Architecture Review**: file-by-file engineering audit, technical observations (`R1`–`R6`), and upstream sync risk matrix. |
+| [**PLAN.md**](./PLAN.md) | Complete implementation, optimization, and remediation roadmap across **Phase 1–3 → Milestone → Epic → Task**, with verification criteria and privacy rules. |
 | [**PROGRESS.md**](./PROGRESS.md) | Task-by-task execution log, commit hashes, before/after performance benchmarks, and dual-device verification results. |
 
 ---
@@ -57,10 +58,10 @@ git fetch upstream main
 git config merge.ours.driver true
 git merge --no-edit upstream/main
 
-# 4. Re-apply patches and verify static analysis & automated tests
+# 4. Re-apply patches and verify static analysis & TV automated tests
 ./tool/tv_patch.sh apply
-flutter analyze --no-pub
-flutter test --no-pub
+flutter analyze --no-pub lib/tv/ lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
+flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
 
 # 5. Revert patches before committing or pushing
 ./tool/tv_patch.sh revert
@@ -72,7 +73,7 @@ git push origin main
 ## 4. Building Release APKs Locally
 
 ### Prerequisites
-- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.41.5` stable).
+- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.47.7` stable, Dart `>=3.13.0`).
 - **Java 17** & **Android SDK** (`compileSdk = 37`).
 - **Patch Helper**: [`./tool/tv_patch.sh`](../../tool/tv_patch.sh) (macOS/Linux bash equivalent of [`lib/scripts/patch.ps1`](../../lib/scripts/patch.ps1)).
 

@@ -17,6 +17,7 @@
 - **10-Foot Fullscreen & Split-Screen Player HUD (`TvPlayerHud`)**:
   - Dedicated TV On-Screen Display (OSD) overlay with D-pad transport controls for **Play/Pause, Previous/Next Episode, Episode/Part Picker, Video Quality, Playback Speed, Aspect Ratio, Danmaku Toggle, and Danmaku Settings**.
   - **Virtual Seek Target Accumulator**: Press Left/Right for `-10s / +10s` steps, or hold/rapid-press for smooth `1x → 2x → 3x` (`10s / 20s / 30s`) progressive scrubbing decoupled from hardware decoder latency.
+  - **Hold-Select for 3.0x Temporary Speed**: Hold the remote `OK`/`Enter` key during playback for a `3.0x` temporary speed boost (`3.0倍速中`) and release to restore normal speed; a short press toggles Play/Pause.
   - **Remote Hold-to-Triple-Like**: Supports Like, Coin, and Favorite actions from the HUD—hold the Select/OK key on Like to trigger a **Triple-Like (一键三连)**.
   - **Split-Screen Quick Strip**: Top quick-action bar in detail view for instant fullscreen entry or episode switching.
 - **Thoughtful TV Platform Adaptations**:
@@ -76,8 +77,9 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 | Document | Description |
 | :--- | :--- |
 | [**docs/tv/README.en.md**](docs/tv/README.en.md) ([中文](docs/tv/README.md)) | **TV module overview, upstream sync guide (GitHub Actions & local CLI), local APK build guide, and signing setup** |
-| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance optimizations (`F1`–`F9`), and 15 preserved TV invariants (`C1`–`C15`) |
-| [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | Complete milestone, epic, and task roadmap across Phase 1 (Foundation) and Phase 2 (Optimization) |
+| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance & hardening mechanisms (`F1`–`F9`, `M6`–`M7`), and 21 preserved TV invariants (`C1`–`C21`) |
+| [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **Comprehensive Android TV layer review**: file-by-file engineering audit, technical observations (`R1`–`R6`), and upstream merge risk matrix |
+| [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | Complete milestone, epic, and task roadmap across Phase 1 (Foundation), Phase 2 (Optimization), and Phase 3 (Remediation) |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | Task-by-task changelog, performance benchmark tables, and dual-device verification logs |
 | [**docs/thread-ripper.md**](docs/thread-ripper.md) | Architecture and adaptive concurrency design of the Bilibili-thread-ripper (BTR) engine |
 

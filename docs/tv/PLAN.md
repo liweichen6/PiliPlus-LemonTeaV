@@ -36,12 +36,13 @@
 
 ---
 
-### Phase 3: Post-Release Regression Investigation & Remediation (Milestones M6–M7)
+### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M8)
 
 | Milestone | Focus Area | Scope | Dependencies | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **M6: Account Switcher, Settings & Popup Menu Focus Fix** | Regression Investigation, `MediaQuery` Hierarchy Fix & `showMenu` Directional Focus Patch | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `lib/main.dart`, `lib/tv/tv_navigation.dart`, `lib/scripts/popup_menu.patch`, `lib/scripts/material/popup_menu.patch`, `test/tv_navigation_test.dart` (`M6.1`–`M6.5`) | Phase 1, Phase 2 | ✅ Completed |
+| **M6: Account Switcher, Settings & Popup Menu Focus Fix** | Regression Investigation, `MediaQuery` Hierarchy Fix & `showMenu` Directional Focus Patch | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`M6.1`–`M6.5`) | Phase 1, Phase 2 | ✅ Completed |
 | **M7: Offscreen PageView Focus Isolation, Rapid D-Pad Freeze Fix & Hold-Select 3x Speed** | `MinePage` Back-Exit / Offscreen Phantom Focus Fix, Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync, Hold-Select 3x Playback Speed | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/ARCHITECTURE.md`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (`M7.1`–`M7.5`) | M6 | ✅ Completed |
+| **M8: Comprehensive TV Layer Review & Documentation Sync** | Full Code-Level Audit across Tier 1–3, Creation of `docs/tv/REVIEW.md`, and Documentation Drift Remediation across `docs/tv/*` & `README*.md` | `docs/tv/REVIEW.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `README.md`, `README.en.md` (`M8.1`–`M8.2`) | M7 | ✅ Completed |
 
 ---
 
@@ -269,5 +270,18 @@
       2. `'fullscreen with HUD open on Play/Pause pill: holding Select activates 3x speed and pauses HUD auto-hide timer'`
       3. `'split-screen Quick Strip: holding Select on 全屏 or 播/暂 activates 3x speed; short press triggers pill action'`
 * **Verification**: `flutter analyze --no-pub` reports `No issues found!`; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes `43/43` TV tests (`26/26` in `test/tv_navigation_test.dart` + `17/17` in `test/tv_player_hud_test.dart`); live `<vm-tv>` verification confirmed `MinePage` Return switch & focus relocation onto `HomePage` video card, rapid discrete D-pad responsiveness, and video player hold-Enter `'3.0倍速中'` 3x speed with `0` `FlutterError`/`EXCEPTION`/`ANR`; `./tool/tv_patch.sh revert` restored all 38 patches to `[NOT APPLIED]`.
+
+---
+
+### Milestone M8: Comprehensive TV Layer Review & Documentation Sync
+* **Goal**: Perform an end-to-end code and architectural review of the entire Three-Tier TV Control Layer (`lib/tv/*`, `TvBridge.kt`, `lib/scripts/tv_*.patch`, Tier 3 hooks, CI workflow, and 43 automated tests), publish [`docs/tv/REVIEW.md`](./REVIEW.md), and resolve all documentation drift across `docs/tv/*` and bilingual root `README*.md`.
+* **Tasks**:
+  * **Task M8.1 (`✅ Done`) — Code-Level Audit & Creation of `docs/tv/REVIEW.md`**:
+    * Audited 100% of the fork diff against `lemonteaau/PiliPlus` (`33` files, `1658c011e` / `v2.1.6.2-fork.5745`, Flutter `3.47.7`), ran `flutter analyze --no-pub` (`0` issues across all TV targets) and `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` (`43/43` passed), and documented architecture scorecard, component-by-component evaluation, 6 code-hygiene/edge-case observations (`R1`–`R6`), and the upstream sync risk matrix in `docs/tv/REVIEW.md`.
+  * **Task M8.2 (`✅ Done`) — Documentation Drift Remediation (`docs/tv/*` & `README*.md`)**:
+    * Updated `docs/tv/ARCHITECTURE.md` to accurately reflect M6 (`_unwrapMediaQueryChild`, `_promotePopupMenuFocusIfNeeded`, `_InkResponseState._canRequestFocus` directional fix) and M7 (`findRecoveryFocus`, `repeatLockedThisFrame`, `_isKeptAliveOffscreen` via `PageMetrics` & `KeepAliveParentDataMixin`, $O(D)$ zero-allocation `_accumulatedParentOffset`, and Hold-Select `3.0x` temporary speed), expanding documented invariants to `C1`–`C21`.
+    * Updated `docs/tv/README.md` and `docs/tv/README.en.md` to align the pinned Flutter SDK version (`3.47.7`), clarify automatic TV detection (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `PILI_FORCE_TV=true`), and index `REVIEW.md`.
+    * Updated bilingual root `README.md` and `README.en.md` to document Hold-Select `3.0x` temporary playback speed, Phase 3 roadmap coverage, and `docs/tv/REVIEW.md`.
+* **Verification**: All 38 patches verified `[NOT APPLIED]` via `./tool/tv_patch.sh status`; privacy sanitization regex check passed across all modified/added docs.
 
 

@@ -59,20 +59,22 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 3: Post-Release Regression Investigation & Remediation (Milestones M6–M7)
+### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M8)
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **M6: Focus & Popup Remediation** | Epic M6.1 | `M6.1` | Root-Cause Investigation, Commit Provenance & Collateral Impact Analysis (`switchAccountDialog`, `Slider`, `SelectDialog`, `PopupListTile`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`9f89bd150`) |
-| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.2` | Fix `MediaQuery` Wrapping Order in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `lib/main.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` (`b7da68fa5`) |
-| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.3` | Self-Contained `showMenu(..., requestFocus: false)` Focus Promotion & Popup Focus-Ring Tracking in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `popup_menu.patch`) | ✅ Done | `lib/tv/tv_navigation.dart` (`b7da68fa5`) |
-| **M6: Focus & Popup Remediation** | Epic M6.3 | `M6.4` | Strengthen Automated Regression Tests (`MyApp._builder` Hierarchy, `switchAccountDialog`, `SliderDialog` & `showMenu`) | ✅ Done | `test/tv_navigation_test.dart` (`b7da68fa5`) |
-| **M6: Focus & Popup Remediation** | Epic M6.4 | `M6.5` | Patch Verification, Live TV Validation (`<vm-tv>`) & Revert Discipline | ✅ Done | Android APK / `<vm-tv>` (`b7da68fa5`) |
-| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.1 | `M7.1` | Root-Cause Analysis & Milestone Planning (`MinePage` Offscreen Focus, Rapid D-Pad Freeze, Hold-Select 3x Speed) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
-| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.2` | Offscreen `PageView` / `TabBarView` / `KeepAlive` Focus Isolation & User-Scrollable-Only `ensureVisible` | ✅ Done | `lib/tv/tv_navigation.dart` |
-| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.3` | Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync for Rapid Discrete D-Pad Presses | ✅ Done | `lib/tv/tv_navigation.dart` |
-| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.3 | `M7.4` | Hold D-Pad Enter/Select for 3x Temporary Playback Speed in `TvPlayerHud` | ✅ Done | `lib/tv/tv_player_hud.dart` |
-| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.4 | `M7.5` | Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline | ✅ Done | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` |
+| **M6: Focus & Popup Remediation** | Epic M6.1 | `M6.1` | Root-Cause Investigation, Commit Provenance & Collateral Impact Analysis (`switchAccountDialog`, `Slider`, `SelectDialog`, `PopupListTile`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`20ff9e72d`) |
+| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.2` | Fix `MediaQuery` Wrapping Order in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `lib/main.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` (`20ff9e72d`) |
+| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.3` | Self-Contained `showMenu(..., requestFocus: false)` Focus Promotion & Popup Focus-Ring Tracking in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `popup_menu.patch`) | ✅ Done | `lib/tv/tv_navigation.dart` (`20ff9e72d`) |
+| **M6: Focus & Popup Remediation** | Epic M6.3 | `M6.4` | Strengthen Automated Regression Tests (`MyApp._builder` Hierarchy, `switchAccountDialog`, `SliderDialog` & `showMenu`) | ✅ Done | `test/tv_navigation_test.dart` (`20ff9e72d`) |
+| **M6: Focus & Popup Remediation** | Epic M6.4 | `M6.5` | Patch Verification, Live TV Validation (`<vm-tv>`) & Revert Discipline | ✅ Done | Android APK / `<vm-tv>` (`20ff9e72d`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.1 | `M7.1` | Root-Cause Analysis & Milestone Planning (`MinePage` Offscreen Focus, Rapid D-Pad Freeze, Hold-Select 3x Speed) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`1658c011e`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.2` | Offscreen `PageView` / `TabBarView` / `KeepAlive` Focus Isolation & User-Scrollable-Only `ensureVisible` | ✅ Done | `lib/tv/tv_navigation.dart` (`1658c011e`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.3` | Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync for Rapid Discrete D-Pad Presses | ✅ Done | `lib/tv/tv_navigation.dart` (`1658c011e`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.3 | `M7.4` | Hold D-Pad Enter/Select for 3x Temporary Playback Speed in `TvPlayerHud` | ✅ Done | `lib/tv/tv_player_hud.dart` (`1658c011e`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.4 | `M7.5` | Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline | ✅ Done | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (`1658c011e`) |
+| **M8: TV Layer Review & Doc Sync** | Epic M8.1 | `M8.1` | Comprehensive Code & Architectural Audit of Tier 1–3 TV Layer (`docs/tv/REVIEW.md`) | ✅ Done | `docs/tv/REVIEW.md` |
+| **M8: TV Layer Review & Doc Sync** | Epic M8.2 | `M8.2` | Remediate Documentation Drift Across `docs/tv/*` & Bilingual Root `README*.md` | ✅ Done | `docs/tv/*`, `README*.md` |
 
 ---
 
@@ -369,6 +371,32 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   4. **Task `M7.5` — Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline**:
      * Added 2 new regression tests in `test/tv_navigation_test.dart` (`26/26` passed) and 3 new regression tests in `test/tv_player_hud_test.dart` (`17/17` passed), bringing the TV test suite to `43/43` passing tests.
      * Verified live D-pad input on `<vm-tv>` and reverted all 38 patches via `./tool/tv_patch.sh revert` (`[NOT APPLIED]`).
+
+---
+
+### [2026-10-24] Milestone M8 (Tasks `M8.1`–`M8.2`): Comprehensive TV Layer Review (`docs/tv/REVIEW.md`) & Documentation Sync
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[NEW] docs/tv/REVIEW.md`
+  * `[MODIFY] docs/tv/ARCHITECTURE.md`
+  * `[MODIFY] docs/tv/README.md`
+  * `[MODIFY] docs/tv/README.en.md`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+  * `[MODIFY] README.md`
+  * `[MODIFY] README.en.md`
+* **Summary & Verification**:
+  1. **Code-Level TV Layer Audit (`docs/tv/REVIEW.md`)**:
+     * Audited 100% of the fork diff against `lemonteaau/PiliPlus` across Tier 1 (`lib/tv/tv_platform.dart`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `TvBridge.kt`), Tier 2 (`lib/scripts/tv_*.patch`, `lib/scripts/patch.ps1`, `tool/tv_patch.sh`), Tier 3 hooks (`lib/main.dart`, `player_focus.dart`, `connectivity_utils.dart`, `constants.dart`, `api.dart`, `MainActivity.kt`, `AndroidManifest.xml`, `build.gradle.kts`, `.github/workflows/sync-upstream-build.yml`), and all 43 automated TV tests.
+     * Verified `flutter analyze --no-pub` reports `No issues found!` across all TV modules, hooks, and tests, and `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes `43/43` tests (`26` navigation + `17` player HUD) on Flutter `3.47.7`.
+     * Documented the 7-dimension architecture scorecard, deep-dive module reviews, 6 Low/Informational code-hygiene observations (`R1`–`R6`: non-Leanback HDMI box predicate nuance, unused `TvNavigation.onBack` & `'defaultFullScreen'` seed key, `DateTime.now()` vs. `samplingClock` in `_seekRelative`, `LoginPage` tab-index coupling & retry `ensureVisualUpdate()`, minor `TvNavigation` leaf-painter/allocation polish, and intentional `space` key separation), and the upstream sync risk matrix.
+  2. **Documentation Sync Across `docs/tv/*` & Root `README*.md`**:
+     * Corrected M7 architectural details in `docs/tv/ARCHITECTURE.md` (`findRecoveryFocus` container-scoped recovery, `repeatLockedThisFrame` discrete-burst continuity, `PageMetrics`/`KeepAliveParentDataMixin` offscreen detection, $O(D)$ zero-allocation `_accumulatedParentOffset`), added Section 2.10 for M6 (`_unwrapMediaQueryChild`, `_promotePopupMenuFocusIfNeeded`, `_InkResponseState._canRequestFocus` directional fix), and expanded capability invariants to `C1`–`C21`.
+     * Updated `docs/tv/README.md` and `docs/tv/README.en.md` to match the pinned Flutter SDK (`3.47.7`), align runtime TV detection criteria (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `PILI_FORCE_TV=true`), and index `REVIEW.md`.
+     * Updated root `README.md` and `README.en.md` with Hold-Select `3.0x` temporary playback speed, Phase 3 roadmap coverage, and `docs/tv/REVIEW.md`.
+  3. **Hygiene & Privacy Check**:
+     * Confirmed `./tool/tv_patch.sh status` reports `[NOT APPLIED]` for all 38 patches and verified zero private paths, file-scheme URLs, LAN IPs, usernames, or device serials in committed files.
+
 
 
 
