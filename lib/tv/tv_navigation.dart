@@ -7,10 +7,17 @@ import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/rendering.dart'
     show
         BoxParentData,
+        KeepAliveParentDataMixin,
         RenderClipPath,
         RenderClipRRect,
         RenderClipRect,
-        RenderFractionalTranslation;
+        RenderFractionalTranslation,
+        RenderOffstage,
+        RenderSliverFillViewport,
+        RenderViewportBase,
+        SliverLogicalParentData,
+        SliverMultiBoxAdaptorParentData;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -53,6 +60,41 @@ class _TvTraversalCache {
   final Map<RenderBox, Rect> _boxRects = <RenderBox, Rect>{};
   final Map<ScrollableState, Rect?> _scrollableRects =
       <ScrollableState, Rect?>{};
+
+  static bool _isKeptAliveOffscreen(RenderBox box) {
+    RenderObject? current = box;
+    while (current != null) {
+      if (current is RenderOffstage && current.offstage) {
+        return true;
+      }
+      final Object? pd = current.parentData;
+      if (pd is KeepAliveParentDataMixin && pd.keptAlive) {
+        return true;
+      }
+      final RenderObject? parent = current.parent;
+      if (pd is SliverMultiBoxAdaptorParentData &&
+          pd.index != null &&
+          parent is RenderSliverFillViewport) {
+        RenderObject? viewport = parent.parent;
+        while (viewport != null && viewport is! RenderViewportBase) {
+          viewport = viewport.parent;
+        }
+        if (viewport is RenderViewportBase) {
+          final Object offset = viewport.offset;
+          if (offset is PageMetrics &&
+              offset.hasPixels &&
+              offset.hasContentDimensions) {
+            final double? page = offset.page;
+            if (page != null && (page - pd.index!).abs() > 0.5) {
+              return true;
+            }
+          }
+        }
+      }
+      current = parent;
+    }
+    return false;
+  }
 
   Rect boxRect(RenderBox box) => _boxRects.putIfAbsent(
     box,
@@ -126,19 +168,19 @@ class _TvTraversalCache {
     }
 
     final RenderObject? renderObject = context.findRenderObject();
-    final Rect globalRect =
-        (renderObject is RenderBox &&
-            renderObject.attached &&
-            renderObject.hasSize)
+    final bool isAttachedBox =
+        renderObject is RenderBox &&
+        renderObject.attached &&
+        renderObject.hasSize &&
+        !_isKeptAliveOffscreen(renderObject);
+    final Rect globalRect = isAttachedBox
         ? boxRect(renderObject)
         : node.rect;
 
     bool focusable =
         node.canRequestFocus &&
         !node.skipTraversal &&
-        renderObject is RenderBox &&
-        renderObject.attached &&
-        renderObject.hasSize &&
+        isAttachedBox &&
         renderObject.size.width > 1.0 &&
         renderObject.size.height > 1.0 &&
         !globalRect.isEmpty &&
@@ -193,6 +235,58 @@ class _TvTraversalCache {
               (scrollable.axisDirection == AxisDirection.right ||
                   scrollable.axisDirection == AxisDirection.left)) {
             horizontalScrollable = scrollable;
+          }
+        } else if (focusable) {
+          final Rect? lockedViewport = scrollableRect(scrollable);
+          if (lockedViewport != null &&
+              !lockedViewport.hasNaN &&
+              !lockedViewport.isInfinite) {
+            if (!insideScrollable) {
+              visible = visible.intersect(lockedViewport);
+            } else {
+              final ScrollableState? innerScrollable =
+                  verticalScrollable ?? horizontalScrollable;
+              final Rect? innerRect = scrollableRect(innerScrollable);
+              if (innerRect != null &&
+                  !innerRect.hasNaN &&
+                  !innerRect.isInfinite) {
+                final Rect innerVisible = innerRect.intersect(lockedViewport);
+                if (innerVisible.width <= 1.0 || innerVisible.height <= 1.0) {
+                  focusable = false;
+                  return stopOrContinue();
+                }
+              }
+              if (verticalScrollable == null) {
+                final double top = math.max(visible.top, lockedViewport.top);
+                final double bottom = math.min(
+                  visible.bottom,
+                  lockedViewport.bottom,
+                );
+                visible = Rect.fromLTRB(
+                  visible.left,
+                  top,
+                  visible.right,
+                  math.max(top, bottom),
+                );
+              }
+              if (horizontalScrollable == null) {
+                final double left = math.max(visible.left, lockedViewport.left);
+                final double right = math.min(
+                  visible.right,
+                  lockedViewport.right,
+                );
+                visible = Rect.fromLTRB(
+                  left,
+                  visible.top,
+                  math.max(left, right),
+                  visible.bottom,
+                );
+              }
+            }
+            if (visible.width <= 1.0 || visible.height <= 1.0) {
+              focusable = false;
+              return stopOrContinue();
+            }
           }
         }
       }
@@ -357,21 +451,98 @@ class _TvTraversalCache {
 }
 
 class _TvPolicyFrameState {
-  bool traversalLockedThisFrame = false;
+  bool repeatLockedThisFrame = false;
+  bool didScrollInLastFocus = false;
   FocusNode? lastPolicyScrolledNode;
   _TvTraversalCache? activeCache;
 }
 
 class TvFocusTraversalPolicy extends FocusTraversalPolicy {
-  TvFocusTraversalPolicy({super.requestFocusCallback});
+  TvFocusTraversalPolicy({
+    TraversalRequestFocusCallback? requestFocusCallback,
+  }) : super(
+         requestFocusCallback:
+             requestFocusCallback ?? _defaultTvRequestFocusCallback,
+       );
 
   final ReadingOrderTraversalPolicy _readingOrderPolicy =
       ReadingOrderTraversalPolicy();
   final _TvPolicyFrameState _frameState = _TvPolicyFrameState();
 
+  static void _defaultTvRequestFocusCallback(
+    FocusNode node, {
+    ScrollPositionAlignmentPolicy? alignmentPolicy,
+    double? alignment,
+    Duration? duration,
+    Curve? curve,
+  }) {
+    node.requestFocus();
+    final BuildContext? context = node.context;
+    if (context != null && context.mounted) {
+      _ensureVisibleInUserScrollables(
+        context,
+        alignmentPolicy:
+            alignmentPolicy ?? ScrollPositionAlignmentPolicy.explicit,
+        alignment: alignment ?? 0.0,
+        duration: duration ?? Duration.zero,
+        curve: curve ?? Curves.ease,
+      );
+    }
+  }
+
+  static void _ensureVisibleInUserScrollables(
+    BuildContext context, {
+    ScrollPositionAlignmentPolicy alignmentPolicy =
+        ScrollPositionAlignmentPolicy.explicit,
+    double alignment = 0.0,
+    Duration duration = Duration.zero,
+    Curve curve = Curves.ease,
+  }) {
+    ScrollableState? scrollable = Scrollable.maybeOf(context);
+    while (scrollable != null) {
+      if (_canUserScroll(scrollable)) {
+        final RenderObject? target = context.findRenderObject();
+        if (target != null && target.attached) {
+          scrollable.position.ensureVisible(
+            target,
+            alignment: alignment,
+            duration: duration,
+            curve: curve,
+            alignmentPolicy: alignmentPolicy,
+          );
+        }
+      }
+      final BuildContext scrollableContext = scrollable.context;
+      scrollable = scrollableContext.mounted
+          ? Scrollable.maybeOf(scrollableContext)
+          : null;
+    }
+  }
+
+  static double _sumUserScrollPixels(BuildContext? context) {
+    if (context == null || !context.mounted) return 0.0;
+    double sum = 0.0;
+    ScrollableState? scrollable = Scrollable.maybeOf(context);
+    while (scrollable != null) {
+      if (_canUserScroll(scrollable) && scrollable.position.hasPixels) {
+        sum += scrollable.position.pixels;
+      }
+      final BuildContext scrollableContext = scrollable.context;
+      scrollable = scrollableContext.mounted
+          ? Scrollable.maybeOf(scrollableContext)
+          : null;
+    }
+    return sum;
+  }
+
   /// Whether a directional traversal step has already occurred during the
-  /// current frame.
-  bool get isTraversalLockedThisFrame => _frameState.traversalLockedThisFrame;
+  /// current frame, used to throttle auto-repeat (`KeyRepeatEvent`) to at most
+  /// one step per rendered frame without dropping discrete `KeyDownEvent`s.
+  bool get isRepeatLockedThisFrame => _frameState.repeatLockedThisFrame;
+
+  /// Whether the most recent directional focus step scrolled an enclosing
+  /// user-scrollable container.
+  bool get didScrollInLastFocus => _frameState.didScrollInLastFocus;
 
   T _withCache<T>(T Function(_TvTraversalCache cache) action) {
     final _TvTraversalCache? existing = _frameState.activeCache;
@@ -439,6 +610,88 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     }
     return firstNode;
   }
+
+  /// Finds the best focus target in [currentScope] when [invalidNode] has
+  /// become offscreen or unfocusable (e.g. after switching tabs in a
+  /// `PageView`/`TabBarView` or resuming the app on `HomePage`).
+  ///
+  /// When [invalidNode] (or [previousRect]) belonged to a non-user-scrollable
+  /// container such as `MainApp`'s `PageView`, this prefers focusable targets
+  /// inside that same container (e.g. `HomePage` content) rather than jumping
+  /// to an outer sidebar item such as `userAvatar` (`toMinePage`).
+  FocusNode? findRecoveryFocus(
+    FocusNode? invalidNode,
+    FocusScopeNode currentScope, {
+    Rect? previousRect,
+  }) => _withCache((_TvTraversalCache cache) {
+    Rect? containerRect;
+    final BuildContext? invalidContext = invalidNode?.context;
+    if (invalidContext != null && invalidContext.mounted) {
+      invalidContext.visitAncestorElements((Element element) {
+        if (element is StatefulElement && element.state is ScrollableState) {
+          final scrollable = element.state as ScrollableState;
+          if (!_canUserScroll(scrollable)) {
+            final Rect? r = cache.scrollableRect(scrollable);
+            if (r != null && !r.isEmpty && !r.hasNaN && !r.isInfinite) {
+              containerRect = r;
+            }
+          }
+        }
+        return true;
+      });
+    }
+
+    if (containerRect == null && previousRect != null && !previousRect.isEmpty) {
+      for (final FocusNode node in currentScope.traversalDescendants) {
+        final BuildContext? ctx = node.context;
+        if (ctx == null || !ctx.mounted) continue;
+        ctx.visitAncestorElements((Element element) {
+          if (element is StatefulElement && element.state is ScrollableState) {
+            final scrollable = element.state as ScrollableState;
+            if (!_canUserScroll(scrollable)) {
+              final Rect? r = cache.scrollableRect(scrollable);
+              if (r != null &&
+                  !r.isEmpty &&
+                  !r.hasNaN &&
+                  !r.isInfinite &&
+                  r.contains(previousRect.center)) {
+                containerRect = r;
+                return false;
+              }
+            }
+          }
+          return true;
+        });
+        if (containerRect != null) break;
+      }
+    }
+
+    if (containerRect != null) {
+      final List<FocusNode> visibleInContainer = <FocusNode>[];
+      final List<FocusNode> fallbackInContainer = <FocusNode>[];
+      for (final FocusNode node in currentScope.traversalDescendants) {
+        if (node == invalidNode) continue;
+        if (cache.isEffectivelyFocusable(node) &&
+            containerRect!.contains(cache.rectOf(node).center)) {
+          if (cache.isVisibleInEnclosingScrollables(node)) {
+            visibleInContainer.add(node);
+          } else {
+            fallbackInContainer.add(node);
+          }
+        }
+      }
+      final List<FocusNode> containerPool = visibleInContainer.isNotEmpty
+          ? visibleInContainer
+          : fallbackInContainer;
+      final FocusNode? inContainer = _findFirstReadingOrderNode(
+        containerPool,
+        cache,
+      );
+      if (inContainer != null) return inContainer;
+    }
+
+    return findFirstFocus(currentScope, ignoreCurrentFocus: true);
+  });
 
   @override
   FocusNode? findFirstFocus(
@@ -528,7 +781,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   });
 
   static bool _canUserScroll(ScrollableState scrollable) {
-    return scrollable.widget.physics is! NeverScrollableScrollPhysics;
+    final ScrollPhysics? physics = scrollable.widget.physics;
+    return physics is! NeverScrollableScrollPhysics &&
+        physics is! PageScrollPhysics &&
+        scrollable.position is! PageMetrics;
   }
 
   static bool _isRectVisibleInScrollable(Rect r, Rect scrollableRect) {
@@ -624,12 +880,15 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
   void _focusNode(FocusNode node, TraversalDirection direction) {
     _frameState.lastPolicyScrolledNode = node;
-    if (!_frameState.traversalLockedThisFrame) {
-      _frameState.traversalLockedThisFrame = true;
+    if (!_frameState.repeatLockedThisFrame) {
+      _frameState.repeatLockedThisFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _frameState.traversalLockedThisFrame = false;
+        _frameState.repeatLockedThisFrame = false;
+        _frameState.didScrollInLastFocus = false;
       });
+      WidgetsBinding.instance.ensureVisualUpdate();
     }
+    final double beforeScroll = _sumUserScrollPixels(node.context);
     requestFocusCallback(
       node,
       alignmentPolicy: switch (direction) {
@@ -639,6 +898,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       },
     );
+    final double afterScroll = _sumUserScrollPixels(node.context);
+    if ((afterScroll - beforeScroll).abs() > 0.5) {
+      _frameState.didScrollInLastFocus = true;
+    }
     // Consume the keyboard token immediately so D-pad directional focus
     // landing on an EditableText does not automatically open the soft keyboard.
     node.consumeKeyboardToken();
@@ -646,16 +909,17 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
   @override
   bool inDirection(FocusNode currentNode, TraversalDirection direction) {
-    if (_frameState.traversalLockedThisFrame) return true;
     final FocusScopeNode? nearestScope = currentNode.nearestScope;
     if (nearestScope == null) return false;
     nearestScope.directionalTraversalEdgeBehavior = TraversalEdgeBehavior.stop;
     return _withCache((_TvTraversalCache cache) {
       final FocusNode? focusedChild = nearestScope.focusedChild;
-      if (focusedChild == null) {
+      if (focusedChild == null || !cache.isEffectivelyFocusable(focusedChild)) {
         final FocusNode? firstFocus =
-            findFirstFocusInDirection(currentNode, direction) ??
-            findFirstFocus(currentNode);
+            (focusedChild == null
+                ? findFirstFocusInDirection(currentNode, direction)
+                : findRecoveryFocus(focusedChild, nearestScope)) ??
+            findFirstFocus(currentNode, ignoreCurrentFocus: true);
         if (firstFocus != null) {
           _focusNode(firstFocus, direction);
           return true;
@@ -1291,7 +1555,8 @@ class TvNavigation extends StatefulWidget {
   State<TvNavigation> createState() => _TvNavigationState();
 }
 
-class _TvNavigationState extends State<TvNavigation> {
+class _TvNavigationState extends State<TvNavigation>
+    with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
 
   final GlobalKey _key = GlobalKey();
@@ -1307,6 +1572,8 @@ class _TvNavigationState extends State<TvNavigation> {
   bool _rectSyncScheduled = false;
   bool _focusSyncScheduled = false;
   FocusNode? _lastFocusedNode;
+  FocusNode? _pendingInvalidNode;
+  Rect? _pendingRecoveryRect;
   RenderBox? _lastTargetBox;
   Size? _lastTargetSize;
   Size? _lastRootSize;
@@ -1316,6 +1583,7 @@ class _TvNavigationState extends State<TvNavigation> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     FocusManager.instance.addListener(_onFocus);
     if (TvPlatform.isTv) {
       FocusManager.instance.highlightStrategy =
@@ -1328,13 +1596,54 @@ class _TvNavigationState extends State<TvNavigation> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     FocusManager.instance.removeListener(_onFocus);
     _rectNotifier.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && TvPlatform.isTv) {
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+      _lastTargetSize = null;
+      _lastRootSize = null;
+      _lastParentDataOffset = null;
+      _lastScrollOffset = null;
+      _focusSyncScheduled = false;
+      _rectSyncScheduled = false;
+      _onFocus();
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification ||
+        notification is ScrollEndNotification) {
+      final FocusNode? primary = FocusManager.instance.primaryFocus;
+      if (primary != null &&
+          primary is! FocusScopeNode &&
+          !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
+        _pendingInvalidNode = primary;
+        _pendingRecoveryRect = _rectNotifier.value ?? _pendingRecoveryRect;
+        _lastFocusedNode = null;
+        _lastTargetBox = null;
+        primary.unfocus(disposition: UnfocusDisposition.scope);
+        _updateRect(null);
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+    }
+    return false;
+  }
+
   Rect? _computeFocusedRect(FocusNode? node) {
-    if (node == null || node is FocusScopeNode) return null;
+    if (node == null ||
+        node is FocusScopeNode ||
+        !node.canRequestFocus ||
+        node.skipTraversal) {
+      return null;
+    }
     final BuildContext? context = node.context;
     if (context == null || !context.mounted) return null;
     final RenderObject? target = context.findRenderObject();
@@ -1343,11 +1652,16 @@ class _TvNavigationState extends State<TvNavigation> {
         root is RenderBox &&
         target.attached &&
         target.hasSize &&
-        root.hasSize) {
+        root.hasSize &&
+        _accumulatedParentOffset(target, root) != null) {
       final Rect candidate =
           target.localToGlobal(Offset.zero, ancestor: root) & target.size;
-      if (candidate.width > 0 &&
+      final Rect viewport = Offset.zero & root.size;
+      if (!candidate.hasNaN &&
+          !candidate.isInfinite &&
+          candidate.width > 0 &&
           candidate.height > 0 &&
+          viewport.overlaps(candidate) &&
           candidate.width * candidate.height <
               root.size.width * root.size.height * .8) {
         return candidate;
@@ -1371,21 +1685,67 @@ class _TvNavigationState extends State<TvNavigation> {
     }
   }
 
-  static Offset _accumulatedParentOffset(RenderBox ro, RenderBox rootRo) {
+  static Offset? _accumulatedParentOffset(RenderBox ro, RenderBox rootRo) {
     double dx = 0.0;
     double dy = 0.0;
     RenderObject? current = ro;
     while (current != null && !identical(current, rootRo)) {
-      final pd = current.parentData;
+      if (current is RenderOffstage && current.offstage) {
+        return null;
+      }
+      if (current is RenderBox &&
+          (!current.hasSize ||
+              current.size.width < 1.0 ||
+              current.size.height < 1.0)) {
+        return null;
+      }
+      final Object? pd = current.parentData;
+      if (pd is KeepAliveParentDataMixin && pd.keptAlive) {
+        return null;
+      }
+      final RenderObject? parent = current.parent;
+      if (pd is SliverMultiBoxAdaptorParentData &&
+          pd.index != null &&
+          parent is RenderSliverFillViewport) {
+        RenderObject? viewport = parent.parent;
+        while (viewport != null && viewport is! RenderViewportBase) {
+          viewport = viewport.parent;
+        }
+        if (viewport is RenderViewportBase) {
+          final Object offset = viewport.offset;
+          if (offset is PageMetrics &&
+              offset.hasPixels &&
+              offset.hasContentDimensions) {
+            final double? page = offset.page;
+            if (page != null && (page - pd.index!).abs() > 0.5) {
+              return null;
+            }
+          }
+        }
+      }
       if (pd is BoxParentData) {
         dx += pd.offset.dx;
         dy += pd.offset.dy;
+      } else if (pd is SliverLogicalParentData) {
+        dy += pd.layoutOffset ?? 0.0;
       }
       if (current is RenderFractionalTranslation && current.hasSize) {
         dx += current.translation.dx * current.size.width;
         dy += current.translation.dy * current.size.height;
       }
-      current = current.parent;
+      if (current is RenderViewportBase && current.offset.hasPixels) {
+        switch (current.axisDirection) {
+          case AxisDirection.down:
+            dy -= current.offset.pixels;
+          case AxisDirection.up:
+            dy += current.offset.pixels;
+          case AxisDirection.right:
+            dx -= current.offset.pixels;
+          case AxisDirection.left:
+            dx += current.offset.pixels;
+        }
+      }
+      current = parent;
     }
     return Offset(dx, dy);
   }
@@ -1450,19 +1810,36 @@ class _TvNavigationState extends State<TvNavigation> {
         if (_isScopeInactive(node)) {
           targetScope = _findActiveSiblingScope(node) ?? node;
         }
-        final FocusNode? first = _policy.findFirstFocus(targetScope);
+        final FocusNode? pendingInvalid = _pendingInvalidNode;
+        final Rect? pendingRect = _pendingRecoveryRect;
+        final FocusNode? first = pendingInvalid != null
+            ? _policy.findRecoveryFocus(
+                pendingInvalid,
+                targetScope,
+                previousRect: pendingRect,
+              )
+            : _policy.findFirstFocus(targetScope);
         if (first != null) {
           _focusSyncScheduled = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _focusSyncScheduled = false;
             if (!mounted) return;
             final FocusNode resolvedFirst =
-                _policy.findFirstFocus(targetScope) ?? first;
+                (pendingInvalid != null
+                    ? _policy.findRecoveryFocus(
+                        pendingInvalid,
+                        targetScope,
+                        previousRect: pendingRect,
+                      )
+                    : _policy.findFirstFocus(targetScope)) ??
+                first;
             if (FocusManager.instance.primaryFocus == node &&
                 !_isScopeInactive(targetScope) &&
                 targetScope.canRequestFocus &&
                 resolvedFirst.canRequestFocus &&
                 (resolvedFirst.context?.mounted ?? false)) {
+              _pendingInvalidNode = null;
+              _pendingRecoveryRect = null;
               if (targetScope != node) {
                 targetScope.enclosingScope?.setFirstFocus(targetScope);
               }
@@ -1472,6 +1849,7 @@ class _TvNavigationState extends State<TvNavigation> {
               _updateRect(_computeFocusedRect(resolvedFirst));
             }
           });
+          WidgetsBinding.instance.ensureVisualUpdate();
           return;
         }
       }
@@ -1488,6 +1866,7 @@ class _TvNavigationState extends State<TvNavigation> {
           if (!mounted) return;
           _updateRect(null);
         });
+        WidgetsBinding.instance.ensureVisualUpdate();
       }
       return;
     }
@@ -1519,45 +1898,112 @@ class _TvNavigationState extends State<TvNavigation> {
               _updateRect(_computeFocusedRect(resolvedFirst));
             }
           });
+          WidgetsBinding.instance.ensureVisualUpdate();
           return;
         }
       }
     }
 
     final BuildContext? context = node.context;
-    if (context == null || !context.mounted) return;
-    final RenderObject? ro = context.findRenderObject();
-    if (ro is! RenderBox || !ro.attached || !ro.hasSize) return;
+    final RenderObject? ro = (context != null && context.mounted)
+        ? context.findRenderObject()
+        : null;
     final RenderObject? rootRo = _key.currentContext?.findRenderObject();
-    if (rootRo is! RenderBox || !rootRo.attached || !rootRo.hasSize) return;
-
-    final Offset parentOffset = _accumulatedParentOffset(ro, rootRo);
-    final ScrollableState? scrollable = Scrollable.maybeOf(context);
-    final double? scrollPixels =
-        scrollable?.position.hasPixels == true
-            ? scrollable!.position.pixels
-            : null;
+    final RenderBox? targetBox = (ro is RenderBox && ro.attached && ro.hasSize)
+        ? ro
+        : null;
+    final RenderBox? rootBox =
+        (rootRo is RenderBox && rootRo.attached && rootRo.hasSize)
+        ? rootRo
+        : null;
+    final Offset? parentOffset = (targetBox != null && rootBox != null)
+        ? _accumulatedParentOffset(targetBox, rootBox)
+        : null;
+    final ScrollableState? scrollable = (context != null && context.mounted)
+        ? Scrollable.maybeOf(context)
+        : null;
+    final double? scrollPixels = scrollable?.position.hasPixels == true
+        ? scrollable!.position.pixels
+        : null;
 
     final bool isStationary =
+        targetBox != null &&
+        rootBox != null &&
+        parentOffset != null &&
+        node.canRequestFocus &&
+        !node.skipTraversal &&
         node == _lastFocusedNode &&
-        ro == _lastTargetBox &&
-        ro.size == _lastTargetSize &&
-        rootRo.size == _lastRootSize &&
+        targetBox == _lastTargetBox &&
+        targetBox.size == _lastTargetSize &&
+        rootBox.size == _lastRootSize &&
         parentOffset == _lastParentDataOffset &&
         scrollPixels == _lastScrollOffset &&
         _rectNotifier.value != null;
 
     if (isStationary) return;
 
+    if (currentScope != null &&
+        !_isScopeInactive(currentScope) &&
+        !_focusSyncScheduled &&
+        (parentOffset == null ||
+            !TvFocusTraversalPolicy.isEffectivelyFocusable(node))) {
+      final Rect? prevRect = _rectNotifier.value;
+      final FocusNode? first = _policy.findRecoveryFocus(
+        node,
+        currentScope,
+        previousRect: prevRect,
+      );
+      if (first != null && first != node) {
+        _focusSyncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _focusSyncScheduled = false;
+          if (!mounted) return;
+          final FocusNode resolvedFirst =
+              _policy.findRecoveryFocus(
+                node,
+                currentScope,
+                previousRect: prevRect,
+              ) ??
+              first;
+          if (FocusManager.instance.primaryFocus == node &&
+              !TvFocusTraversalPolicy.isEffectivelyFocusable(node) &&
+              resolvedFirst.canRequestFocus &&
+              (resolvedFirst.context?.mounted ?? false)) {
+            resolvedFirst
+              ..requestFocus()
+              ..consumeKeyboardToken();
+            _updateRect(_computeFocusedRect(resolvedFirst));
+          }
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+        return;
+      }
+    }
+
+    if (targetBox == null || rootBox == null) {
+      if (_rectNotifier.value != null && !_focusSyncScheduled) {
+        _rectSyncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _rectSyncScheduled = false;
+          if (!mounted) return;
+          _updateRect(
+            _computeFocusedRect(FocusManager.instance.primaryFocus),
+          );
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+      return;
+    }
+
     final Rect? rect = _computeFocusedRect(node);
     _lastFocusedNode = node;
-    _lastTargetBox = ro;
-    _lastTargetSize = ro.size;
-    _lastRootSize = rootRo.size;
+    _lastTargetBox = targetBox;
+    _lastTargetSize = targetBox.size;
+    _lastRootSize = rootBox.size;
     _lastParentDataOffset = parentOffset;
     _lastScrollOffset = scrollPixels;
 
-    if (_sameRect(rect, _rectNotifier.value)) return;
+    if (_sameRect(rect, _rectNotifier.value) || _focusSyncScheduled) return;
     _rectSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _rectSyncScheduled = false;
@@ -1567,12 +2013,34 @@ class _TvNavigationState extends State<TvNavigation> {
       );
       _updateRect(latest);
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _onFocus() {
     _lastFocusedNode = null;
     _lastTargetBox = null;
-    if (!TvPlatform.isTv || _focusSyncScheduled) return;
+    if (!TvPlatform.isTv) return;
+    final FocusNode? immediateNode = FocusManager.instance.primaryFocus;
+    if (immediateNode != null &&
+        immediateNode is! FocusScopeNode &&
+        !identical(immediateNode, _pendingInvalidNode)) {
+      _pendingInvalidNode = null;
+      _pendingRecoveryRect = null;
+    }
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle &&
+        !_policy.didScrollInLastFocus) {
+      final FocusScopeNode? immediateScope = immediateNode?.nearestScope;
+      if (immediateNode != null &&
+          immediateNode is! FocusScopeNode &&
+          immediateScope != null &&
+          !_isScopeInactive(immediateScope)) {
+        _updateRect(_computeFocusedRect(immediateNode));
+      }
+    }
+    if (_focusSyncScheduled) {
+      WidgetsBinding.instance.ensureVisualUpdate();
+      return;
+    }
     _focusSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusSyncScheduled = false;
@@ -1583,7 +2051,17 @@ class _TvNavigationState extends State<TvNavigation> {
         if (_isScopeInactive(node)) {
           targetScope = _findActiveSiblingScope(node) ?? node;
         }
-        final FocusNode? first = _policy.findFirstFocus(targetScope);
+        final FocusNode? pendingInvalid = _pendingInvalidNode;
+        final Rect? pendingRect = _pendingRecoveryRect;
+        _pendingInvalidNode = null;
+        _pendingRecoveryRect = null;
+        final FocusNode? first = pendingInvalid != null
+            ? _policy.findRecoveryFocus(
+                pendingInvalid,
+                targetScope,
+                previousRect: pendingRect,
+              )
+            : _policy.findFirstFocus(targetScope);
         if (first != null) {
           if (targetScope != node) {
             targetScope.enclosingScope?.setFirstFocus(targetScope);
@@ -1591,10 +2069,11 @@ class _TvNavigationState extends State<TvNavigation> {
           first
             ..requestFocus()
             ..consumeKeyboardToken();
+          _updateRect(_computeFocusedRect(first));
         } else {
           targetScope.nextFocus();
+          _updateRect(null);
         }
-        _updateRect(null);
         return;
       }
       final FocusScopeNode? currentScope = node?.nearestScope;
@@ -1620,14 +2099,39 @@ class _TvNavigationState extends State<TvNavigation> {
           }
         }
       }
+      if (node != null &&
+          currentScope != null &&
+          !_isScopeInactive(currentScope)) {
+        final bool effectivelyFocusable =
+            TvFocusTraversalPolicy.isEffectivelyFocusable(node);
+        if (!effectivelyFocusable) {
+          final FocusNode? first = _policy.findRecoveryFocus(
+            node,
+            currentScope,
+            previousRect: _rectNotifier.value,
+          );
+          if (first != null &&
+              first != node &&
+              first.canRequestFocus &&
+              (first.context?.mounted ?? false)) {
+            first
+              ..requestFocus()
+              ..consumeKeyboardToken();
+            _updateRect(_computeFocusedRect(first));
+            return;
+          }
+          _updateRect(null);
+          return;
+        }
+        TvNavigationObserver.rememberFocusedNode(node);
+      }
       final BuildContext? context = node?.context;
       if (context != null &&
           context.mounted &&
           node != null &&
           node is! FocusScopeNode) {
-        TvNavigationObserver.rememberFocusedNode(node);
         if (!_policy.consumePolicyScrolledNode(node)) {
-          Scrollable.ensureVisible(
+          TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
             context,
             alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
           );
@@ -1648,18 +2152,17 @@ class _TvNavigationState extends State<TvNavigation> {
   KeyEventResult _handleKeyEvent(FocusNode _, KeyEvent event) {
     final LogicalKeyboardKey key = event.logicalKey;
     if (_isDirectionalKey(key)) {
-      if (event is KeyDownEvent || event is KeyRepeatEvent) {
-        if (_policy.isTraversalLockedThisFrame) {
-          return KeyEventResult.handled;
-        }
+      if (event is KeyRepeatEvent) {
         final int nowMs = _repeatClock.elapsedMilliseconds;
-        if (event is KeyRepeatEvent &&
-            _lastDirectionalStepMs != null &&
-            nowMs - _lastDirectionalStepMs! <
-                _kDirectionalRepeatMinIntervalMs) {
+        if (_policy.isRepeatLockedThisFrame ||
+            (_lastDirectionalStepMs != null &&
+                nowMs - _lastDirectionalStepMs! <
+                    _kDirectionalRepeatMinIntervalMs)) {
           return KeyEventResult.handled;
         }
         _lastDirectionalStepMs = nowMs;
+      } else if (event is KeyDownEvent) {
+        _lastDirectionalStepMs = _repeatClock.elapsedMilliseconds;
       }
       return KeyEventResult.ignored;
     }
@@ -1670,9 +2173,39 @@ class _TvNavigationState extends State<TvNavigation> {
         key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.gameButtonA;
-    if (isSelectKey && TvPlatform.isFocusedOnEditableText()) {
-      TvPlatform.requestSoftKeyboard();
-      return KeyEventResult.handled;
+    if (isSelectKey) {
+      final FocusNode? primary = FocusManager.instance.primaryFocus;
+      if (primary == null ||
+          primary is FocusScopeNode ||
+          !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
+        if (_pendingInvalidNode != null) {
+          WidgetsBinding.instance.ensureVisualUpdate();
+          return KeyEventResult.handled;
+        }
+        final FocusScopeNode? scope = primary is FocusScopeNode
+            ? primary
+            : primary?.nearestScope;
+        if (scope != null) {
+          final FocusNode? recovered = _policy.findRecoveryFocus(
+            primary,
+            scope,
+            previousRect: _rectNotifier.value,
+          );
+          if (recovered != null &&
+              recovered.canRequestFocus &&
+              (recovered.context?.mounted ?? false)) {
+            recovered
+              ..requestFocus()
+              ..consumeKeyboardToken();
+            _updateRect(_computeFocusedRect(recovered));
+          }
+        }
+        return KeyEventResult.handled;
+      }
+      if (TvPlatform.isFocusedOnEditableText()) {
+        TvPlatform.requestSoftKeyboard();
+        return KeyEventResult.handled;
+      }
     }
     return KeyEventResult.ignored;
   }
@@ -1714,32 +2247,35 @@ class _TvNavigationState extends State<TvNavigation> {
             canRequestFocus: false,
             skipTraversal: true,
             onKeyEvent: _handleKeyEvent,
-            child: Stack(
-              key: _key,
-              fit: StackFit.expand,
-              children: <Widget>[
-                FocusTraversalGroup(
-                  policy: _policy,
-                  child: child,
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: RepaintBoundary(
-                      child: ValueListenableBuilder<Rect?>(
-                        valueListenable: _rectNotifier,
-                        builder: (BuildContext context, Rect? rect, _) {
-                          return CustomPaint(
-                            painter: _TvFocusRingPainter(
-                              rect,
-                              repaint: _rectNotifier,
-                            ),
-                          );
-                        },
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: Stack(
+                key: _key,
+                fit: StackFit.expand,
+                children: <Widget>[
+                  FocusTraversalGroup(
+                    policy: _policy,
+                    child: child,
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: RepaintBoundary(
+                        child: ValueListenableBuilder<Rect?>(
+                          valueListenable: _rectNotifier,
+                          builder: (BuildContext context, Rect? rect, _) {
+                            return CustomPaint(
+                              painter: _TvFocusRingPainter(
+                                rect,
+                                repaint: _rectNotifier,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1819,7 +2355,8 @@ class TvNavigationObserver extends NavigatorObserver {
       final FocusNode? current = FocusManager.instance.primaryFocus;
       if (current != null &&
           current is! FocusScopeNode &&
-          (current.context?.mounted ?? false)) {
+          (current.context?.mounted ?? false) &&
+          TvFocusTraversalPolicy.isEffectivelyFocusable(current)) {
         final ModalRoute<dynamic>? owner = ModalRoute.of(current.context!);
         if (owner == null || owner == previousRoute) {
           _savedFocusByRoute[previousRoute] = current;
@@ -1831,6 +2368,7 @@ class TvNavigationObserver extends NavigatorObserver {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _switchLoginPageToQrTab();
       });
+      WidgetsBinding.instance.ensureVisualUpdate();
     }
   }
 
@@ -1839,15 +2377,37 @@ class TvNavigationObserver extends NavigatorObserver {
     super.didPop(route, previousRoute);
     if (!TvPlatform.isTv || previousRoute == null) return;
     final FocusNode? savedNode = _savedFocusByRoute[previousRoute];
-    if (savedNode == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (savedNode.canRequestFocus &&
+      if (savedNode != null &&
+          savedNode.canRequestFocus &&
           (savedNode.context?.mounted ?? false) &&
           TvFocusTraversalPolicy.isEffectivelyFocusable(savedNode)) {
         savedNode
           ..requestFocus()
           ..consumeKeyboardToken();
+        return;
+      }
+      final FocusNode? primary = FocusManager.instance.primaryFocus;
+      if (primary != null &&
+          primary is! FocusScopeNode &&
+          !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
+        final FocusScopeNode? scope = primary.nearestScope;
+        if (scope != null) {
+          final FocusNode? fallback = TvFocusTraversalPolicy()
+              .findRecoveryFocus(
+                primary,
+                scope,
+              );
+          if (fallback != null &&
+              fallback.canRequestFocus &&
+              (fallback.context?.mounted ?? false)) {
+            fallback
+              ..requestFocus()
+              ..consumeKeyboardToken();
+          }
+        }
       }
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 }

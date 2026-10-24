@@ -81,10 +81,15 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     debugLabel: 'TvQuickFullscreen',
   );
 
+  static const Duration _kLongPressSpeedDelay = Duration(milliseconds: 250);
+
   StreamSubscription<bool>? _fullScreenSub;
   bool _hudVisible = false;
   Timer? _autoHideTimer;
   Timer? _seekPreviewTimer;
+  Timer? _longPressSpeedTimer;
+  bool _selectKeyDown = false;
+  bool _longPressSpeedActive = false;
   String? _seekPreviewText;
   Duration? _virtualSeekTarget;
   int _consecutiveSeekSteps = 0;
@@ -95,6 +100,69 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   bool get _hasPlayer => _pl.videoPlayerController != null;
 
   bool get _isFullScreen => _pl.isFullScreen.value;
+
+  bool get _canTriggerLongPressSpeed =>
+      !_pl.isLive && _hasPlayer && _pl.playerStatus.isPlaying;
+
+  void _startLongPressSpeed() {
+    _longPressSpeedTimer?.cancel();
+    _longPressSpeedTimer = null;
+    if (_longPressSpeedActive || !_canTriggerLongPressSpeed) return;
+    _longPressSpeedActive = true;
+    _pl.setLongPressStatus(true);
+  }
+
+  void _cancelSelectHold() {
+    _longPressSpeedTimer?.cancel();
+    _longPressSpeedTimer = null;
+    _selectKeyDown = false;
+    if (_longPressSpeedActive) {
+      _longPressSpeedActive = false;
+      _pl.setLongPressStatus(false);
+    }
+  }
+
+  KeyEventResult _handleSelectKeyWithLongPressSpeed(
+    KeyEvent event, {
+    required VoidCallback onShortPress,
+  }) {
+    if (!_isSelectKey(event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) {
+      if (!_selectKeyDown) {
+        _selectKeyDown = true;
+        _longPressSpeedActive = false;
+        _longPressSpeedTimer?.cancel();
+        if (_canTriggerLongPressSpeed) {
+          _longPressSpeedTimer = Timer(_kLongPressSpeedDelay, () {
+            if (mounted && _selectKeyDown) {
+              _startLongPressSpeed();
+            }
+          });
+        }
+      }
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent) {
+      if (_selectKeyDown) {
+        _startLongPressSpeed();
+      }
+      return KeyEventResult.handled;
+    }
+    if (event is KeyUpEvent) {
+      if (!_selectKeyDown) {
+        return KeyEventResult.ignored;
+      }
+      final bool wasLongPress = _longPressSpeedActive;
+      _cancelSelectHold();
+      if (!wasLongPress) {
+        onShortPress();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   VideoDetailController? get _videoDetailCtr {
     if (widget.introController case final intro?) {
@@ -134,6 +202,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   void didUpdateWidget(TvPlayerHud oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.plPlayerController != widget.plPlayerController) {
+      _cancelSelectHold();
       _fullScreenSub?.cancel();
       _bindFullScreenListener();
     }
@@ -141,6 +210,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   @override
   void dispose() {
+    _cancelSelectHold();
     _fullScreenSub?.cancel();
     _autoHideTimer?.cancel();
     _seekPreviewTimer?.cancel();
@@ -212,6 +282,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   void _hideHud({bool restoreFocus = true}) {
     _autoHideTimer?.cancel();
+    _cancelSelectHold();
     _virtualSeekTarget = null;
     if (_hudVisible && mounted) {
       setState(() {
@@ -226,7 +297,9 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   void _resetAutoHideTimer() {
     _autoHideTimer?.cancel();
     _autoHideTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && !(widget.introController?.isTripling ?? false)) {
+      if (mounted &&
+          !(widget.introController?.isTripling ?? false) &&
+          !_longPressSpeedActive) {
         _hideHud();
       }
     });
@@ -362,6 +435,19 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
     // Fullscreen mode with HUD closed:
     _pl.showControls.value = false;
+    if (_isSelectKey(key)) {
+      return _handleSelectKeyWithLongPressSpeed(
+        event,
+        onShortPress: () {
+          if (widget.onSkipSegment?.call() ?? false) {
+            return;
+          }
+          _togglePlayPause();
+          _showHud();
+        },
+      );
+    }
+
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
       if (key == LogicalKeyboardKey.arrowLeft) {
         _seekRelative(forward: false);
@@ -376,14 +462,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     if (event is KeyDownEvent) {
       if (key == LogicalKeyboardKey.escape) {
         _pl.triggerFullScreen(status: false);
-        return KeyEventResult.handled;
-      }
-      if (_isSelectKey(key)) {
-        if (widget.onSkipSegment?.call() ?? false) {
-          return KeyEventResult.handled;
-        }
-        _togglePlayPause();
-        _showHud();
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.arrowUp ||
@@ -870,6 +948,11 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         focusNode: _surfaceFocusNode,
         autofocus: isFullScreen,
         skipTraversal: !isFullScreen || _hudVisible,
+        onFocusChange: (hasFocus) {
+          if (!hasFocus) {
+            _cancelSelectHold();
+          }
+        },
         onKeyEvent: _handleRootKeyEvent,
         child: Stack(
           fit: StackFit.passthrough,
@@ -943,6 +1026,16 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                 compact: true,
                 icon: Icons.fullscreen,
                 label: '全屏',
+                onKeyEvent: (_, event) => _handleSelectKeyWithLongPressSpeed(
+                  event,
+                  onShortPress: () {
+                    if (!_pl.isLive && !(widget.canPlay?.call() ?? true)) {
+                      return;
+                    }
+                    _pl.triggerFullScreen(status: true);
+                  },
+                ),
+                onFocusLost: _cancelSelectHold,
                 onPressed: () {
                   if (!_pl.isLive && !(widget.canPlay?.call() ?? true)) {
                     return;
@@ -954,6 +1047,11 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                 compact: true,
                 icon: Icons.play_arrow_rounded,
                 label: '播/暂',
+                onKeyEvent: (_, event) => _handleSelectKeyWithLongPressSpeed(
+                  event,
+                  onShortPress: _togglePlayPause,
+                ),
+                onFocusLost: _cancelSelectHold,
                 onPressed: _togglePlayPause,
               ),
               _TvHudPillButton(
@@ -1105,6 +1203,15 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                                   ? Icons.pause_rounded
                                   : Icons.play_arrow_rounded,
                               label: _pl.playerStatus.isPlaying ? '暂停' : '播放',
+                              onKeyEvent: (_, event) =>
+                                  _handleSelectKeyWithLongPressSpeed(
+                                    event,
+                                    onShortPress: () {
+                                      _resetAutoHideTimer();
+                                      _togglePlayPause();
+                                    },
+                                  ),
+                              onFocusLost: _cancelSelectHold,
                               onPressed: () {
                                 _resetAutoHideTimer();
                                 _togglePlayPause();
@@ -1384,6 +1491,8 @@ class _TvHudPillButton extends StatefulWidget {
     this.compact = false,
     this.active = false,
     this.icon,
+    this.onKeyEvent,
+    this.onFocusLost,
     required this.label,
     required this.onPressed,
   });
@@ -1393,6 +1502,8 @@ class _TvHudPillButton extends StatefulWidget {
   final bool compact;
   final bool active;
   final IconData? icon;
+  final FocusOnKeyEventCallback? onKeyEvent;
+  final VoidCallback? onFocusLost;
   final String label;
   final VoidCallback onPressed;
 
@@ -1409,8 +1520,16 @@ class _TvHudPillButtonState extends State<_TvHudPillButton> {
     return Focus(
       focusNode: widget.focusNode,
       autofocus: widget.autofocus,
-      onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
+      onFocusChange: (hasFocus) {
+        setState(() => _focused = hasFocus);
+        if (!hasFocus) {
+          widget.onFocusLost?.call();
+        }
+      },
       onKeyEvent: (node, event) {
+        if (widget.onKeyEvent != null) {
+          return widget.onKeyEvent!(node, event);
+        }
         if (event is KeyDownEvent && _isSelectKey(event.logicalKey)) {
           widget.onPressed();
           return KeyEventResult.handled;

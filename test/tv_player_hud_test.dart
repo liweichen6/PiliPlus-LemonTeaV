@@ -138,6 +138,14 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   bool tripling = false;
 
   @override
+  final RxBool longPressStatus = false.obs;
+
+  @override
+  Future<void> setLongPressStatus(bool status) async {
+    longPressStatus.value = status;
+  }
+
+  @override
   int? cacheVideoQa;
 }
 
@@ -927,4 +935,115 @@ void main() {
       },
     );
   });
+
+  group('TvPlayerHud Long-Press D-pad Select for 3x Playback Speed (M7)', () {
+    testWidgets(
+      'fullscreen with HUD closed: holding Select activates 3x speed and releasing restores normal speed; short press toggles play/pause',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+
+        // 1. Short-press Select (< 250ms) -> toggles play/pause without activating 3x speed.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pl.longPressStatus.value, isFalse);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.doubleTapCenterCount, 1);
+
+        // 2. Hold Select (>= 250ms) -> activates 3x speed (setLongPressStatus(true))
+        //    and does not toggle play/pause.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.doubleTapCenterCount, 1);
+
+        // Repeat events while held keep 3x speed active without toggling play/pause.
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.doubleTapCenterCount, 1);
+
+        // 3. Release Select -> restores normal speed (setLongPressStatus(false))
+        //    without toggling play/pause.
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.doubleTapCenterCount, 1);
+      },
+    );
+
+    testWidgets(
+      'fullscreen with HUD open on Play/Pause pill: holding Select activates 3x speed and pauses HUD auto-hide timer',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+
+        // Open HUD via Up arrow -> Play/Pause pill ('暂停') is autofocused.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(find.text('暂停'), findsOneWidget);
+
+        // Hold Select on '暂停' pill -> activates 3x speed and keeps HUD alive
+        // past the 5-second auto-hide timeout while held.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.doubleTapCenterCount, 0);
+
+        await tester.pump(const Duration(seconds: 6));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(find.text('暂停'), findsOneWidget);
+
+        // Release Select -> restores normal speed without pausing video.
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.doubleTapCenterCount, 0);
+
+        // Short-press Select on '暂停' pill -> toggles play/pause.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+        expect(pl.longPressStatus.value, isFalse);
+      },
+    );
+
+    testWidgets(
+      'split-screen Quick Strip: holding Select on 全屏 or 播/暂 activates 3x speed; short press triggers pill action',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = false
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        expect(find.text('全屏'), findsOneWidget);
+
+        // Hold Select on autofocused '全屏' pill -> activates 3x speed without entering fullscreen.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.isFullScreen.value, isFalse);
+
+        // Release Select -> restores normal speed.
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.isFullScreen.value, isFalse);
+
+        // Short-press Select on '全屏' pill -> enters fullscreen.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pl.isFullScreen.value, isTrue);
+      },
+    );
+  });
 }
+

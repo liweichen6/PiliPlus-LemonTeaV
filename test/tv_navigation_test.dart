@@ -855,7 +855,7 @@ void main() {
     );
 
     testWidgets(
-      'gates same-frame D-pad bursts to one step per frame and paces KeyRepeatEvents at 45ms including after idle periods',
+      'preserves same-frame discrete KeyDownEvents while gating KeyRepeatEvents to one step per frame and 45ms interval',
       (tester) async {
         final nodes = List<FocusNode>.generate(
           30,
@@ -890,31 +890,32 @@ void main() {
         await tester.pumpAndSettle();
         expect(nodes[0].hasPrimaryFocus, isTrue);
 
-        // 1. Two directional KeyDownEvents within the same frame (before pump)
-        // must only advance focus by 1 item, preventing layout-stale multi-jumps.
+        // 1. Two discrete directional KeyDownEvents within the same frame (before
+        // pump) must both be processed (0 -> 1 -> 2), never swallowed.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pump(const Duration(milliseconds: 50));
-        expect(nodes[1].hasPrimaryFocus, isTrue);
+        expect(nodes[2].hasPrimaryFocus, isTrue);
 
         // 2. Simulate 5 seconds of idle screen time (no frames scheduled) before
         // pressing and holding arrowDown. The KeyDownEvent fires at +5000ms
         // while currentSystemFrameTimeStamp is still at the pre-idle frame,
-        // and the resulting frame renders at +5010ms. A sub-45ms KeyRepeatEvent
-        // at +5010ms (+10ms after KeyDown) must still be throttled.
+        // and a same-frame KeyRepeatEvent + sub-45ms KeyRepeatEvent must be
+        // gated so focus only steps once (2 -> 3).
         await tester.pump(const Duration(seconds: 5));
         await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
         await tester.pump(const Duration(milliseconds: 10));
-        expect(nodes[2].hasPrimaryFocus, isTrue);
+        expect(nodes[3].hasPrimaryFocus, isTrue);
 
         // Sub-45ms repeat (at +10ms since KeyDown) is throttled.
         await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
         await tester.pump(const Duration(milliseconds: 10));
-        expect(nodes[2].hasPrimaryFocus, isTrue);
+        expect(nodes[3].hasPrimaryFocus, isTrue);
 
-        // Advance past 45ms total since KeyDown and stream 15 paced repeats.
+        // Advance past 45ms total since KeyDown and stream 14 paced repeats.
         await tester.pump(const Duration(milliseconds: 40));
-        for (int step = 3; step <= 17; step++) {
+        for (int step = 4; step <= 17; step++) {
           await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
           await tester.pump(const Duration(milliseconds: 50));
           expect(
@@ -930,7 +931,7 @@ void main() {
     );
 
     testWidgets(
-      'gates rapid diagonal and boundary D-pad bursts across lazy GridView.builder rows',
+      'processes rapid diagonal and boundary discrete D-pad presses while gating same-frame repeat bursts across lazy GridView.builder rows',
       (tester) async {
         final nodes = List<FocusNode>.generate(
           24,
@@ -971,23 +972,20 @@ void main() {
         await tester.pumpAndSettle();
         expect(nodes[0].hasPrimaryFocus, isTrue);
 
-        // Same-frame diagonal burst (Down + Right before pump) must only apply
-        // the first directional move (0 -> 3) and gate the second move.
+        // Same-frame discrete diagonal presses (Down + Right before pump) must
+        // execute both discrete steps (0 -> 3 -> 4) without dropping the second key.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(milliseconds: 50));
-        expect(nodes[3].hasPrimaryFocus, isTrue);
-
-        // Move across the row to the right boundary (3 -> 4 -> 5).
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-        await tester.pump(const Duration(milliseconds: 50));
         expect(nodes[4].hasPrimaryFocus, isTrue);
+
+        // Move across the row to the right boundary (4 -> 5).
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(milliseconds: 50));
         expect(nodes[5].hasPrimaryFocus, isTrue);
 
-        // Pressing Right at the right boundary is a no-op (does not lock
-        // traversal), so a subsequent Down steps cleanly to the next row (8).
+        // Pressing Right at the right boundary is a no-op, so a subsequent
+        // Down steps cleanly to the next row (8).
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pump(const Duration(milliseconds: 50));
@@ -2220,7 +2218,334 @@ void main() {
         await tester.pumpAndSettle();
       },
     );
+
+    testWidgets(
+      'relocates primary focus from kept-alive offscreen PageView page without scrolling locked PageView (M7 Bug 1)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final pageController = PageController();
+        final userAvatarNode = FocusNode(debugLabel: 'rail_user_avatar');
+        final railHomeNode = FocusNode(debugLabel: 'rail_home');
+        final railMineNode = FocusNode(debugLabel: 'rail_mine');
+        final homeCardNode = FocusNode(debugLabel: 'home_card_0');
+        final mineAccountNode = FocusNode(debugLabel: 'mine_account_icon');
+        final mineSettingNode = FocusNode(debugLabel: 'mine_setting_icon');
+
+        addTearDown(() {
+          pageController.dispose();
+          userAvatarNode.dispose();
+          railHomeNode.dispose();
+          railMineNode.dispose();
+          homeCardNode.dispose();
+          mineAccountNode.dispose();
+          mineSettingNode.dispose();
+        });
+
+        int selectedIndex = 0;
+        int homeCardTaps = 0;
+        int accountIconTaps = 0;
+        int settingIconTaps = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: StatefulBuilder(
+                builder: (context, setState) => PopScope(
+                  canPop: selectedIndex == 0,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop && selectedIndex != 0) {
+                      setState(() => selectedIndex = 0);
+                      pageController.jumpToPage(0);
+                    }
+                  },
+                  child: Scaffold(
+                    body: Row(
+                      children: [
+                        SizedBox(
+                          width: 120,
+                          child: Column(
+                            children: [
+                              // Topmost-leftmost widget in MainApp's sidebar is
+                              // userAvatar, which navigates to MinePage (index 1).
+                              ElevatedButton(
+                                focusNode: userAvatarNode,
+                                onPressed: () {
+                                  setState(() => selectedIndex = 1);
+                                  pageController.jumpToPage(1);
+                                },
+                                child: const Text('头像'),
+                              ),
+                              ElevatedButton(
+                                focusNode: railHomeNode,
+                                autofocus: true,
+                                onPressed: () {
+                                  setState(() => selectedIndex = 0);
+                                  pageController.jumpToPage(0);
+                                },
+                                child: const Text('首页'),
+                              ),
+                              ElevatedButton(
+                                focusNode: railMineNode,
+                                onPressed: () {
+                                  setState(() => selectedIndex = 1);
+                                  pageController.jumpToPage(1);
+                                },
+                                child: const Text('我的'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: PageView(
+                            controller: pageController,
+                            physics: const NeverScrollableScrollPhysics(),
+                            children: [
+                              _KeepAliveTestPage(
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: ElevatedButton(
+                                    focusNode: homeCardNode,
+                                    onPressed: () => homeCardTaps++,
+                                    child: const Text('推荐视频卡片'),
+                                  ),
+                                ),
+                              ),
+                              _KeepAliveTestPage(
+                                child: ListView(
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        IconButton(
+                                          focusNode: mineAccountNode,
+                                          icon: const Icon(
+                                            Icons.switch_account_outlined,
+                                          ),
+                                          onPressed: () => accountIconTaps++,
+                                        ),
+                                        IconButton(
+                                          focusNode: mineSettingNode,
+                                          icon: const Icon(
+                                            Icons.settings_outlined,
+                                          ),
+                                          onPressed: () => settingIconTaps++,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(railHomeNode.hasPrimaryFocus, isTrue);
+
+        // Scenario A: Navigate to "我的" (MinePage, index 1) and focus setting icon.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(railMineNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pageController.page, 1.0);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(mineAccountNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(mineSettingNode.hasPrimaryFocus, isTrue);
+
+        // Simulate pressing D-pad Back/Return while focused on MinePage's setting icon,
+        // exiting to the TV launcher (paused) and reopening PiliPlus TV (resumed).
+        await tester.binding.handlePopRoute();
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.paused,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+
+        final Finder ringFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+
+        // 1. PageView must stay on HomePage (0.0) and never be scrolled back to 1.0.
+        expect(pageController.page, 0.0);
+
+        // 2. Offscreen kept-alive setting/account icons and userAvatar must NOT hold focus;
+        //    focus must recover inside the PageView container onto HomePage's card, with
+        //    a visible yellow selection border matching HomePage's card rect.
+        expect(mineSettingNode.hasPrimaryFocus, isFalse);
+        expect(mineAccountNode.hasPrimaryFocus, isFalse);
+        expect(userAvatarNode.hasPrimaryFocus, isFalse);
+        expect(homeCardNode.hasPrimaryFocus, isTrue);
+        final CustomPainter painterA =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        expect(
+          (painterA as dynamic).rect as Rect?,
+          homeCardNode.rect,
+        );
+
+        // 3. Pressing Enter activates HomePage's video card, never the offscreen
+        //    setting icon or userAvatar (toMinePage).
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(homeCardTaps, 1);
+        expect(settingIconTaps, 0);
+        expect(accountIconTaps, 0);
+        expect(pageController.page, 0.0);
+
+        // Scenario B: Navigate back to "我的", focus account icon inside MinePage's
+        // vertical ListView, and press Back/Return + resume.
+        railMineNode.requestFocus();
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pageController.page, 1.0);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(mineAccountNode.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        // Even if Enter is pressed immediately before post-frame callbacks settle,
+        // the offscreen account icon must NOT be activated.
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        expect(accountIconTaps, 0);
+        expect(settingIconTaps, 0);
+
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.paused,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+
+        expect(pageController.page, 0.0);
+        expect(mineAccountNode.hasPrimaryFocus, isFalse);
+        expect(userAvatarNode.hasPrimaryFocus, isFalse);
+        expect(homeCardNode.hasPrimaryFocus, isTrue);
+        final CustomPainter painterB =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        expect(
+          (painterB as dynamic).rect as Rect?,
+          homeCardNode.rect,
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(homeCardTaps, 2);
+        expect(accountIconTaps, 0);
+        expect(settingIconTaps, 0);
+        expect(pageController.page, 0.0);
+      },
+    );
+
+    testWidgets(
+      'schedules frame in SchedulerPhase.idle and sustains rapid discrete D-pad key presses without freezing (M7 Bug 2)',
+      (tester) async {
+        final nodes = List<FocusNode>.generate(
+          8,
+          (i) => FocusNode(debugLabel: 'rapid_item_$i'),
+        );
+        addTearDown(() {
+          for (final n in nodes) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: Column(
+                  children: [
+                    for (int i = 0; i < nodes.length; i++)
+                      SizedBox(
+                        height: 60,
+                        width: 400,
+                        child: ElevatedButton(
+                          focusNode: nodes[i],
+                          autofocus: i == 0,
+                          onPressed: () {},
+                          child: Text('Item $i'),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(nodes[0].hasPrimaryFocus, isTrue);
+
+        // 1. Multiple discrete D-pad Down presses arriving within the same frame
+        //    must all register without dropping keys (0 -> 1 -> 2 -> 3).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        expect(tester.binding.hasScheduledFrame, isTrue);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(nodes[3].hasPrimaryFocus, isTrue);
+
+        // 2. Subsequent rapid discrete D-pad Down presses across consecutive 16ms
+        //    frames advance every step cleanly to the end (3 -> 7).
+        for (int i = 4; i < nodes.length; i++) {
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+          expect(tester.binding.hasScheduledFrame, isTrue);
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(
+            nodes[i].hasPrimaryFocus,
+            isTrue,
+            reason: 'Rapid D-pad step $i should advance without freezing',
+          );
+        }
+      },
+    );
   });
+}
+
+class _KeepAliveTestPage extends StatefulWidget {
+  const _KeepAliveTestPage({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveTestPage> createState() => _KeepAliveTestPageState();
+}
+
+class _KeepAliveTestPageState extends State<_KeepAliveTestPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
 }
 
 class _CallCountingRenderBox extends RenderProxyBox {
@@ -2248,5 +2573,3 @@ class _CallCountingWidget extends SingleChildRenderObjectWidget {
     return box;
   }
 }
-
-

@@ -59,15 +59,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 3: Post-Release Regression Investigation & Remediation (Milestone M6: Account Switcher, Settings & Popup Menu Focus Remediation) — Completed
+### Phase 3: Post-Release Regression Investigation & Remediation (Milestones M6–M7)
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **M6: Focus & Popup Remediation** | Epic M6.1 | `M6.1` | Root-Cause Investigation, Commit Provenance & Collateral Impact Analysis (`switchAccountDialog`, `Slider`, `SelectDialog`, `PopupListTile`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`9f89bd150`) |
-| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.2` | Fix `MediaQuery` Wrapping Order in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `lib/main.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` |
-| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.3` | Self-Contained `showMenu(..., requestFocus: false)` Focus Promotion & Popup Focus-Ring Tracking in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `popup_menu.patch`) | ✅ Done | `lib/tv/tv_navigation.dart` |
-| **M6: Focus & Popup Remediation** | Epic M6.3 | `M6.4` | Strengthen Automated Regression Tests (`MyApp._builder` Hierarchy, `switchAccountDialog`, `SliderDialog` & `showMenu`) | ✅ Done | `test/tv_navigation_test.dart` |
-| **M6: Focus & Popup Remediation** | Epic M6.4 | `M6.5` | Patch Verification, Live TV Validation (`<vm-tv>`) & Revert Discipline | ✅ Done | Android APK / `<vm-tv>` |
+| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.2` | Fix `MediaQuery` Wrapping Order in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `lib/main.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` (`b7da68fa5`) |
+| **M6: Focus & Popup Remediation** | Epic M6.2 | `M6.3` | Self-Contained `showMenu(..., requestFocus: false)` Focus Promotion & Popup Focus-Ring Tracking in `TvNavigation` (`lib/tv/tv_navigation.dart`, Zero Diff in `popup_menu.patch`) | ✅ Done | `lib/tv/tv_navigation.dart` (`b7da68fa5`) |
+| **M6: Focus & Popup Remediation** | Epic M6.3 | `M6.4` | Strengthen Automated Regression Tests (`MyApp._builder` Hierarchy, `switchAccountDialog`, `SliderDialog` & `showMenu`) | ✅ Done | `test/tv_navigation_test.dart` (`b7da68fa5`) |
+| **M6: Focus & Popup Remediation** | Epic M6.4 | `M6.5` | Patch Verification, Live TV Validation (`<vm-tv>`) & Revert Discipline | ✅ Done | Android APK / `<vm-tv>` (`b7da68fa5`) |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.1 | `M7.1` | Root-Cause Analysis & Milestone Planning (`MinePage` Offscreen Focus, Rapid D-Pad Freeze, Hold-Select 3x Speed) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.2` | Offscreen `PageView` / `TabBarView` / `KeepAlive` Focus Isolation & User-Scrollable-Only `ensureVisible` | ✅ Done | `lib/tv/tv_navigation.dart` |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.3` | Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync for Rapid Discrete D-Pad Presses | ✅ Done | `lib/tv/tv_navigation.dart` |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.3 | `M7.4` | Hold D-Pad Enter/Select for 3x Temporary Playback Speed in `TvPlayerHud` | ✅ Done | `lib/tv/tv_player_hud.dart` |
+| **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.4 | `M7.5` | Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline | ✅ Done | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` |
 
 ---
 
@@ -200,8 +205,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **Player HUD Widget Rebuilds** | Full HUD subtree rebuilt on controls toggle | **0 texture rebuilds** (localized setState) | Isolated controls layer | PopScope & transport tests in `tv_player_hud_test.dart` |
 | **Rapid Seek Responsiveness** | Desync & stutter due to 150–300ms decoder lag | **Instant responsive accumulator** (1x/2x/3x) | Smooth virtual scrubbing | 5 acceleration/timeout tests in `tv_player_hud_test.dart` |
 | **Android Native Memory Leaks** | Strong `Activity` reference held in `TvBridge` | **0 leaks** (`WeakReference<Activity>`) | Leak-free lifecycle | Code review & null-safe platform channel fallbacks |
-| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **38 / 38 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
-| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **93 / 93 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
+| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **43 / 43 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
+| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **98 / 98 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
 | **Static Analysis Diagnostics** | 0 issues | **0 issues** | `No issues found!` | `flutter analyze --no-pub` |
 | **Privacy / Secret Leak Count** | 0 | **0 occurrences** | 0 leaks | Regex scan for IPs, ports, paths, usernames, serials |
 
@@ -312,4 +317,58 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
        5. `SliderDialog` (`图片质量` in `设置` -> `外观设置`): Opens with `Slider` (`10%`) focused, D-pad Right adjusts value (`10%` -> `20%`), and D-pad Down escapes `Slider` to `取消`.
      * Confirmed `0` `FlutterError`, `EXCEPTION`, or `ANR` in `adb logcat`.
      * Reverted all 38 patches via `./tool/tv_patch.sh revert` and verified all 38 patches report `[NOT APPLIED]`.
+
+---
+
+### [2026-10-24] Milestone M7 (Task `M7.1`): Root-Cause Analysis for `MinePage` Offscreen Focus / Return-Key Exit, Rapid D-Pad Freeze & Player Hold-Select 3x Speed
+* **Status**: ✅ Completed
+* **Files Updated**:
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Verified Root Causes**:
+  1. **Bug 1 (`MinePage` "我的" D-Pad Return Exit & Re-Entry Phantom Offscreen Focus)**:
+     * *Unconditional `Scrollable.ensureVisible` Scrolling `MainApp`'s `NeverScrollableScrollPhysics` `PageView`*: `MainApp` (`lib/pages/main/view.dart:330-334`) hosts `HomePage` (0), `DynamicsPage` (1), and `MinePage` (2) inside `PageView(physics: const NeverScrollableScrollPhysics(), controller: _mainController.pageController)`. `TvFocusTraversalPolicy` previously used `FocusTraversalPolicy.defaultRequestFocusCallback` (which calls `Scrollable.ensureVisible(node.context!)`), and `_TvNavigationState._onFocus` also called `Scrollable.ensureVisible(context)`. Replacing unconditional `Scrollable.ensureVisible` with `_ensureVisibleInUserScrollables` ensures only user-scrollable viewports (`_canUserScroll(scrollable)`) are scrolled during focus traversal.
+     * *Kept-Alive Offscreen `PageView` Sliver Children, Inner `ListView` Masking & `findFirstFocus` Jumping to `userAvatar` (`_mainController.toMinePage`)*: Because `MinePage` uses `AutomaticKeepAliveClientMixin` (`wantKeepAlive => true`) and wraps its entire body (including its header row with `Icons.switch_account_outlined` and `Icons.settings_outlined`) inside a vertical `ListView(physics: const AlwaysScrollableScrollPhysics())`, when `MainApp` switches back to `HomePage` (`_mainController.setIndex(0)` -> `pageController.jumpToPage(0)`) or when re-entering PiliPlus from the TV launcher:
+       1. `MinePage` stays mounted inside `PageView`'s `RenderSliverFillViewport` (wrapped in `SliverFillViewport`'s `RenderSliverPadding` inside `RenderViewport`).
+       2. Because `MinePage`'s header icons are inside `MinePage`'s inner `ListView`, `_TvTraversalCache.evaluateNode` set `insideScrollable = true` and `verticalScrollable = mineListView` before reaching `MainApp`'s outer `PageView`, skipping viewport intersection against `PageView`.
+       3. Even when offscreen `MinePage` nodes were detected as unfocusable, recovering focus via `_policy.findFirstFocus(currentScope)` searched the entire route `FocusScopeNode` in top-left reading order and selected the topmost-leftmost widget in `MainApp`: `userAvatar` (`x: 20, y: 21` above the `NavigationRail`), whose `onTap` calls `_mainController.toMinePage()`—causing Enter to navigate right back to `MinePage` (`我的`)!
+       4. Additionally, `_TvNavigationState._computeFocusedRect` did not verify `_accumulatedParentOffset(target, root) != null` or `viewport.overlaps(candidate)`, `_TvNavigationState` lacked `WidgetsBindingObserver.didChangeAppLifecycleState(AppLifecycleState.resumed)`, and `pageController.jumpToPage(0)` did not synchronously unfocus invalidated offscreen nodes on `ScrollUpdateNotification`/`ScrollEndNotification`.
+  2. **Bug 2 (Rapid Discrete D-Pad Press Selection Box Freeze / Multi-Step Pause)**:
+     * *Unscheduled Frame Starvation on `addPostFrameCallback` & Same-Frame Discrete `KeyDownEvent` Dropping*: Registering `addPostFrameCallback` in `SchedulerPhase.idle` without `WidgetsBinding.instance.ensureVisualUpdate()` starved post-frame callbacks until an unrelated timer/animation scheduled a frame. Furthermore, locking `traversalLockedThisFrame` across all directional key events caused `_handleKeyEvent` to drop discrete `KeyDownEvent`s arriving within the same frame (`return KeyEventResult.handled`), rather than only throttling `KeyRepeatEvent` (`isRepeatLockedThisFrame`).
+     * *Two-Frame Deferred `_rectNotifier` Update & `O(D^2)` Matrix Allocations*: Updating `_rectNotifier` synchronously in `_onFocus()` during `SchedulerPhase.idle` when `!_policy.didScrollInLastFocus` eliminates the extra frame delay on non-scrolling D-pad moves without flashing pre-scroll rects, and reading `RenderViewportBase.offset.pixels` directly in `_accumulatedParentOffset` eliminates per-ancestor `localToGlobal` `Matrix4` allocations.
+  3. **Feature 3 (Video Player Hold D-Pad Enter/Select for 3x Speed)**:
+     * `PlPlayerController.setLongPressStatus(bool)` already supports temporary 3.0x speed (`Pref.longPressSpeedDefault = 3.0`), and `TvPlayerHud` now distinguishes a short press (`KeyDownEvent` + `KeyUpEvent` < 250ms -> play/pause or fullscreen) from a long-press hold (`KeyDownEvent` + hold >= 250ms or `KeyRepeatEvent` -> `setLongPressStatus(true)`, `KeyUpEvent` -> `setLongPressStatus(false)`).
+
+---
+
+### [2026-10-24] Milestone M7 (Tasks `M7.2`–`M7.5`): `MinePage` Offscreen `PageView` Focus Isolation, Rapid D-Pad Freeze Remediation, Hold-Select 3x Speed & Live `<vm-tv>` Verification
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] lib/tv/tv_player_hud.dart`
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] test/tv_player_hud_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+  * `[MODIFY] docs/tv/ARCHITECTURE.md`
+* **Technical Details & Changes Summary**:
+  1. **Task `M7.2` — Offscreen `PageView` / `TabBarView` / `KeepAlive` Focus Isolation, `findRecoveryFocus` & Lifecycle / Scroll-Notification Recovery (`lib/tv/tv_navigation.dart`)**:
+     * Supplied custom `requestFocusCallback: _defaultTvRequestFocusCallback` on `TvFocusTraversalPolicy` and replaced `Scrollable.ensureVisible` in both `_defaultTvRequestFocusCallback` and `_TvNavigationState._onFocus` with `_ensureVisibleInUserScrollables` (recording `_frameState.didScrollInLastFocus` when a viewport scrolls).
+     * Updated `TvFocusTraversalPolicy._canUserScroll(ScrollableState)` to return `false` for `NeverScrollableScrollPhysics`, `PageScrollPhysics`, and `scrollable.position is PageMetrics` (covering both `MainApp`'s `PageView` and `HomePage`'s `_TabBarViewScrollPhysics` `TabBarView`).
+     * Added `_TvTraversalCache._isKeptAliveOffscreen(RenderBox)` and updated `_TvNavigationState._accumulatedParentOffset` to detect `RenderOffstage`, `KeepAliveParentDataMixin.keptAlive`, and inactive `RenderSliverFillViewport` `PageMetrics` pages (`(page - pd.index!).abs() > 0.5`, walking past intermediate slivers such as `SliverFillViewport`'s `RenderSliverPadding` to `RenderViewportBase`).
+     * Updated `_TvTraversalCache.evaluateNode` so that when a node is inside an inner user-scrollable (`verticalScrollable` / `horizontalScrollable`, such as `MinePage`'s `ListView`) nested inside an outer non-user-scrollable (`!_canUserScroll(scrollable)`, such as `MainApp`'s `PageView`), the inner scrollable's own viewport (`innerRect`) is intersected with `lockedViewport` (`innerVisible.width <= 1.0 || innerVisible.height <= 1.0` -> `focusable = false`).
+     * Added `TvFocusTraversalPolicy.findRecoveryFocus(invalidNode, currentScope, {previousRect})` so focus recovery from an offscreen node inside a non-user-scrollable container (e.g. `MainApp`'s `PageView`) prefers focusable candidates inside that container (`HomePage` content) rather than jumping to outer sidebar items like `userAvatar` (`_mainController.toMinePage`).
+     * Mixed `WidgetsBindingObserver` into `_TvNavigationState` (`didChangeAppLifecycleState(AppLifecycleState.resumed)`), wrapped the `TvNavigation` stack in `NotificationListener<ScrollNotification>(onNotification: _handleScrollNotification)` to synchronously unfocus invalidated offscreen nodes and clear `_rectNotifier` when `PageView` jumps pages, and updated `_computeFocusedRect` to require `_accumulatedParentOffset(target, root) != null` and `viewport.overlaps(candidate)`.
+  2. **Task `M7.3` — Repeat-Only Frame Throttle, `ensureVisualUpdate` & Zero-Allocation `_accumulatedParentOffset` (`lib/tv/tv_navigation.dart`)**:
+     * Replaced `traversalLockedThisFrame` (which dropped same-frame discrete `KeyDownEvent`s) with `repeatLockedThisFrame` (`isRepeatLockedThisFrame`), throttling only `KeyRepeatEvent`s to one step per rendered frame (plus the 45ms repeat interval floor) while allowing every discrete `KeyDownEvent` to execute immediately.
+     * Added `WidgetsBinding.instance.ensureVisualUpdate()` whenever registering `addPostFrameCallback` in `TvFocusTraversalPolicy._focusNode`, `_TvNavigationState`, and `TvNavigationObserver`.
+     * Updated `_TvNavigationState._onFocus` to synchronously compute and publish `_updateRect(_computeFocusedRect(immediateNode))` in `SchedulerPhase.idle` only when `!_policy.didScrollInLastFocus`, and optimized `_accumulatedParentOffset` to read `RenderViewportBase.offset.pixels` directly with zero matrix allocations.
+  3. **Task `M7.4` — Hold D-Pad Enter/Select for 3x Temporary Speed in `TvPlayerHud` (`lib/tv/tv_player_hud.dart`)**:
+     * Added `_kLongPressSpeedDelay = Duration(milliseconds: 250)`, `_longPressSpeedTimer`, `_selectKeyDown`, `_longPressSpeedActive`, `_startLongPressSpeed`, `_endLongPressSpeed`, and `_handleLongPressSelectKey` in `_TvPlayerHudState`.
+     * When `_isSelectKey(key)` is pressed while fullscreen HUD is hidden (`_isFullScreen && !_hudVisible`), while focus is on Play/Pause (`_playPauseFocusNode`), or on split-screen Quick Strip (`_splitFullscreenFocusNode` / `_splitPlayPauseFocusNode`), holding D-pad Select/Enter (`>= 250ms` or `KeyRepeatEvent`) invokes `_pl.setLongPressStatus(true)` (activating 3.0x speed, displaying `'3.0倍速中'`, and pausing the HUD auto-hide timer), releasing (`KeyUpEvent`) invokes `_pl.setLongPressStatus(false)` (restoring normal speed without pausing), and a short press (`KeyDownEvent` + `KeyUpEvent` < 250ms) executes the normal play/pause or fullscreen action.
+  4. **Task `M7.5` — Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline**:
+     * Added 2 new regression tests in `test/tv_navigation_test.dart` (`26/26` passed) and 3 new regression tests in `test/tv_player_hud_test.dart` (`17/17` passed), bringing the TV test suite to `43/43` passing tests.
+     * Verified live D-pad input on `<vm-tv>` and reverted all 38 patches via `./tool/tv_patch.sh revert` (`[NOT APPLIED]`).
+
+
 

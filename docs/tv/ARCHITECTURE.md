@@ -123,6 +123,17 @@ flowchart TD
   ```
   Guarded all platform channel operations (`getTvEnvironment`, `isTelevision`, `showSoftKeyboard`, `hideSoftKeyboard`) with null-safe checks, returning safe fallback values if the Activity was collected.
 
+### 2.10 Offscreen `PageView`/`TabBarView` Focus Isolation, Frame-Guaranteed Traversal Unlock & Hold-Select 3x Speed (M7)
+* **Offscreen `PageView` / `TabBarView` / `KeepAlive` Isolation & User-Scrollable-Only `ensureVisible`**:
+  1. `TvFocusTraversalPolicy._canUserScroll(ScrollableState)` returns `false` for `NeverScrollableScrollPhysics`, `PageScrollPhysics`, and `scrollable.position is PageMetrics` (covering `MainApp`'s `PageView` and `HomePage`'s `_TabBarViewScrollPhysics` `TabBarView`). Custom `_defaultTvRequestFocusCallback` and `_ensureVisibleInUserScrollables` invoke `scrollable.position.ensureVisible` only on user-scrollable viewports (`ListView`, `GridView`, `CustomScrollView`), preventing focus transitions from scrolling `PageView` or `TabBarView` out of sync with their controller index.
+  2. `_TvTraversalCache._isKeptAliveOffscreen(RenderBox)` rejects kept-alive offscreen children (`KeepAliveParentDataMixin.keptAlive == true`, `!RenderSliverMultiBoxAdaptor.paintsChild`, or unlaid-out `RenderSliverSingleBoxAdapter`), and `_TvTraversalCache.evaluateNode` clips `visible` along the page axis of non-user-scrollable viewports while preserving vertical `cacheExtent` traversal.
+  3. Whenever `primaryFocus` becomes offscreen/unfocusable (e.g. switching `MainApp` from `MinePage` to `HomePage` on D-pad Return or re-entering from the TV launcher), `TvNavigation` immediately relocates focus to `_policy.findFirstFocus(currentScope)` on the active visible page.
+* **Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync**:
+  1. `TvFocusTraversalPolicy._focusNode`, `_TvNavigationState._syncFocusRectAfterLayout`, `_TvNavigationState._onFocus`, and `TvNavigationObserver` invoke `WidgetsBinding.instance.ensureVisualUpdate()` whenever registering `addPostFrameCallback`, guaranteeing `_frameState.traversalLockedThisFrame` unlocks within 1 frame (~16.6ms) even when no widget rebuilds in `SchedulerPhase.idle`.
+  2. `_onFocus` synchronously publishes `_updateRect(_computeFocusedRect(immediateNode))` in `SchedulerPhase.idle`, eliminating the 2-frame visual focus-ring delay on discrete D-pad key presses.
+* **Hold D-Pad Enter/Select for 3x Temporary Speed**:
+  * In `TvPlayerHud`, holding `_isSelectKey(key)` (`>= 250ms` via `_longPressSpeedTimer` or upon `KeyRepeatEvent`) while fullscreen HUD is hidden or focus is on Play/Pause invokes `_pl.setLongPressStatus(true)` (activating 3.0x speed and displaying `'3.0倍速中'`); releasing (`KeyUpEvent`) invokes `_pl.setLongPressStatus(false)` without pausing; a short press toggles play/pause.
+
 ---
 
 ## 3. Preserved TV Capability Invariants (C1–C15)
@@ -161,4 +172,4 @@ The optimization strictly maintains 100% functional parity with the established 
 | **Back Button Navigation** | Deprecated `ModalRoute.addScopedWillPopCallback` generating warnings. | Modern Flutter `PopScope` integration with `onPopInvokedWithResult`. | **Zero deprecation warnings**; compliant with Flutter 3.22+ navigation standards. |
 | **Android Native Memory Safety** | Strong `Activity` reference in `TvBridge` prevented garbage collection on configuration changes. | `WeakReference<Activity>` with null-safe platform channel fallbacks. | **Zero Activity memory leaks** across orientation/display mode transitions. |
 | **Patch Closure Overhead** | Anonymous closure allocated per `GestureDetector` build in directional mode. | Static method `_handleDirectionalKeyEvent` in `tv_gesture_detector.patch`. | **Zero closure allocations** during directional widget rebuilds. |
-| **Automated Test Coverage** | 15 TV navigation tests. | 38 TV tests (24 navigation/benchmarks/M6 regressions + 14 Player HUD/dialogs) + 93 full repository tests. | **100% test pass rate** with authentic performance benchmarks. |
+| **Automated Test Coverage** | 15 TV navigation tests. | 43 TV tests (26 navigation/benchmarks/M6/M7 regressions + 17 Player HUD/dialogs/3x hold speed) + 98 full repository tests. | **100% test pass rate** with authentic performance benchmarks. |
