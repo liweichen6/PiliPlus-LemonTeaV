@@ -59,7 +59,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M8)
+### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M9)
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -73,8 +73,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.2 | `M7.3` | Frame-Guaranteed Traversal Unlock & Immediate Focus-Ring Sync for Rapid Discrete D-Pad Presses | ✅ Done | `lib/tv/tv_navigation.dart` (`1658c011e`) |
 | **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.3 | `M7.4` | Hold D-Pad Enter/Select for 3x Temporary Playback Speed in `TvPlayerHud` | ✅ Done | `lib/tv/tv_player_hud.dart` (`1658c011e`) |
 | **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.4 | `M7.5` | Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline | ✅ Done | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (`1658c011e`) |
-| **M8: TV Layer Review & Doc Sync** | Epic M8.1 | `M8.1` | Comprehensive Code & Architectural Audit of Tier 1–3 TV Layer (`docs/tv/REVIEW.md`) | ✅ Done | `docs/tv/REVIEW.md` |
-| **M8: TV Layer Review & Doc Sync** | Epic M8.2 | `M8.2` | Remediate Documentation Drift Across `docs/tv/*` & Bilingual Root `README*.md` | ✅ Done | `docs/tv/*`, `README*.md` |
+| **M8: TV Layer Review & Doc Sync** | Epic M8.1 | `M8.1` | Comprehensive Code & Architectural Audit of Tier 1–3 TV Layer (`docs/tv/REVIEW.md`) | ✅ Done | `docs/tv/REVIEW.md` (`05fb31da1`) |
+| **M8: TV Layer Review & Doc Sync** | Epic M8.2 | `M8.2` | Remediate Documentation Drift Across `docs/tv/*` & Bilingual Root `README*.md` | ✅ Done | `docs/tv/*`, `README*.md` (`05fb31da1`) |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.1 | `M9.1` | Root-Cause Analysis & Collateral `MiniScaffold` Impact Plan (`评论详情`, `对话列表`, Inline Panels) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.2 | `M9.2` | Self-Contained `BottomSheetLayout` Occlusion Isolation, Opening Promotion & Focus Restoration (`lib/tv/tv_navigation.dart`) | ⏳ Pending | `lib/tv/tv_navigation.dart` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ⏳ Pending | `test/tv_navigation_test.dart` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.4 | `M9.4` | Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline | ⏳ Pending | `docs/tv/*`, `README*.md`, `<vm-tv>` |
 
 ---
 
@@ -397,6 +401,23 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   3. **Hygiene & Privacy Check**:
      * Confirmed `./tool/tv_patch.sh status` reports `[NOT APPLIED]` for all 38 patches and verified zero private paths, file-scheme URLs, LAN IPs, usernames, or device serials in committed files.
 
+---
 
-
-
+### [2026-10-24] Milestone M9 (Task `M9.1`): Root-Cause Analysis for Second-Layer Comment (`评论详情`) & `MiniScaffold` Inline Sheet Focus Bug
+* **Status**: ✅ Completed
+* **Files Updated**:
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Verified Root Cause**:
+  1. **Inline `LocalHistoryEntry` Sheet Instead of `Navigator` Route (`MiniScaffold` + `BottomSheetLayout`)**:
+     * On landscape/split-pane pages (`VideoDetailPageV` in `lib/pages/video/view.dart`, `DynamicDetailPage` in `lib/pages/dynamics_detail/view.dart`, `ArticlePage` in `lib/pages/article/view.dart`, and `MusicDetailPage` in `lib/pages/music/view.dart`), the right-hand tab/comment column is wrapped in `MiniScaffold` (`lib/common/widgets/scaffold/mini_scaffold.dart`).
+     * Clicking a first-layer comment invokes `MiniScaffoldState.showBottomSheet((context) => VideoReplyReplyPanel(...))` (`lib/pages/video/reply/controller.dart:67` and `lib/pages/common/dyn/common_dyn_page.dart:316`). Rather than pushing a `Route` onto `Navigator`, `MiniScaffoldState` adds a `LocalHistoryEntry` to the active `ModalRoute` and renders `BottomSheetLayout(body: widget.body, bottomSheet: _currentBottomSheet?.widget)` (`lib/common/widgets/scaffold/bottom_sheet_layout.dart`).
+  2. **Simultaneous Dual-Slot Layout in One `FocusScopeNode` Without Focus Exclusion**:
+     * `_RenderScaffoldLayout` (`BottomSheetLayout`) lays out both `BottomSheetType.body` (first-layer `TabBar` and comment list) and `BottomSheetType.bottomSheet` (`_StandardBottomSheet` -> `VideoReplyReplyPanel`) at full size inside the **same** `FocusScopeNode`, painting `bottomSheet` over `body` without wrapping `body` in `Offstage`, `Visibility`, `IgnorePointer`, or `ExcludeFocus`.
+     * Consequently:
+       1. `TvNavigationObserver.didPush` never fires because no `Route` was pushed; `FocusManager.instance.primaryFocus` remains on the clicked first-layer comment `InkWell` inside `BottomSheetType.body`.
+       2. `_TvNavigationState._syncFocusRectAfterLayout` sees unchanged `targetBox`, `size`, `parentOffset` (`Offset.zero`), and `scrollPixels` on the occluded first-layer comment, hitting the `isStationary` fast-path and continuing to paint the yellow focus ring (`#FFFFD166`) over `评论详情` at the hidden first-layer card's coordinates (verified live on `<vm-tv>`).
+       3. `_TvTraversalCache.evaluateNode` marks all nodes inside `BottomSheetType.body` as `isFocusable == true`, so D-pad Up/Down runs `_findVerticalCandidate` with `focusedScrollable` = first-layer `CustomScrollView`, scrolling and traversing the occluded first-layer comment list underneath while `评论详情` stays static.
+       4. Cross-pane Left/Right navigation and closing `评论详情` via Android Back (`LocalHistoryEntry.onRemove` -> `animationController.reverse()`) lack occlusion isolation and focus-memory restoration.
+  3. **Collateral Multi-Layer & Cross-Column `MiniScaffold` Surfaces**:
+     * Nested third-layer dialogue sheets (`查看对话` -> `对话列表` via `VideoReplyReplyPanel`'s inner `MiniScaffold` in `lib/pages/video/reply_reply/view.dart:144, 331`), `NoteListPage` (`lib/pages/video/note/view.dart:60, 303`), `ImageGridView` `GalleryViewer` (`enableDrag: false`), and left-column `videoIntro` inline panels (`选集` `EpisodePanel`, `AI总结` `AiConclusionPanel`, `视频看点` `ViewPointsPage`, `PgcIntroPanel`, `HorizontalMemberPage`) all share `MiniScaffold.showBottomSheet` and will be remediated in Tier 1 (`lib/tv/tv_navigation.dart`) with zero upstream file modifications.
