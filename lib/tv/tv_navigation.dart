@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
     as custom_list_tile;
+import 'package:PiliPlus/common/widgets/scaffold/bottom_sheet_layout.dart'
+    show BottomSheetLayout, BottomSheetType;
 import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/rendering.dart'
@@ -55,11 +57,84 @@ class _TvNodeMeta {
   final Element? enclosingWrap;
 }
 
+class _BottomSheetNodeStatus {
+  const _BottomSheetNodeStatus({
+    this.occludingLayout,
+    this.closingLayout,
+    this.enclosingActiveSheetLayout,
+  });
+
+  final Element? occludingLayout;
+  final Element? closingLayout;
+  final Element? enclosingActiveSheetLayout;
+
+  bool get isInvalidated => occludingLayout != null || closingLayout != null;
+}
+
 class _TvTraversalCache {
   final Map<FocusNode, _TvNodeMeta> _nodeMeta = <FocusNode, _TvNodeMeta>{};
   final Map<RenderBox, Rect> _boxRects = <RenderBox, Rect>{};
   final Map<ScrollableState, Rect?> _scrollableRects =
       <ScrollableState, Rect?>{};
+
+  static bool _isBottomSheetClosing(Widget? sheet) {
+    if (sheet == null) return true;
+    if (sheet is StandardBottomSheet) {
+      final status = sheet.animationController.status;
+      return status == AnimationStatus.reverse ||
+          status == AnimationStatus.dismissed;
+    }
+    return false;
+  }
+
+  static bool _isBottomSheetAnimatingOpen(Widget? sheet) {
+    if (sheet is StandardBottomSheet) {
+      return sheet.animationController.status == AnimationStatus.forward;
+    }
+    return false;
+  }
+
+  static _BottomSheetNodeStatus _inspectBottomSheetNode(FocusNode? node) {
+    final BuildContext? context = node?.context;
+    if (context == null || !context.mounted) {
+      return const _BottomSheetNodeStatus();
+    }
+    Element? occludingLayout;
+    Element? closingLayout;
+    Element? enclosingActiveSheetLayout;
+    Element childElement = context as Element;
+    context.visitAncestorElements((Element element) {
+      final Object? childSlot = childElement.slot;
+      childElement = element;
+      final Widget widget = element.widget;
+      if (widget is BottomSheetLayout) {
+        final Widget? sheet = widget.bottomSheet;
+        if (sheet != null) {
+          final bool closing = _isBottomSheetClosing(sheet);
+          if (childSlot == BottomSheetType.body && !closing) {
+            occludingLayout = element;
+          } else if (childSlot == BottomSheetType.bottomSheet) {
+            if (closing) {
+              closingLayout = element;
+            } else {
+              enclosingActiveSheetLayout ??= element;
+            }
+          }
+        }
+      }
+      return true;
+    });
+    if (occludingLayout == null &&
+        closingLayout == null &&
+        enclosingActiveSheetLayout == null) {
+      return const _BottomSheetNodeStatus();
+    }
+    return _BottomSheetNodeStatus(
+      occludingLayout: occludingLayout,
+      closingLayout: closingLayout,
+      enclosingActiveSheetLayout: enclosingActiveSheetLayout,
+    );
+  }
 
   static bool _isKeptAliveOffscreen(RenderBox box) {
     RenderObject? current = box;
@@ -221,7 +296,10 @@ class _TvTraversalCache {
       return false;
     }
 
+    Element childElement = context as Element;
     context.visitAncestorElements((Element element) {
+      final Object? childSlot = childElement.slot;
+      childElement = element;
       if (element is StatefulElement && element.state is ScrollableState) {
         final scrollable = element.state as ScrollableState;
         if (TvFocusTraversalPolicy._canUserScroll(scrollable)) {
@@ -304,6 +382,21 @@ class _TvTraversalCache {
       }
 
       if (!focusable) return true;
+
+      if (widget is BottomSheetLayout) {
+        final Widget? sheet = widget.bottomSheet;
+        if (sheet != null) {
+          final bool sheetClosing = _isBottomSheetClosing(sheet);
+          if (childSlot == BottomSheetType.body && !sheetClosing) {
+            focusable = false;
+            return stopOrContinue();
+          }
+          if (childSlot == BottomSheetType.bottomSheet && sheetClosing) {
+            focusable = false;
+            return stopOrContinue();
+          }
+        }
+      }
 
       final RenderObject? ancestorRo = element.renderObject;
       if (ancestorRo is RenderBox &&
@@ -611,9 +704,72 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     return firstNode;
   }
 
+  static bool _isElementInSubtree(BuildContext? context, Element subtreeRoot) {
+    if (context == null || !context.mounted) return false;
+    if (identical(context, subtreeRoot)) return true;
+    bool found = false;
+    context.visitAncestorElements((Element ancestor) {
+      if (identical(ancestor, subtreeRoot)) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  static Element? _slotChildOfBottomSheetLayout(
+    Element layoutElement,
+    BottomSheetType slot,
+  ) {
+    if (!layoutElement.mounted || layoutElement.widget is! BottomSheetLayout) {
+      return null;
+    }
+    Element? found;
+    layoutElement.visitChildren((Element child) {
+      if (child.slot == slot) {
+        found = child;
+      }
+    });
+    return found;
+  }
+
+  FocusNode? findFirstFocusInSubtree(
+    Element subtreeRoot,
+    FocusScopeNode currentScope,
+  ) => _withCache((_TvTraversalCache cache) {
+    if (!subtreeRoot.mounted) return null;
+    FocusNode? autofocusCandidate;
+    final List<FocusNode> visibleInScrollables = <FocusNode>[];
+    final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    for (final FocusNode node in currentScope.traversalDescendants) {
+      if (!_isElementInSubtree(node.context, subtreeRoot)) continue;
+      if (cache.isEffectivelyFocusable(node)) {
+        final bool visible = cache.isVisibleInEnclosingScrollables(node);
+        if (autofocusCandidate == null && visible) {
+          final Widget? w = node.context?.widget;
+          if (w is Focus && w.autofocus) {
+            autofocusCandidate = node;
+          }
+        }
+        if (visible) {
+          visibleInScrollables.add(node);
+        } else {
+          fallbackCandidates.add(node);
+        }
+      }
+    }
+    if (autofocusCandidate != null) return autofocusCandidate;
+    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+        ? visibleInScrollables
+        : fallbackCandidates;
+    return _findFirstReadingOrderNode(pool, cache);
+  });
+
   /// Finds the best focus target in [currentScope] when [invalidNode] has
   /// become offscreen or unfocusable (e.g. after switching tabs in a
-  /// `PageView`/`TabBarView` or resuming the app on `HomePage`).
+  /// `PageView`/`TabBarView`, opening/closing a `MiniScaffold` sheet, or
+  /// resuming the app on `HomePage`).
   ///
   /// When [invalidNode] (or [previousRect]) belonged to a non-user-scrollable
   /// container such as `MainApp`'s `PageView`, this prefers focusable targets
@@ -624,6 +780,42 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     FocusScopeNode currentScope, {
     Rect? previousRect,
   }) => _withCache((_TvTraversalCache cache) {
+    final _BottomSheetNodeStatus sheetStatus =
+        _TvTraversalCache._inspectBottomSheetNode(invalidNode);
+    final Element? occludingLayout = sheetStatus.occludingLayout;
+    if (occludingLayout != null && occludingLayout.widget is BottomSheetLayout) {
+      final Element? sheetSlot = _slotChildOfBottomSheetLayout(
+        occludingLayout,
+        BottomSheetType.bottomSheet,
+      );
+      if (sheetSlot != null) {
+        final FocusNode? inSheet = findFirstFocusInSubtree(
+          sheetSlot,
+          currentScope,
+        );
+        if (inSheet != null) return inSheet;
+      }
+      final Widget? sheet =
+          (occludingLayout.widget as BottomSheetLayout).bottomSheet;
+      if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet)) {
+        return null;
+      }
+    }
+    final Element? closingLayout = sheetStatus.closingLayout;
+    if (closingLayout != null) {
+      final Element? bodySlot = _slotChildOfBottomSheetLayout(
+        closingLayout,
+        BottomSheetType.body,
+      );
+      if (bodySlot != null) {
+        final FocusNode? inBody = findFirstFocusInSubtree(
+          bodySlot,
+          currentScope,
+        );
+        if (inBody != null) return inBody;
+      }
+    }
+
     Rect? containerRect;
     final BuildContext? invalidContext = invalidNode?.context;
     if (invalidContext != null && invalidContext.mounted) {
@@ -1555,9 +1747,22 @@ class TvNavigation extends StatefulWidget {
   State<TvNavigation> createState() => _TvNavigationState();
 }
 
+class _MiniScaffoldSheetRecord {
+  _MiniScaffoldSheetRecord({
+    required this.sheetWidget,
+    this.savedFocusNode,
+  });
+
+  Widget sheetWidget;
+  FocusNode? savedFocusNode;
+  bool promoted = false;
+}
+
 class _TvNavigationState extends State<TvNavigation>
     with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
+  static final Expando<_MiniScaffoldSheetRecord> _bottomSheetRecords =
+      Expando<_MiniScaffoldSheetRecord>('tvBottomSheetRecords');
 
   final GlobalKey _key = GlobalKey();
   final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
@@ -1566,6 +1771,7 @@ class _TvNavigationState extends State<TvNavigation>
     _TvVerticalFocusIntent: _TvVerticalFocusAction(_policy),
   };
   final ValueNotifier<Rect?> _rectNotifier = ValueNotifier<Rect?>(null);
+  final List<Element> _trackedBottomSheetLayouts = <Element>[];
   late final Stopwatch _repeatClock =
       WidgetsBinding.instance.samplingClock.stopwatch()..start();
   int? _lastDirectionalStepMs;
@@ -1574,6 +1780,8 @@ class _TvNavigationState extends State<TvNavigation>
   FocusNode? _lastFocusedNode;
   FocusNode? _pendingInvalidNode;
   Rect? _pendingRecoveryRect;
+  FocusNode? _lastSelectTriggerNode;
+  int _pendingSelectSheetCheckFrames = 0;
   RenderBox? _lastTargetBox;
   Size? _lastTargetSize;
   Size? _lastRootSize;
@@ -1584,6 +1792,7 @@ class _TvNavigationState extends State<TvNavigation>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_observeHardwareKeyEvent);
     FocusManager.instance.addListener(_onFocus);
     if (TvPlatform.isTv) {
       FocusManager.instance.highlightStrategy =
@@ -1597,9 +1806,270 @@ class _TvNavigationState extends State<TvNavigation>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    HardwareKeyboard.instance.removeHandler(_observeHardwareKeyEvent);
     FocusManager.instance.removeListener(_onFocus);
     _rectNotifier.dispose();
     super.dispose();
+  }
+
+  bool _observeHardwareKeyEvent(KeyEvent event) {
+    if (TvPlatform.isTv && event is KeyDownEvent) {
+      final LogicalKeyboardKey key = event.logicalKey;
+      if (key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.numpadEnter ||
+          key == LogicalKeyboardKey.gameButtonA) {
+        final FocusNode? primary = FocusManager.instance.primaryFocus;
+        if (primary != null && primary is! FocusScopeNode) {
+          _lastSelectTriggerNode = primary;
+          _pendingSelectSheetCheckFrames = 2;
+        }
+      }
+    }
+    return false;
+  }
+
+  void _captureBottomSheetTransitions(
+    FocusNode? primary,
+    _BottomSheetNodeStatus status,
+  ) {
+    final Element? occluding = status.occludingLayout;
+    if (occluding != null && occluding.widget is BottomSheetLayout) {
+      final Widget? sheet = (occluding.widget as BottomSheetLayout).bottomSheet;
+      if (sheet != null && !_TvTraversalCache._isBottomSheetClosing(sheet)) {
+        final _MiniScaffoldSheetRecord? existing =
+            _bottomSheetRecords[occluding];
+        if (existing == null) {
+          _bottomSheetRecords[occluding] = _MiniScaffoldSheetRecord(
+            sheetWidget: sheet,
+            savedFocusNode: primary is FocusScopeNode ? null : primary,
+          );
+          if (!_trackedBottomSheetLayouts.contains(occluding)) {
+            _trackedBottomSheetLayouts.add(occluding);
+          }
+        } else if (!identical(existing.sheetWidget, sheet)) {
+          if (primary != null && primary is! FocusScopeNode) {
+            existing.savedFocusNode ??= primary;
+          }
+          existing
+            ..sheetWidget = sheet
+            ..promoted = false;
+          _trackedBottomSheetLayouts
+            ..remove(occluding)
+            ..add(occluding);
+        } else {
+          if (primary != null && primary is! FocusScopeNode) {
+            existing.savedFocusNode ??= primary;
+          }
+          existing.promoted = false;
+          if (!_trackedBottomSheetLayouts.contains(occluding)) {
+            _trackedBottomSheetLayouts.add(occluding);
+          }
+        }
+      }
+    }
+
+    if (_pendingSelectSheetCheckFrames > 0) {
+      _pendingSelectSheetCheckFrames--;
+      final FocusScopeNode? scope = primary is FocusScopeNode
+          ? primary
+          : primary?.nearestScope;
+      final BuildContext? scopeCtx = scope?.context;
+      if (scope != null &&
+          !_isScopeInactive(scope) &&
+          scopeCtx is Element &&
+          scopeCtx.mounted) {
+        Element? newlyOpened;
+        void scan(Element el) {
+          final Widget w = el.widget;
+          if (w is BottomSheetLayout) {
+            final Widget? sheet = w.bottomSheet;
+            if (sheet != null &&
+                !_TvTraversalCache._isBottomSheetClosing(sheet)) {
+              final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+              if (rec == null || !identical(rec.sheetWidget, sheet)) {
+                newlyOpened = el;
+              }
+            }
+          }
+          el.visitChildren(scan);
+        }
+
+        scopeCtx.visitChildren(scan);
+        if (newlyOpened != null) {
+          final Widget sheet =
+              (newlyOpened!.widget as BottomSheetLayout).bottomSheet!;
+          final _MiniScaffoldSheetRecord? rec =
+              _bottomSheetRecords[newlyOpened!];
+          final FocusNode? trigger =
+              (_lastSelectTriggerNode?.context?.mounted ?? false)
+              ? _lastSelectTriggerNode
+              : (primary is FocusScopeNode ? null : primary);
+          if (rec == null) {
+            _bottomSheetRecords[newlyOpened!] = _MiniScaffoldSheetRecord(
+              sheetWidget: sheet,
+              savedFocusNode: trigger,
+            );
+          } else {
+            rec
+              ..sheetWidget = sheet
+              ..promoted = false;
+            if (trigger != null &&
+                status.enclosingActiveSheetLayout != newlyOpened) {
+              rec.savedFocusNode ??= trigger;
+            }
+          }
+          _trackedBottomSheetLayouts
+            ..remove(newlyOpened!)
+            ..add(newlyOpened!);
+          _pendingSelectSheetCheckFrames = 0;
+        }
+      }
+    }
+  }
+
+  bool _hasPendingBottomSheetWork(_BottomSheetNodeStatus status) {
+    if (status.isInvalidated) return true;
+    for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
+      final Element el = _trackedBottomSheetLayouts[i];
+      if (!el.mounted || el.widget is! BottomSheetLayout) return true;
+      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
+      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+        return true;
+      }
+      final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      if (rec == null || !identical(rec.sheetWidget, sheet) || !rec.promoted) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _reconcileBottomSheets() {
+    if (!mounted || !TvPlatform.isTv) return false;
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    final _BottomSheetNodeStatus status =
+        _TvTraversalCache._inspectBottomSheetNode(primary);
+    _captureBottomSheetTransitions(primary, status);
+
+    for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
+      if (i >= _trackedBottomSheetLayouts.length) continue;
+      final Element layoutEl = _trackedBottomSheetLayouts[i];
+      if (!layoutEl.mounted || layoutEl.widget is! BottomSheetLayout) {
+        _trackedBottomSheetLayouts.removeAt(i);
+        continue;
+      }
+      final BottomSheetLayout layoutWidget =
+          layoutEl.widget as BottomSheetLayout;
+      final Widget? sheet = layoutWidget.bottomSheet;
+      final _MiniScaffoldSheetRecord? record = _bottomSheetRecords[layoutEl];
+
+      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+        final Element? closingSheetSlot =
+            TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
+              layoutEl,
+              BottomSheetType.bottomSheet,
+            );
+        _trackedBottomSheetLayouts.removeAt(i);
+        _bottomSheetRecords[layoutEl] = null;
+        if (closingSheetSlot != null) {
+          _trackedBottomSheetLayouts.removeWhere((Element other) {
+            if (TvFocusTraversalPolicy._isElementInSubtree(
+              other,
+              closingSheetSlot,
+            )) {
+              _bottomSheetRecords[other] = null;
+              return true;
+            }
+            return false;
+          });
+        }
+        final FocusNode? savedNode = record?.savedFocusNode;
+        if (savedNode != null &&
+            savedNode.canRequestFocus &&
+            (savedNode.context?.mounted ?? false) &&
+            TvFocusTraversalPolicy.isEffectivelyFocusable(savedNode)) {
+          _pendingInvalidNode = null;
+          _pendingRecoveryRect = null;
+          savedNode
+            ..requestFocus()
+            ..consumeKeyboardToken();
+          _updateRect(_computeFocusedRect(savedNode));
+          return true;
+        }
+        final FocusScopeNode sheetScope = FocusScope.of(layoutEl);
+        if (!_isScopeInactive(sheetScope) && sheetScope.canRequestFocus) {
+          final Element? bodySlot =
+              TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
+                layoutEl,
+                BottomSheetType.body,
+              );
+          final FocusNode? fallback =
+              (bodySlot != null
+                  ? _policy.findFirstFocusInSubtree(bodySlot, sheetScope)
+                  : null) ??
+              _policy.findRecoveryFocus(savedNode, sheetScope);
+          if (fallback != null &&
+              fallback.canRequestFocus &&
+              (fallback.context?.mounted ?? false)) {
+            _pendingInvalidNode = null;
+            _pendingRecoveryRect = null;
+            fallback
+              ..requestFocus()
+              ..consumeKeyboardToken();
+            _updateRect(_computeFocusedRect(fallback));
+            return true;
+          }
+        }
+        _updateRect(null);
+        continue;
+      }
+
+      final _MiniScaffoldSheetRecord activeRecord =
+          record ??
+          (_bottomSheetRecords[layoutEl] = _MiniScaffoldSheetRecord(
+            sheetWidget: sheet,
+          ));
+      if (!identical(activeRecord.sheetWidget, sheet)) {
+        activeRecord
+          ..sheetWidget = sheet
+          ..promoted = false;
+      }
+
+      if (!activeRecord.promoted) {
+        final FocusScopeNode sheetScope = FocusScope.of(layoutEl);
+        if (_isScopeInactive(sheetScope) || !sheetScope.canRequestFocus) {
+          continue;
+        }
+        final Element? sheetSlot =
+            TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
+              layoutEl,
+              BottomSheetType.bottomSheet,
+            );
+        final FocusNode? firstInSheet = sheetSlot != null
+            ? _policy.findFirstFocusInSubtree(sheetSlot, sheetScope)
+            : null;
+        if (firstInSheet != null &&
+            firstInSheet.canRequestFocus &&
+            (firstInSheet.context?.mounted ?? false)) {
+          activeRecord.promoted = true;
+          _pendingInvalidNode = null;
+          _pendingRecoveryRect = null;
+          firstInSheet
+            ..requestFocus()
+            ..consumeKeyboardToken();
+          _updateRect(_computeFocusedRect(firstInSheet));
+          return true;
+        }
+        if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet)) {
+          _updateRect(null);
+          WidgetsBinding.instance.ensureVisualUpdate();
+          return true;
+        }
+        activeRecord.promoted = true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -1641,7 +2111,8 @@ class _TvNavigationState extends State<TvNavigation>
     if (node == null ||
         node is FocusScopeNode ||
         !node.canRequestFocus ||
-        node.skipTraversal) {
+        node.skipTraversal ||
+        _TvTraversalCache._inspectBottomSheetNode(node).isInvalidated) {
       return null;
     }
     final BuildContext? context = node.context;
@@ -1804,6 +2275,49 @@ class _TvNavigationState extends State<TvNavigation>
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv || _rectSyncScheduled) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
+    final _BottomSheetNodeStatus sheetStatus =
+        _TvTraversalCache._inspectBottomSheetNode(node);
+    _captureBottomSheetTransitions(node, sheetStatus);
+    if (_hasPendingBottomSheetWork(sheetStatus)) {
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+      if (!_focusSyncScheduled) {
+        _focusSyncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _focusSyncScheduled = false;
+          if (!mounted) return;
+          if (_reconcileBottomSheets()) return;
+          final FocusNode? current = FocusManager.instance.primaryFocus;
+          final FocusScopeNode? scope = current is FocusScopeNode
+              ? current
+              : current?.nearestScope;
+          if (current != null &&
+              scope != null &&
+              !_isScopeInactive(scope) &&
+              (current is FocusScopeNode ||
+                  !TvFocusTraversalPolicy.isEffectivelyFocusable(current))) {
+            final FocusNode? fallback = _policy.findRecoveryFocus(
+              current is FocusScopeNode ? null : current,
+              scope,
+              previousRect: _rectNotifier.value,
+            );
+            if (fallback != null &&
+                fallback != current &&
+                fallback.canRequestFocus &&
+                (fallback.context?.mounted ?? false)) {
+              fallback
+                ..requestFocus()
+                ..consumeKeyboardToken();
+              _updateRect(_computeFocusedRect(fallback));
+              return;
+            }
+            _updateRect(null);
+          }
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+      return;
+    }
     if (node == null || node is FocusScopeNode) {
       if (node is FocusScopeNode && !_focusSyncScheduled) {
         FocusScopeNode targetScope = node;
@@ -1824,6 +2338,7 @@ class _TvNavigationState extends State<TvNavigation>
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _focusSyncScheduled = false;
             if (!mounted) return;
+            if (_reconcileBottomSheets()) return;
             final FocusNode resolvedFirst =
                 (pendingInvalid != null
                     ? _policy.findRecoveryFocus(
@@ -1958,6 +2473,7 @@ class _TvNavigationState extends State<TvNavigation>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _focusSyncScheduled = false;
           if (!mounted) return;
+          if (_reconcileBottomSheets()) return;
           final FocusNode resolvedFirst =
               _policy.findRecoveryFocus(
                 node,
@@ -2045,6 +2561,7 @@ class _TvNavigationState extends State<TvNavigation>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusSyncScheduled = false;
       if (!mounted) return;
+      if (_reconcileBottomSheets()) return;
       final FocusNode? node = FocusManager.instance.primaryFocus;
       if (node is FocusScopeNode) {
         FocusScopeNode targetScope = node;
@@ -2133,7 +2650,11 @@ class _TvNavigationState extends State<TvNavigation>
         if (!_policy.consumePolicyScrolledNode(node)) {
           TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
             context,
-            alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          );
+          TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
           );
         }
       }
@@ -2178,7 +2699,7 @@ class _TvNavigationState extends State<TvNavigation>
       if (primary == null ||
           primary is FocusScopeNode ||
           !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
-        if (_pendingInvalidNode != null) {
+        if (_pendingInvalidNode != null || _reconcileBottomSheets()) {
           WidgetsBinding.instance.ensureVisualUpdate();
           return KeyEventResult.handled;
         }

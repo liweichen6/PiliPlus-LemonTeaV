@@ -75,9 +75,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M7: Offscreen Focus, Rapid D-Pad & Hold 3x Speed** | Epic M7.4 | `M7.5` | Automated Regression Tests, Live `<vm-tv>` Verification & Patch Revert Discipline | ✅ Done | `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (`1658c011e`) |
 | **M8: TV Layer Review & Doc Sync** | Epic M8.1 | `M8.1` | Comprehensive Code & Architectural Audit of Tier 1–3 TV Layer (`docs/tv/REVIEW.md`) | ✅ Done | `docs/tv/REVIEW.md` (`05fb31da1`) |
 | **M8: TV Layer Review & Doc Sync** | Epic M8.2 | `M8.2` | Remediate Documentation Drift Across `docs/tv/*` & Bilingual Root `README*.md` | ✅ Done | `docs/tv/*`, `README*.md` (`05fb31da1`) |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.1 | `M9.1` | Root-Cause Analysis & Collateral `MiniScaffold` Impact Plan (`评论详情`, `对话列表`, Inline Panels) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.2 | `M9.2` | Self-Contained `BottomSheetLayout` Occlusion Isolation, Opening Promotion & Focus Restoration (`lib/tv/tv_navigation.dart`) | ⏳ Pending | `lib/tv/tv_navigation.dart` |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ⏳ Pending | `test/tv_navigation_test.dart` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.1 | `M9.1` | Root-Cause Analysis & Collateral `MiniScaffold` Impact Plan (`评论详情`, `对话列表`, Inline Panels) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`e47b32395`) |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.2 | `M9.2` | Self-Contained `BottomSheetLayout` Occlusion Isolation, Opening Promotion & Focus Restoration (`lib/tv/tv_navigation.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ✅ Done | `test/tv_navigation_test.dart` |
 | **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.4 | `M9.4` | Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline | ⏳ Pending | `docs/tv/*`, `README*.md`, `<vm-tv>` |
 
 ---
@@ -421,3 +421,28 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
        4. Cross-pane Left/Right navigation and closing `评论详情` via Android Back (`LocalHistoryEntry.onRemove` -> `animationController.reverse()`) lack occlusion isolation and focus-memory restoration.
   3. **Collateral Multi-Layer & Cross-Column `MiniScaffold` Surfaces**:
      * Nested third-layer dialogue sheets (`查看对话` -> `对话列表` via `VideoReplyReplyPanel`'s inner `MiniScaffold` in `lib/pages/video/reply_reply/view.dart:144, 331`), `NoteListPage` (`lib/pages/video/note/view.dart:60, 303`), `ImageGridView` `GalleryViewer` (`enableDrag: false`), and left-column `videoIntro` inline panels (`选集` `EpisodePanel`, `AI总结` `AiConclusionPanel`, `视频看点` `ViewPointsPage`, `PgcIntroPanel`, `HorizontalMemberPage`) all share `MiniScaffold.showBottomSheet` and will be remediated in Tier 1 (`lib/tv/tv_navigation.dart`) with zero upstream file modifications.
+
+---
+
+### [2026-10-24] Milestone M9 (Tasks `M9.2`–`M9.3`): Self-Contained `BottomSheetLayout` Focus Isolation, Promotion, Restoration & Regression Tests
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Technical Details & Changes Summary**:
+  1. **Task `M9.2` — `BottomSheetLayout` Occlusion Isolation, Opening Promotion & LIFO Focus Restoration (`lib/tv/tv_navigation.dart`, Zero Upstream Diff)**:
+     * Imported `BottomSheetLayout` and `BottomSheetType` from `package:PiliPlus/common/widgets/scaffold/bottom_sheet_layout.dart`.
+     * Added `_BottomSheetNodeStatus` and `_TvTraversalCache._isBottomSheetClosing`, `_isBottomSheetAnimatingOpen`, and `_inspectBottomSheetNode(FocusNode?)`, and updated `_TvTraversalCache.evaluateNode` to inspect `childSlot` at every `BottomSheetLayout` ancestor:
+       * Rejects `BottomSheetType.body` descendants (`focusable = false`) whenever `BottomSheetLayout.bottomSheet` is opening or open (`!_isBottomSheetClosing(sheet)`), immediately isolating occluded first-layer comments and `TabBar` tabs from holding focus, painting a focus ring (`_computeFocusedRect`), or receiving D-pad traversal.
+       * Rejects `BottomSheetType.bottomSheet` descendants (`focusable = false`) as soon as `StandardBottomSheet.animationController.status` enters `AnimationStatus.reverse` or `AnimationStatus.dismissed`.
+     * Added `TvFocusTraversalPolicy.findFirstFocusInSubtree` and `BottomSheetLayout`-aware recovery in `TvFocusTraversalPolicy.findRecoveryFocus` (returning `null` while an occluding sheet is in `AnimationStatus.forward` before its children lay out, preventing frame-0 zero-height `Align(heightFactor: 0.0)` sheets from leaking focus onto the left-hand video player column).
+     * Added `Expando<_MiniScaffoldSheetRecord> _bottomSheetRecords`, LIFO `_trackedBottomSheetLayouts`, `HardwareKeyboard.instance.addHandler(_observeHardwareKeyEvent)` (capturing `Select`/`Enter`/`NumpadEnter`/`GameButtonA` triggers even when a left-column `ButtonStyleButton` like `AI总结`/`选集` consumes `Enter` before ancestor `Focus.onKeyEvent` bubbles and opens a sheet on the right-column `MiniScaffold`), `_hasPendingBottomSheetWork` (preceding `isStationary` in `_syncFocusRectAfterLayout` while keeping `isStationary == true` at ~0.001ms/frame once settled inside the open sheet), and `_reconcileBottomSheets` for multi-level LIFO promotion and exact pre-sheet `FocusNode` restoration (with container-scoped fallback into `BottomSheetType.body` if the saved node was unmounted).
+     * Refined `_onFocus`'s non-policy `_ensureVisibleInUserScrollables` call from `ScrollPositionAlignmentPolicy.explicit` (`alignment: 0.0`) to `keepVisibleAtEnd` + `keepVisibleAtStart`, so offscreen `autofocus` items still scroll into view while restoring focus to an already-visible comment card preserves the exact user scroll offset without snapping the card to the top edge.
+  2. **Task `M9.3` — Automated Regression Tests (`test/tv_navigation_test.dart`)**:
+     * Added 3 widget tests exercising real `MiniScaffold` + `GetMaterialApp` lifecycles:
+       1. `'MiniScaffold 2nd-layer comment (评论详情) & nested 3rd-layer dialogue (对话列表) promote focus, isolate occluded 1st-layer scroll/TabBar, and restore exact focus on Back (M9)'`
+       2. `'MiniScaffold handles cross-column Enter trigger (选集 / AI总结), enableDrag: false Opacity sheet, and in-place sheet replacement while preserving saved focus (M9)'`
+       3. `'MiniScaffold handles same-frame requestFocus + noAnimation showBottomSheet and recovers into MiniScaffold.body if saved node was deleted (M9)'`
+     * Verified `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart` (`No issues found!`) and `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` (`46/46` passed: `29` navigation + `17` player HUD).

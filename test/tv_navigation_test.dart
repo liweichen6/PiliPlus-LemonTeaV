@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:PiliPlus/common/widgets/radio_widget.dart';
+import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/models/common/theme/theme_type.dart';
 import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
@@ -11,6 +12,7 @@ import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -2522,6 +2524,682 @@ void main() {
             reason: 'Rapid D-pad step $i should advance without freezing',
           );
         }
+      },
+    );
+
+    testWidgets(
+      'MiniScaffold 2nd-layer comment (评论详情) & nested 3rd-layer dialogue (对话列表) promote focus, isolate occluded 1st-layer scroll/TabBar, and restore exact focus on Back (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final outerMiniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final innerMiniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final firstLayerScrollController = ScrollController();
+        final secondLayerScrollController = ScrollController();
+        final thirdLayerScrollController = ScrollController();
+        final playerFullscreenNode = FocusNode(debugLabel: 'player_fullscreen');
+        final introActionNode = FocusNode(debugLabel: 'intro_like');
+        final tabIntroNode = FocusNode(debugLabel: 'tab_intro');
+        final tabCommentNode = FocusNode(debugLabel: 'tab_comment');
+        final secondLayerCloseNode = FocusNode(debugLabel: 'reply_reply_close');
+        final thirdLayerCloseNode = FocusNode(debugLabel: 'dialogue_close');
+        final commentNodes = List<FocusNode>.generate(
+          10,
+          (i) => FocusNode(debugLabel: 'first_layer_comment_$i'),
+        );
+        final replyNodes = List<FocusNode>.generate(
+          8,
+          (i) => FocusNode(debugLabel: 'second_layer_reply_$i'),
+        );
+        final dialogueNodes = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'third_layer_dialogue_$i'),
+        );
+        addTearDown(() {
+          firstLayerScrollController.dispose();
+          secondLayerScrollController.dispose();
+          thirdLayerScrollController.dispose();
+          playerFullscreenNode.dispose();
+          introActionNode.dispose();
+          tabIntroNode.dispose();
+          tabCommentNode.dispose();
+          secondLayerCloseNode.dispose();
+          thirdLayerCloseNode.dispose();
+          for (final n in commentNodes) {
+            n.dispose();
+          }
+          for (final n in replyNodes) {
+            n.dispose();
+          }
+          for (final n in dialogueNodes) {
+            n.dispose();
+          }
+        });
+
+        void openThirdLayerDialogue() {
+          innerMiniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade900,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 45,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('对话列表'),
+                        IconButton(
+                          focusNode: thirdLayerCloseNode,
+                          tooltip: '关闭',
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: Get.back,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: thirdLayerScrollController,
+                      itemExtent: 90,
+                      itemCount: dialogueNodes.length,
+                      itemBuilder: (context, index) => InkWell(
+                        focusNode: dialogueNodes[index],
+                        onTap: () {},
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Dialogue #$index'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        void openSecondLayerReplies() {
+          outerMiniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade900,
+              child: MiniScaffold(
+                key: innerMiniScaffoldKey,
+                body: Column(
+                  children: [
+                    SizedBox(
+                      height: 45,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('评论详情'),
+                          IconButton(
+                            focusNode: secondLayerCloseNode,
+                            tooltip: '关闭',
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: Get.back,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: secondLayerScrollController,
+                        itemExtent: 100,
+                        itemCount: replyNodes.length,
+                        itemBuilder: (context, index) => InkWell(
+                          focusNode: replyNodes[index],
+                          onTap: index == 1 ? openThirdLayerDialogue : () {},
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Second Layer Reply #$index'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 560,
+                          height: 315,
+                          alignment: Alignment.center,
+                          child: ElevatedButton(
+                            focusNode: playerFullscreenNode,
+                            onPressed: () {},
+                            child: const Text('全屏'),
+                          ),
+                        ),
+                        Container(
+                          width: 560,
+                          height: 225,
+                          alignment: Alignment.center,
+                          child: ElevatedButton(
+                            focusNode: introActionNode,
+                            onPressed: () {},
+                            child: const Text('点赞'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: outerMiniScaffoldKey,
+                      body: Column(
+                        children: [
+                          SizedBox(
+                            height: 46,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    focusNode: tabIntroNode,
+                                    onTap: () {},
+                                    child: const Center(child: Text('相关视频')),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: InkWell(
+                                    focusNode: tabCommentNode,
+                                    onTap: () {},
+                                    child: const Center(child: Text('评论')),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              controller: firstLayerScrollController,
+                              itemExtent: 140,
+                              itemCount: commentNodes.length,
+                              itemBuilder: (context, index) => InkWell(
+                                focusNode: commentNodes[index],
+                                autofocus: index == 0,
+                                onTap: openSecondLayerReplies,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text('First Layer Comment #$index'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(commentNodes[0].hasPrimaryFocus, isTrue);
+
+        final Finder ringFinder = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+
+        // 1. Navigate down to 1st-layer Comment #3 so firstLayerScrollController scrolls > 0.
+        for (int step = 1; step <= 3; step++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(commentNodes[step].hasPrimaryFocus, isTrue);
+        }
+        final double savedFirstLayerOffset = firstLayerScrollController.offset;
+        expect(savedFirstLayerOffset, greaterThan(0.0));
+
+        // 2. Press Select on Comment #3 to open 2nd-layer 评论详情.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+
+        // Pump frame-by-frame through the opening animation: focus must NEVER
+        // jump to the left-column player button on frame 0, and occluded
+        // 1st-layer items must immediately become non-focusable.
+        for (int frame = 0; frame < 20; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(
+            playerFullscreenNode.hasPrimaryFocus,
+            isFalse,
+            reason:
+                'Opening animation frame $frame must never jump focus to left player column',
+          );
+          expect(
+            introActionNode.hasPrimaryFocus,
+            isFalse,
+            reason:
+                'Opening animation frame $frame must never jump focus to left intro column',
+          );
+          expect(
+            TvFocusTraversalPolicy.isEffectivelyFocusable(commentNodes[3]),
+            isFalse,
+            reason: '1st-layer Comment #3 must be occluded while 2nd layer is open',
+          );
+          expect(
+            TvFocusTraversalPolicy.isEffectivelyFocusable(tabCommentNode),
+            isFalse,
+            reason: '1st-layer TabBar must be occluded while 2nd layer is open',
+          );
+        }
+        await tester.pumpAndSettle();
+
+        void expectSameFocusRect(Rect? actual, Rect expected) {
+          expect(actual, isNotNull);
+          expect(actual!.left, closeTo(expected.left, 0.5));
+          expect(actual.top, closeTo(expected.top, 0.5));
+          expect(actual.right, closeTo(expected.right, 0.5));
+          expect(actual.bottom, closeTo(expected.bottom, 0.5));
+        }
+
+        // Focus promoted into 2nd-layer 评论详情 header close button, and ring rect matches.
+        expect(secondLayerCloseNode.hasPrimaryFocus, isTrue);
+        final CustomPainter settledSheetPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        expectSameFocusRect(
+          (settledSheetPainter as dynamic).rect as Rect?,
+          secondLayerCloseNode.rect,
+        );
+
+        // Verify stationary fast-path works while 2nd-layer sheet is open (zero idle repaints).
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(const Duration(milliseconds: 16));
+        final CustomPainter idleSheetPainter =
+            tester.widget<CustomPaint>(ringFinder).painter!;
+        expect(idleSheetPainter.shouldRepaint(settledSheetPainter), isFalse);
+
+        // 3. Step Down across 2nd-layer replies: 2nd-layer scrolls while 1st-layer
+        //    scroll offset stays strictly unchanged.
+        for (int i = 0; i <= 5; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(
+            replyNodes[i].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected D-pad Down step $i to focus 2nd-layer Reply #$i',
+          );
+          expect(
+            firstLayerScrollController.offset,
+            equals(savedFirstLayerOffset),
+            reason: '1st-layer scroll controller must never scroll while occluded',
+          );
+        }
+        expect(secondLayerScrollController.offset, greaterThan(0.0));
+
+        // 4. Step Up all the way to the top of 2nd-layer 评论详情: stops at
+        //    secondLayerCloseNode and NEVER leaks to occluded 1st-layer TabBar.
+        for (int i = 4; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expect(replyNodes[i].hasPrimaryFocus, isTrue);
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(secondLayerCloseNode.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(secondLayerCloseNode.hasPrimaryFocus, isTrue);
+        expect(tabCommentNode.hasPrimaryFocus, isFalse);
+
+        // 5. Cross-pane D-pad Left -> left column -> D-pad Right returns into
+        //    visible 2nd-layer 评论详情 (never onto occluded 1st-layer items).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(replyNodes[0].hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(replyNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(
+          playerFullscreenNode.hasPrimaryFocus || introActionNode.hasPrimaryFocus,
+          isTrue,
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(
+          replyNodes.any((n) => n.hasPrimaryFocus) ||
+              secondLayerCloseNode.hasPrimaryFocus,
+          isTrue,
+          reason: 'Returning Right must land inside visible 2nd-layer sheet',
+        );
+        expect(commentNodes.any((n) => n.hasPrimaryFocus), isFalse);
+
+        // 6. Focus Reply #1 in 2nd layer and press Select to open nested 3rd-layer 对话列表.
+        if (!replyNodes[1].hasPrimaryFocus) {
+          replyNodes[1].requestFocus();
+          await tester.pumpAndSettle();
+        }
+        expect(replyNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(thirdLayerCloseNode.hasPrimaryFocus, isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(replyNodes[1]),
+          isFalse,
+          reason: '2nd-layer Reply #1 must be occluded while 3rd-layer 对话列表 is open',
+        );
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(commentNodes[3]),
+          isFalse,
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(dialogueNodes[0].hasPrimaryFocus, isTrue);
+
+        // 7. Press Back to close 3rd-layer 对话列表 -> restores exact 2nd-layer Reply #1.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(replyNodes[1].hasPrimaryFocus, isTrue);
+        expectSameFocusRect(
+          (tester.widget<CustomPaint>(ringFinder).painter! as dynamic).rect
+              as Rect?,
+          replyNodes[1].rect,
+        );
+
+        // 8. Press Back to close 2nd-layer 评论详情 -> restores exact 1st-layer Comment #3.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(commentNodes[3].hasPrimaryFocus, isTrue);
+        expect(firstLayerScrollController.offset, equals(savedFirstLayerOffset));
+        expectSameFocusRect(
+          (tester.widget<CustomPaint>(ringFinder).painter! as dynamic).rect
+              as Rect?,
+          commentNodes[3].rect,
+        );
+      },
+    );
+
+    testWidgets(
+      'MiniScaffold handles cross-column Enter trigger (选集 / AI总结), enableDrag: false Opacity sheet, and in-place sheet replacement while preserving saved focus (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final aiSummaryBtnNode = FocusNode(debugLabel: 'left_ai_summary_btn');
+        final episodeBtnNode = FocusNode(debugLabel: 'left_episode_btn');
+        final bodyCommentNode = FocusNode(debugLabel: 'right_body_comment_0');
+        final aiSheetItemNode = FocusNode(debugLabel: 'ai_sheet_item_0');
+        final episodeSheetItemNode = FocusNode(
+          debugLabel: 'episode_sheet_item_0',
+        );
+        addTearDown(() {
+          aiSummaryBtnNode.dispose();
+          episodeBtnNode.dispose();
+          bodyCommentNode.dispose();
+          aiSheetItemNode.dispose();
+          episodeSheetItemNode.dispose();
+        });
+
+        void openAiSheet() {
+          miniScaffoldKey.currentState!.showBottomSheet(
+            enableDrag: false,
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade900,
+              child: Center(
+                child: ElevatedButton(
+                  focusNode: aiSheetItemNode,
+                  onPressed: () {},
+                  child: const Text('AI总结内容'),
+                ),
+              ),
+            ),
+          );
+        }
+
+        void openEpisodeSheet() {
+          miniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade800,
+              child: Center(
+                child: ElevatedButton(
+                  focusNode: episodeSheetItemNode,
+                  onPressed: () {},
+                  child: const Text('选集 P1'),
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          focusNode: aiSummaryBtnNode,
+                          autofocus: true,
+                          onPressed: openAiSheet,
+                          child: const Text('AI总结'),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          focusNode: episodeBtnNode,
+                          onPressed: openEpisodeSheet,
+                          child: const Text('选集'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: ElevatedButton(
+                          focusNode: bodyCommentNode,
+                          onPressed: openAiSheet,
+                          child: const Text('1st Layer Comment'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(aiSummaryBtnNode.hasPrimaryFocus, isTrue);
+
+        // 1. Press Enter on left-column AI总结 button (ElevatedButton consumes Enter
+        //    before Focus.onKeyEvent bubbles) -> opens right-column enableDrag: false
+        //    sheet and promotes focus into aiSheetItemNode.
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(aiSheetItemNode.hasPrimaryFocus, isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(bodyCommentNode),
+          isFalse,
+        );
+
+        // Back restores focus to left-column AI总结 button.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(aiSummaryBtnNode.hasPrimaryFocus, isTrue);
+
+        // 2. Focus right-column bodyCommentNode, open AI sheet, then replace it
+        //    in-place with Episode sheet -> promotes to episodeSheetItemNode and
+        //    Back restores original bodyCommentNode.
+        bodyCommentNode.requestFocus();
+        await tester.pumpAndSettle();
+        expect(bodyCommentNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(aiSheetItemNode.hasPrimaryFocus, isTrue);
+
+        openEpisodeSheet();
+        await tester.pumpAndSettle();
+        expect(episodeSheetItemNode.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(bodyCommentNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'MiniScaffold handles same-frame requestFocus + noAnimation showBottomSheet and recovers into MiniScaffold.body if saved node was deleted (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final leftPlayerNode = FocusNode(debugLabel: 'left_player');
+        final comment0Node = FocusNode(debugLabel: 'body_comment_0');
+        final comment1Node = FocusNode(debugLabel: 'body_comment_1');
+        final sheetItemNode = FocusNode(debugLabel: 'instant_sheet_item');
+        bool includeSecondComment = true;
+        late StateSetter rebuildBody;
+
+        addTearDown(() {
+          leftPlayerNode.dispose();
+          comment0Node.dispose();
+          comment1Node.dispose();
+          sheetItemNode.dispose();
+        });
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Center(
+                      child: ElevatedButton(
+                        focusNode: leftPlayerNode,
+                        autofocus: true,
+                        onPressed: () {},
+                        child: const Text('Player'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: StatefulBuilder(
+                        builder: (context, setState) {
+                          rebuildBody = setState;
+                          return Column(
+                            children: [
+                              SizedBox(
+                                height: 80,
+                                child: ElevatedButton(
+                                  focusNode: comment0Node,
+                                  onPressed: () {},
+                                  child: const Text('Comment 0'),
+                                ),
+                              ),
+                              if (includeSecondComment)
+                                SizedBox(
+                                  height: 80,
+                                  child: ElevatedButton(
+                                    focusNode: comment1Node,
+                                    onPressed: () {},
+                                    child: const Text('Comment 1'),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(leftPlayerNode.hasPrimaryFocus, isTrue);
+
+        // Same-frame programmatic focus on comment1Node + instant noAnimation sheet open.
+        comment1Node.requestFocus();
+        miniScaffoldKey.currentState!.showBottomSheet(
+          sheetAnimationStyle: AnimationStyle.noAnimation,
+          constraints: const BoxConstraints(),
+          (context) => ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: ElevatedButton(
+                focusNode: sheetItemNode,
+                onPressed: Get.back,
+                child: const Text('Instant Sheet Action'),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(sheetItemNode.hasPrimaryFocus, isTrue);
+
+        // Delete/unmount the saved 1st-layer comment1Node while the sheet is open.
+        rebuildBody(() {
+          includeSecondComment = false;
+        });
+        await tester.pump();
+
+        // Close the sheet -> focus must recover to remaining comment0Node inside
+        // MiniScaffold.body rather than jumping to leftPlayerNode.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(comment0Node.hasPrimaryFocus, isTrue);
+        expect(leftPlayerNode.hasPrimaryFocus, isFalse);
       },
     );
   });
