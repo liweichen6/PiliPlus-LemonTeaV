@@ -4058,6 +4058,157 @@ void main() {
         expect(firstLayerCommentNode.hasPrimaryFocus, isTrue);
       },
     );
+
+    testWidgets(
+      'embedded IconButton micro-actions stepping and userMovedFocus retention across frames',
+      (tester) async {
+        final FocusNode sidebarNode = FocusNode(debugLabel: 'sidebarNode');
+        final FocusNode cardNode = FocusNode(debugLabel: 'cardNode');
+        final FocusNode iconBtn1Node = FocusNode(debugLabel: 'iconBtn1Node');
+        final FocusNode iconBtn2Node = FocusNode(debugLabel: 'iconBtn2Node');
+        final FocusNode sheetCloseNode = FocusNode(debugLabel: 'sheetCloseNode');
+        final GlobalKey<MiniScaffoldState> miniScaffoldKey =
+            GlobalKey<MiniScaffoldState>();
+
+        addTearDown(() {
+          sidebarNode.dispose();
+          cardNode.dispose();
+          iconBtn1Node.dispose();
+          iconBtn2Node.dispose();
+          sheetCloseNode.dispose();
+        });
+
+        void openSheet() {
+          miniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.black87,
+              child: SizedBox(
+                height: 300,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Sheet Header'),
+                    IconButton(
+                      focusNode: sheetCloseNode,
+                      icon: const Icon(Icons.close),
+                      onPressed: Get.back,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 200,
+                    child: ElevatedButton(
+                      focusNode: sidebarNode,
+                      onPressed: () {},
+                      child: const Text('Sidebar'),
+                    ),
+                  ),
+                  Expanded(
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: InkWell(
+                          focusNode: cardNode,
+                          onTap: openSheet,
+                          child: Container(
+                            width: 320,
+                            height: 120,
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Card with micro-actions'),
+                                const Spacer(),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    IconButton(
+                                      focusNode: iconBtn1Node,
+                                      icon: const Icon(Icons.thumb_up),
+                                      onPressed: () {},
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      focusNode: iconBtn2Node,
+                                      icon: const Icon(Icons.thumb_down),
+                                      onPressed: () {},
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Verify stepping into and out of embedded IconButtons
+        cardNode.requestFocus();
+        await tester.pumpAndSettle();
+        expect(cardNode.hasPrimaryFocus, isTrue);
+
+        // Press Right -> steps into first embedded IconButton
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(iconBtn1Node.hasPrimaryFocus, isTrue);
+
+        // Press Right -> steps to second embedded IconButton
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(iconBtn2Node.hasPrimaryFocus, isTrue);
+
+        // Press Left -> steps back to first embedded IconButton
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(iconBtn1Node.hasPrimaryFocus, isTrue);
+
+        // Press Left -> steps back to the parent card
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(cardNode.hasPrimaryFocus, isTrue);
+
+        // 2. Open sheet -> focus promoted to sheetCloseNode
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(sheetCloseNode.hasPrimaryFocus, isTrue);
+
+        // 3. Deliberately move focus to unoccluded sidebar
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(sidebarNode.hasPrimaryFocus, isTrue);
+
+        // Multiple frames / rebuilds while sheet remains open:
+        // userMovedFocus must NOT be wiped out; focus must remain on sidebar
+        for (int i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(sidebarNode.hasPrimaryFocus, isTrue);
+        }
+
+        // 4. Press Back to close the sheet -> restores focus to cardNode
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(cardNode.hasPrimaryFocus, isTrue);
+      },
+    );
   });
 }
 

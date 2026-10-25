@@ -401,7 +401,8 @@ class _TvTraversalCache {
       if (enclosingInkResponse == null && widget is InkResponse) {
         enclosingInkResponse = element;
       }
-      if (enclosingButton == null && widget is ButtonStyleButton) {
+      if (enclosingButton == null &&
+          (widget is ButtonStyleButton || widget is IconButton)) {
         enclosingButton = element;
       }
       if (enclosingWrap == null && widget is Wrap) {
@@ -2023,9 +2024,9 @@ class _TvNavigationState extends State<TvNavigation>
       if (trigger != null && status.enclosingActiveSheetLayout != layoutEl) {
         rec.savedFocusNode ??= trigger;
       }
-      rec
-        ..promoted = false
-        ..userMovedFocus = false;
+      if (!rec.userMovedFocus) {
+        rec.promoted = false;
+      }
       if (!_trackedBottomSheetLayouts.contains(layoutEl)) {
         _trackedBottomSheetLayouts.add(layoutEl);
       }
@@ -2206,7 +2207,9 @@ class _TvNavigationState extends State<TvNavigation>
         continue;
       }
       final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
-      if (rec != null && identical(rec.sheetWidget, sheet) && rec.promoted) {
+      if (rec != null &&
+          identical(rec.sheetWidget, sheet) &&
+          (rec.promoted || rec.userMovedFocus)) {
         continue;
       }
       if (FocusScope.of(el) == scope) {

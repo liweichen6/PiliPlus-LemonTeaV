@@ -212,8 +212,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **Player HUD Widget Rebuilds** | Full HUD subtree rebuilt on controls toggle | **0 texture rebuilds** (localized setState) | Isolated controls layer | PopScope & transport tests in `tv_player_hud_test.dart` |
 | **Rapid Seek Responsiveness** | Desync & stutter due to 150–300ms decoder lag | **Instant responsive accumulator** (1x/2x/3x) | Smooth virtual scrubbing | 5 acceleration/timeout tests in `tv_player_hud_test.dart` |
 | **Android Native Memory Leaks** | Strong `Activity` reference held in `TvBridge` | **0 leaks** (`WeakReference<Activity>`) | Leak-free lifecycle | Code review & null-safe platform channel fallbacks |
-| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **50 / 50 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
-| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **105 / 105 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
+| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **51 / 51 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
+| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **106 / 106 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
 | **Static Analysis Diagnostics** | 0 issues | **0 issues** | `No issues found!` | `flutter analyze --no-pub` |
 | **Privacy / Secret Leak Count** | 0 | **0 occurrences** | 0 leaks | Regex scan for IPs, ports, paths, usernames, serials |
 
@@ -489,12 +489,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `[MODIFY] docs/tv/PROGRESS.md`
 * **Technical Details & Changes Summary**:
   1. **Embedded Comment Action Reachability (`R7`, D1)**:
-     * In `TvFocusTraversalPolicy`, implemented `embeddedCardActionFallback(FocusNode node, TraversalDirection direction)`: when a focused comment card (`InkResponse` / `InkWell` in `ReplyItemGrpc`) receives D-pad Right, it steps into its primary embedded `ButtonStyleButton` action (`回复`).
-     * In `_TvTraversalCache._isEmbeddedSecondaryOf`, allowed horizontal traversal across sibling embedded `ButtonStyleButton` micro-actions (`回复` <-> `查看对话` <-> `点赞` <-> `点踩`) while keeping them excluded from vertical candidate searches.
+     * In `TvFocusTraversalPolicy`, implemented `embeddedCardActionFallback(FocusNode node, TraversalDirection direction)`: when a focused comment card (`InkResponse` / `InkWell` in `ReplyItemGrpc`) receives D-pad Right, it steps into its primary embedded action (`回复` / `ButtonStyleButton` / `IconButton`).
+     * In `_TvTraversalCache._isEmbeddedSecondaryOf` and `_metaWithAncestors`, allowed horizontal traversal across sibling embedded `ButtonStyleButton` and `IconButton` micro-actions (`回复` <-> `查看对话` <-> `点赞` <-> `点踩`) while keeping them excluded from vertical candidate searches.
      * Pressing D-pad Left from any embedded action steps back to the parent card; pressing D-pad Up/Down from the card continues to step 1 full card per press, resolving `R7` with 0 impact on fast 10-foot list scrolling.
   2. **Async-Loading Sheet Focus Promotion (D2)**:
      * Added `_subtreeHasRequestableFocus` and pending promotion tracking in `_TvNavigationState` to handle sheets whose focusables mount asynchronously after the open animation finishes (such as `HorizontalMemberPage`).
-     * Automatically promotes focus once content mounts without spinning idle frame callbacks, and respects manual user navigation (`userMovedFocus`) if the user navigated elsewhere before loading completed.
+     * Automatically promotes focus once content mounts without spinning idle frame callbacks, and respects manual user navigation (`userMovedFocus`) without allowing repeated layout passes to overwrite user focus.
   3. **Delayed & Programmatic External Sheets (D3)**:
      * Tracked programmatic sheets (`showMediaListPanel`) and delayed Future triggers (such as `_aiBtn` in `video_intro`) by observing `ModalRoute.willHandlePopInternally` transitions and `_knownBottomSheetLayouts`.
      * Focus promotes into newly opened sheets even when decoupled from the initial Select/Enter key press by asynchronous execution.
@@ -503,9 +503,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   5. **PopScope & Internal Route Pop Tracking (D5)**:
      * Tracked internal route pop transitions via `_routeWillHandlePop`, ensuring reliable LIFO focus restoration when sheets are dismissed via Android Back or programmatic pop.
   6. **Automated Regression Tests & Verification**:
-     * Added 4 comprehensive automated widget tests in `test/tv_navigation_test.dart` (`33/33` navigation tests, `50/50` total TV tests):
+     * Added 5 comprehensive automated widget tests in `test/tv_navigation_test.dart` (`34/34` navigation tests, `51/51` total TV tests):
        1. Async-loading sheet promotion (`HorizontalMemberPage` pattern);
        2. Async-triggered and programmatic external sheets (`_aiBtn` / `showMediaListPanel` pattern);
        3. Zero-focusable sheet body isolation (`ImageGridView` pattern);
-       4. Embedded comment action navigation (`ReplyItemGrpc` pattern: D-pad Right into `回复`/`查看对话`/`点赞`, 3rd-layer `对话列表` opening, D-pad Left return, and 1-card vertical step preservation).
+       4. Embedded comment action navigation (`ReplyItemGrpc` pattern: D-pad Right into `回复`/`查看对话`/`点赞`, 3rd-layer `对话列表` opening, D-pad Left return, and 1-card vertical step preservation);
+       5. Embedded `IconButton` micro-action stepping and `userMovedFocus` retention across multiple frame ticks.
      * Validated live on `<vm-tv>` with 0 logcat errors, 0 runtime exceptions, and clean patch revert discipline (`[NOT APPLIED]` for all 38 patches).
