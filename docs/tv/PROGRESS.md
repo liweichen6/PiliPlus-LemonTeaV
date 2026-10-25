@@ -212,8 +212,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **Player HUD Widget Rebuilds** | Full HUD subtree rebuilt on controls toggle | **0 texture rebuilds** (localized setState) | Isolated controls layer | PopScope & transport tests in `tv_player_hud_test.dart` |
 | **Rapid Seek Responsiveness** | Desync & stutter due to 150–300ms decoder lag | **Instant responsive accumulator** (1x/2x/3x) | Smooth virtual scrubbing | 5 acceleration/timeout tests in `tv_player_hud_test.dart` |
 | **Android Native Memory Leaks** | Strong `Activity` reference held in `TvBridge` | **0 leaks** (`WeakReference<Activity>`) | Leak-free lifecycle | Code review & null-safe platform channel fallbacks |
-| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **51 / 51 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
-| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **106 / 106 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
+| **TV Test Suite Pass Rate** | 15 / 15 tests (100%) | **52 / 52 tests (100%)** | 100% pass rate | `flutter test --no-pub test/tv_*` |
+| **Repository Test Pass Rate** | 70 / 70 tests (100%) | **107 / 107 tests (100%)** | 100% pass rate | `flutter test --no-pub` |
 | **Static Analysis Diagnostics** | 0 issues | **0 issues** | `No issues found!` | `flutter analyze --no-pub` |
 | **Privacy / Secret Leak Count** | 0 | **0 occurrences** | 0 leaks | Regex scan for IPs, ports, paths, usernames, serials |
 
@@ -502,11 +502,15 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
      * When opening sheets that contain no focusable widgets (such as `ImageGridView` `GalleryViewer`), immediately unfocuses occluded body widgets (`GestureDetector`) without prematurely hijacking focus to the left-hand video column or spinning idle frames, and restores focus to the trigger on Back.
   5. **PopScope & Internal Route Pop Tracking (D5)**:
      * Tracked internal route pop transitions via `_routeWillHandlePop`, ensuring reliable LIFO focus restoration when sheets are dismissed via Android Back or programmatic pop.
-  6. **Automated Regression Tests & Verification**:
-     * Added 5 comprehensive automated widget tests in `test/tv_navigation_test.dart` (`34/34` navigation tests, `51/51` total TV tests):
+  6. **Pinned/Floating Sliver Header Scroll-Order Translation & Half-Scrolled Primary Card Focus Preference**:
+     * In `_TvTraversalCache.evaluateNode`, accumulated `sliverScrollOffsetDelta` across `RenderSliverSingleBoxAdapter` and `RenderSliverPersistentHeader` ancestors (`SliverPinnedHeader` in 2nd-layer `VideoReplyReplyPanel` and `SliverFloatingHeaderWidget` in 1st-layer `VideoReplyPanel`) and translated `rectOf(node)` to its scroll-order position so pressing D-pad Up from lower replies steps cleanly (`reply_3 -> reply_2 -> reply_1 -> reply_0 -> 按热度 -> firstFloor -> 关闭`) instead of jumping prematurely to the pinned `按热度` sort button.
+     * Added `_preferPrimaryInitialCandidates` and `_isEmbeddedSecondaryOfFocusableAncestor` in `TvFocusTraversalPolicy` (`findFirstFocusInSubtree`, `findRecoveryFocus`, `findFirstFocus`, `findFirstFocusInDirection`) so initial or recovery focus in a partially scrolled list lands on the first visible primary card/control rather than a micro secondary button (`回复`/`点赞`) of a half-scrolled-off card.
+  7. **Automated Regression Tests & Verification**:
+     * Added 6 comprehensive automated widget tests in `test/tv_navigation_test.dart` (`35/35` navigation tests, `52/52` total TV tests):
        1. Async-loading sheet promotion (`HorizontalMemberPage` pattern);
        2. Async-triggered and programmatic external sheets (`_aiBtn` / `showMediaListPanel` pattern);
        3. Zero-focusable sheet body isolation (`ImageGridView` pattern);
        4. Embedded comment action navigation (`ReplyItemGrpc` pattern: D-pad Right into `回复`/`查看对话`/`点赞`, 3rd-layer `对话列表` opening, D-pad Left return, and 1-card vertical step preservation);
-       5. Embedded `IconButton` micro-action stepping and `userMovedFocus` retention across multiple frame ticks.
+       5. Embedded `IconButton` micro-action stepping and `userMovedFocus` retention across multiple frame ticks;
+       6. `SliverPinnedHeader` and `SliverFloatingHeaderWidget` upward D-pad traversal without pinned header hijacking, plus half-scrolled primary card initial focus preference.
      * Validated live on `<vm-tv>` with 0 logcat errors, 0 runtime exceptions, and clean patch revert discipline (`[NOT APPLIED]` for all 38 patches).

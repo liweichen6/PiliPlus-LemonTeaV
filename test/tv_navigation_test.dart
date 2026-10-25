@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:PiliPlus/common/widgets/radio_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
+import 'package:PiliPlus/common/widgets/sliver/sliver_floating_header.dart';
+import 'package:PiliPlus/common/widgets/sliver/sliver_pinned_header.dart';
 import 'package:PiliPlus/models/common/theme/theme_type.dart';
 import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
@@ -4207,6 +4209,351 @@ void main() {
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(cardNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'SliverPinnedHeader and SliverFloatingHeaderWidget do not hijack upward D-pad scrolling and half-scrolled cards do not leak initial focus to embedded buttons',
+      (tester) async {
+        final FocusNode closeNode = FocusNode(debugLabel: 'closeNode');
+        final FocusNode firstFloorNode = FocusNode(debugLabel: 'firstFloor');
+        final FocusNode firstFloorReplyBtn = FocusNode(
+          debugLabel: 'firstFloorReplyBtn',
+        );
+        final FocusNode firstFloorLikeBtn = FocusNode(
+          debugLabel: 'firstFloorLikeBtn',
+        );
+        final FocusNode pinnedSortNode = FocusNode(
+          debugLabel: 'pinnedSortNode',
+        );
+        final List<FocusNode> replyCardNodes = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'replyCard_$i'),
+        );
+        final List<FocusNode> replyBtnNodes = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'replyBtn_$i'),
+        );
+        final List<FocusNode> likeBtnNodes = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'likeBtn_$i'),
+        );
+        final ScrollController scrollController = ScrollController();
+
+        addTearDown(() {
+          closeNode.dispose();
+          firstFloorNode.dispose();
+          firstFloorReplyBtn.dispose();
+          firstFloorLikeBtn.dispose();
+          pinnedSortNode.dispose();
+          for (final n in replyCardNodes) {
+            n.dispose();
+          }
+          for (final n in replyBtnNodes) {
+            n.dispose();
+          }
+          for (final n in likeBtnNodes) {
+            n.dispose();
+          }
+          scrollController.dispose();
+        });
+
+        Widget buildReplyCard({
+          required FocusNode cardNode,
+          required FocusNode replyBtnNode,
+          required FocusNode likeBtnNode,
+          required String title,
+        }) {
+          return InkWell(
+            focusNode: cardNode,
+            onTap: () {},
+            child: SizedBox(
+              height: 120,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        SizedBox(
+                          height: 32,
+                          child: TextButton(
+                            focusNode: replyBtnNode,
+                            onPressed: () {},
+                            child: const Text('回复'),
+                          ),
+                        ),
+                        const Spacer(),
+                        SizedBox(
+                          height: 32,
+                          child: TextButton(
+                            focusNode: likeBtnNode,
+                            onPressed: () {},
+                            child: const Text('点赞'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 400,
+                  height: 360,
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 45,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('评论详情'),
+                            IconButton(
+                              focusNode: closeNode,
+                              autofocus: true,
+                              icon: const Icon(Icons.close, size: 20),
+                              onPressed: () {},
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: CustomScrollView(
+                          controller: scrollController,
+                          slivers: [
+                            SliverToBoxAdapter(
+                              child: buildReplyCard(
+                                cardNode: firstFloorNode,
+                                replyBtnNode: firstFloorReplyBtn,
+                                likeBtnNode: firstFloorLikeBtn,
+                                title: 'First floor comment',
+                              ),
+                            ),
+                            SliverPinnedHeader(
+                              child: ColoredBox(
+                                color: Colors.black,
+                                child: SizedBox(
+                                  height: 36,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('相关回复共5条'),
+                                      SizedBox(
+                                        height: 34,
+                                        child: TextButton.icon(
+                                          focusNode: pinnedSortNode,
+                                          onPressed: () {},
+                                          icon: const Icon(
+                                            Icons.sort,
+                                            size: 16,
+                                          ),
+                                          label: const Text('按热度'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SliverList.builder(
+                              itemCount: 5,
+                              itemBuilder: (context, index) => buildReplyCard(
+                                cardNode: replyCardNodes[index],
+                                replyBtnNode: replyBtnNodes[index],
+                                likeBtnNode: likeBtnNodes[index],
+                                title: 'Reply #$index',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(closeNode.hasPrimaryFocus, isTrue);
+
+        // Step Down from closeNode -> firstFloor -> pinnedSortNode -> reply_0 -> reply_1 -> reply_2 -> reply_3.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(firstFloorNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(pinnedSortNode.hasPrimaryFocus, isTrue);
+
+        for (int i = 0; i <= 3; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(replyCardNodes[i].hasPrimaryFocus, isTrue);
+        }
+        expect(scrollController.offset, greaterThan(150.0));
+
+        // Now press Up repeatedly: must step reply_3 -> reply_2 -> reply_1 -> reply_0 -> pinnedSortNode -> firstFloor -> closeNode
+        // without pinnedSortNode hijacking upward focus while scrolled down!
+        for (int i = 2; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expect(
+            replyCardNodes[i].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected replyCard_$i after pressing Up from reply_${i + 1}',
+          );
+          expect(pinnedSortNode.hasPrimaryFocus, isFalse);
+        }
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(pinnedSortNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(firstFloorNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(closeNode.hasPrimaryFocus, isTrue);
+
+        // Position scroll offset so firstFloorNode is half-scrolled off the top:
+        // its vertical center (y = 60 in scroll coords) is above viewportTop (scrollOffset = 75),
+        // while its bottom-row 回复 button (y = 80..112 in scroll coords) is still visible!
+        scrollController.jumpTo(75.0);
+        await tester.pumpAndSettle();
+
+        final Element scrollViewElement = tester.element(
+          find.byType(CustomScrollView),
+        );
+        final policy = TvFocusTraversalPolicy();
+        final FocusNode? initialInList = policy.findFirstFocusInSubtree(
+          scrollViewElement,
+          FocusManager.instance.rootScope,
+        );
+        // Must pick a primary control (pinnedSortNode or replyCardNodes[0]),
+        // NEVER firstFloorReplyBtn (an embedded secondary button of the half-scrolled card).
+        expect(initialInList, isNot(equals(firstFloorReplyBtn)));
+        expect(
+          initialInList == pinnedSortNode || initialInList == replyCardNodes[0],
+          isTrue,
+        );
+
+        // Also verify SliverFloatingHeaderWidget (used in 1st-layer VideoReplyPanel)
+        // does not hijack upward D-pad traversal when floating back into view.
+        final FocusNode floatingSortNode = FocusNode(
+          debugLabel: 'floatingSortNode',
+        );
+        final List<FocusNode> commentNodes = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'comment_$i'),
+        );
+        final List<FocusNode> commentReplyBtns = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'commentReplyBtn_$i'),
+        );
+        final List<FocusNode> commentLikeBtns = List<FocusNode>.generate(
+          5,
+          (i) => FocusNode(debugLabel: 'commentLikeBtn_$i'),
+        );
+        addTearDown(() {
+          floatingSortNode.dispose();
+          for (final n in commentNodes) {
+            n.dispose();
+          }
+          for (final n in commentReplyBtns) {
+            n.dispose();
+          }
+          for (final n in commentLikeBtns) {
+            n.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 400,
+                  height: 300,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverFloatingHeaderWidget(
+                        backgroundColor: Colors.black,
+                        child: SizedBox(
+                          height: 36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('100条回复'),
+                              SizedBox(
+                                height: 34,
+                                child: TextButton.icon(
+                                  focusNode: floatingSortNode,
+                                  autofocus: true,
+                                  onPressed: () {},
+                                  icon: const Icon(Icons.sort, size: 16),
+                                  label: const Text('按热度'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SliverList.builder(
+                        itemCount: 5,
+                        itemBuilder: (context, index) => buildReplyCard(
+                          cardNode: commentNodes[index],
+                          replyBtnNode: commentReplyBtns[index],
+                          likeBtnNode: commentLikeBtns[index],
+                          title: 'Comment #$index',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(floatingSortNode.hasPrimaryFocus, isTrue);
+
+        for (int i = 0; i <= 3; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(commentNodes[i].hasPrimaryFocus, isTrue);
+        }
+
+        for (int i = 2; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expect(
+            commentNodes[i].hasPrimaryFocus,
+            isTrue,
+            reason: 'Expected comment_$i after pressing Up from comment_${i + 1}',
+          );
+          expect(floatingSortNode.hasPrimaryFocus, isFalse);
+        }
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(floatingSortNode.hasPrimaryFocus, isTrue);
       },
     );
   });

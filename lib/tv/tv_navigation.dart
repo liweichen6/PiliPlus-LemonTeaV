@@ -16,6 +16,8 @@ import 'package:flutter/rendering.dart'
         RenderFractionalTranslation,
         RenderOffstage,
         RenderSliverFillViewport,
+        RenderSliverPersistentHeader,
+        RenderSliverSingleBoxAdapter,
         RenderViewportBase,
         SliverLogicalParentData,
         SliverMultiBoxAdaptorParentData;
@@ -307,6 +309,7 @@ class _TvTraversalCache {
     bool insideScrollable = false;
     bool hasNonZeroTranslation = false;
     bool ancestorsComplete = true;
+    double sliverScrollOffsetDelta = 0.0;
     ScrollableState? verticalScrollable;
     ScrollableState? horizontalScrollable;
     Element? enclosingListTile;
@@ -427,6 +430,31 @@ class _TvTraversalCache {
       }
 
       final RenderObject? ancestorRo = element.renderObject;
+      if (verticalScrollable == null) {
+        if (ancestorRo is RenderSliverSingleBoxAdapter &&
+            ancestorRo.child != null &&
+            ancestorRo.constraints.axisDirection == AxisDirection.down &&
+            ancestorRo.constraints.scrollOffset > 0.0) {
+          final double delta =
+              ancestorRo.constraints.scrollOffset +
+              ancestorRo.childMainAxisPosition(ancestorRo.child!) +
+              (ancestorRo.geometry?.paintOrigin ?? 0.0);
+          if (delta > 0.5) {
+            sliverScrollOffsetDelta += delta;
+          }
+        } else if (ancestorRo is RenderSliverPersistentHeader &&
+            ancestorRo.child != null &&
+            ancestorRo.constraints.axisDirection == AxisDirection.down &&
+            ancestorRo.constraints.scrollOffset > 0.0) {
+          final double delta =
+              ancestorRo.constraints.scrollOffset +
+              ancestorRo.childMainAxisPosition(ancestorRo.child!) +
+              (ancestorRo.geometry?.paintOrigin ?? 0.0);
+          if (delta > 0.5) {
+            sliverScrollOffsetDelta += delta;
+          }
+        }
+      }
       if (ancestorRo is RenderBox &&
           ancestorRo.attached &&
           ancestorRo.hasSize) {
@@ -530,8 +558,13 @@ class _TvTraversalCache {
       }
     }
 
+    final Rect effectiveRect =
+        (verticalScrollable != null && sliverScrollOffsetDelta > 0.5)
+        ? globalRect.translate(0.0, -sliverScrollOffsetDelta)
+        : globalRect;
+
     final meta = _TvNodeMeta(
-      rect: globalRect,
+      rect: effectiveRect,
       isFocusable: focusable,
       ancestorsComplete: ancestorsComplete,
       verticalScrollable: verticalScrollable,
@@ -822,9 +855,11 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     FocusNode? autofocusCandidate;
     final List<FocusNode> visibleInScrollables = <FocusNode>[];
     final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    final List<FocusNode> allFocusable = <FocusNode>[];
     for (final FocusNode node in currentScope.traversalDescendants) {
       if (!_isElementInSubtree(node.context, subtreeRoot)) continue;
       if (cache.isEffectivelyFocusable(node)) {
+        allFocusable.add(node);
         final bool visible = cache.isVisibleInEnclosingScrollables(node);
         if (autofocusCandidate == null && visible) {
           final Widget? w = node.context?.widget;
@@ -840,9 +875,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       }
     }
     if (autofocusCandidate != null) return autofocusCandidate;
-    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+    final List<FocusNode> rawPool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
         : fallbackCandidates;
+    final List<FocusNode> pool = _preferPrimaryInitialCandidates(
+      rawPool,
+      allFocusable,
+      cache,
+    );
     return _findFirstReadingOrderNode(pool, cache);
   });
 
@@ -937,10 +977,12 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     if (containerRect != null) {
       final List<FocusNode> visibleInContainer = <FocusNode>[];
       final List<FocusNode> fallbackInContainer = <FocusNode>[];
+      final List<FocusNode> allInContainer = <FocusNode>[];
       for (final FocusNode node in currentScope.traversalDescendants) {
         if (node == invalidNode) continue;
         if (cache.isEffectivelyFocusable(node) &&
             containerRect!.contains(cache.rectOf(node).center)) {
+          allInContainer.add(node);
           if (cache.isVisibleInEnclosingScrollables(node)) {
             visibleInContainer.add(node);
           } else {
@@ -948,9 +990,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           }
         }
       }
-      final List<FocusNode> containerPool = visibleInContainer.isNotEmpty
+      final List<FocusNode> rawContainerPool = visibleInContainer.isNotEmpty
           ? visibleInContainer
           : fallbackInContainer;
+      final List<FocusNode> containerPool = _preferPrimaryInitialCandidates(
+        rawContainerPool,
+        allInContainer,
+        cache,
+      );
       final FocusNode? inContainer = _findFirstReadingOrderNode(
         containerPool,
         cache,
@@ -972,13 +1019,16 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     );
     if (candidate != null &&
         cache.isEffectivelyFocusable(candidate) &&
-        cache.isVisibleInEnclosingScrollables(candidate)) {
+        cache.isVisibleInEnclosingScrollables(candidate) &&
+        !_isEmbeddedSecondaryOfFocusableAncestor(candidate, cache)) {
       return candidate;
     }
     final List<FocusNode> visibleInScrollables = <FocusNode>[];
     final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    final List<FocusNode> allFocusable = <FocusNode>[];
     for (final FocusNode node in currentNode.traversalDescendants) {
       if (cache.isEffectivelyFocusable(node)) {
+        allFocusable.add(node);
         if (cache.isVisibleInEnclosingScrollables(node)) {
           visibleInScrollables.add(node);
         } else {
@@ -986,9 +1036,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         }
       }
     }
-    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+    final List<FocusNode> rawPool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
         : fallbackCandidates;
+    final List<FocusNode> pool = _preferPrimaryInitialCandidates(
+      rawPool,
+      allFocusable,
+      cache,
+    );
     return _findFirstReadingOrderNode(pool, cache);
   });
 
@@ -1028,13 +1083,16 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     );
     if (candidate != null &&
         cache.isEffectivelyFocusable(candidate) &&
-        cache.isVisibleInEnclosingScrollables(candidate)) {
+        cache.isVisibleInEnclosingScrollables(candidate) &&
+        !_isEmbeddedSecondaryOfFocusableAncestor(candidate, cache)) {
       return candidate;
     }
     final List<FocusNode> visibleInScrollables = <FocusNode>[];
     final List<FocusNode> fallbackCandidates = <FocusNode>[];
+    final List<FocusNode> allFocusable = <FocusNode>[];
     for (final FocusNode node in currentNode.traversalDescendants) {
       if (cache.isEffectivelyFocusable(node)) {
+        allFocusable.add(node);
         if (cache.isVisibleInEnclosingScrollables(node)) {
           visibleInScrollables.add(node);
         } else {
@@ -1042,9 +1100,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         }
       }
     }
-    final List<FocusNode> pool = visibleInScrollables.isNotEmpty
+    final List<FocusNode> rawPool = visibleInScrollables.isNotEmpty
         ? visibleInScrollables
         : fallbackCandidates;
+    final List<FocusNode> pool = _preferPrimaryInitialCandidates(
+      rawPool,
+      allFocusable,
+      cache,
+    );
     return _findFirstReadingOrderNode(pool, cache);
   });
 
@@ -1102,6 +1165,59 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     return isMicroButton ||
         cr.width > sr.width * 1.8 ||
         cr.height > sr.height * 1.8;
+  }
+
+  static bool _isEmbeddedSecondaryOfFocusableAncestor(
+    FocusNode node,
+    _TvTraversalCache cache,
+  ) {
+    for (final FocusNode ancestor in node.ancestors) {
+      if (!cache.isEffectivelyFocusable(ancestor)) continue;
+      final Widget? w = ancestor.context?.widget;
+      final bool isPrimaryContainer =
+          w is InkResponse ||
+          cache.enclosingListTileOf(ancestor) != null ||
+          cache.enclosingInkResponseOf(ancestor) != null;
+      if (isPrimaryContainer && _isEmbeddedSecondaryOf(node, ancestor, cache)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Excludes embedded secondary action buttons (such as comment `回复`/`点赞`
+  /// buttons or trailing icon buttons) from initial/recovery focus candidate
+  /// pools when their enclosing primary card/tile container is focusable in
+  /// [allFocusable] and at least one primary candidate exists in [pool].
+  ///
+  /// Without this filter, when a primary card is half-scrolled off the top of
+  /// a scrollable viewport (so its vertical center is above `scrollableRect.top`
+  /// while its bottom-row action buttons remain inside the viewport), initial
+  /// or recovery focus would land on a micro secondary button of the partially
+  /// scrolled-out card instead of the first fully visible card.
+  static List<FocusNode> _preferPrimaryInitialCandidates(
+    List<FocusNode> pool,
+    List<FocusNode> allFocusable,
+    _TvTraversalCache cache,
+  ) {
+    if (pool.length <= 1) return pool;
+    final Set<FocusNode> focusableSet = allFocusable.toSet();
+    final List<FocusNode> primaryOnly = pool.where((FocusNode node) {
+      for (final FocusNode ancestor in node.ancestors) {
+        if (!focusableSet.contains(ancestor)) continue;
+        final Widget? w = ancestor.context?.widget;
+        final bool isPrimaryContainer =
+            w is InkResponse ||
+            cache.enclosingListTileOf(ancestor) != null ||
+            cache.enclosingInkResponseOf(ancestor) != null;
+        if (isPrimaryContainer &&
+            _isEmbeddedSecondaryOf(node, ancestor, cache)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    return primaryOnly.isNotEmpty ? primaryOnly : pool;
   }
 
   /// Excludes embedded secondary action nodes whenever their enclosing primary
@@ -1225,7 +1341,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             continue;
           }
         }
-        if (cache.isEffectivelyFocusable(node)) {
+        if (cache.isEffectivelyFocusable(node) &&
+            !_isInOppositeHalfPlane(cache.rectOf(node), target, direction)) {
           rawDescendants.add(node);
         }
       }
