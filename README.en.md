@@ -77,8 +77,8 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 | Document | Description |
 | :--- | :--- |
 | [**docs/tv/README.en.md**](docs/tv/README.en.md) ([中文](docs/tv/README.md)) | **TV module overview, upstream sync guide (GitHub Actions & local CLI), local APK build guide, and signing setup** |
-| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance & hardening mechanisms (`F1`–`F9`, `M6`–`M7`), and 21 preserved TV invariants (`C1`–`C21`) |
-| [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **Comprehensive Android TV layer review**: file-by-file engineering audit, technical observations (`R1`–`R6`), and upstream merge risk matrix |
+| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance & hardening mechanisms (`F1`–`F9`, `M6`–`M9`), and 22 preserved TV invariants (`C1`–`C22`) |
+| [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **Comprehensive Android TV layer review**: file-by-file engineering audit, technical observations (`R1`–`R7`), and upstream merge risk matrix |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | Complete milestone, epic, and task roadmap across Phase 1 (Foundation), Phase 2 (Optimization), and Phase 3 (Remediation) |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | Task-by-task changelog, performance benchmark tables, and dual-device verification logs |
 | [**docs/thread-ripper.md**](docs/thread-ripper.md) | Architecture and adaptive concurrency design of the Bilibili-thread-ripper (BTR) engine |

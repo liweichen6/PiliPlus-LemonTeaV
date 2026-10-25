@@ -59,7 +59,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M9)
+### Phase 3: Post-Release Regression Investigation, Remediation & Audit (Milestones M6–M9) — Completed
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -76,9 +76,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M8: TV Layer Review & Doc Sync** | Epic M8.1 | `M8.1` | Comprehensive Code & Architectural Audit of Tier 1–3 TV Layer (`docs/tv/REVIEW.md`) | ✅ Done | `docs/tv/REVIEW.md` (`05fb31da1`) |
 | **M8: TV Layer Review & Doc Sync** | Epic M8.2 | `M8.2` | Remediate Documentation Drift Across `docs/tv/*` & Bilingual Root `README*.md` | ✅ Done | `docs/tv/*`, `README*.md` (`05fb31da1`) |
 | **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.1 | `M9.1` | Root-Cause Analysis & Collateral `MiniScaffold` Impact Plan (`评论详情`, `对话列表`, Inline Panels) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`e47b32395`) |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.2 | `M9.2` | Self-Contained `BottomSheetLayout` Occlusion Isolation, Opening Promotion & Focus Restoration (`lib/tv/tv_navigation.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ✅ Done | `test/tv_navigation_test.dart` |
-| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.4 | `M9.4` | Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline | ⏳ Pending | `docs/tv/*`, `README*.md`, `<vm-tv>` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.2 | `M9.2` | Self-Contained `BottomSheetLayout` Occlusion Isolation, Opening Promotion & Focus Restoration (`lib/tv/tv_navigation.dart`) | ✅ Done | `lib/tv/tv_navigation.dart` (`eb746dd8f`) |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ✅ Done | `test/tv_navigation_test.dart` (`eb746dd8f`) |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.4 | `M9.4` | Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline | ✅ Done | `docs/tv/*`, `README*.md`, `<vm-tv>` |
 
 ---
 
@@ -446,3 +446,32 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
        2. `'MiniScaffold handles cross-column Enter trigger (选集 / AI总结), enableDrag: false Opacity sheet, and in-place sheet replacement while preserving saved focus (M9)'`
        3. `'MiniScaffold handles same-frame requestFocus + noAnimation showBottomSheet and recovers into MiniScaffold.body if saved node was deleted (M9)'`
      * Verified `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart` (`No issues found!`) and `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` (`46/46` passed: `29` navigation + `17` player HUD).
+
+---
+
+### [2026-10-24] Milestone M9 (Task `M9.4`): Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline
+* **Status**: ✅ Completed
+* **Files Updated**:
+  * `[MODIFY] docs/tv/ARCHITECTURE.md`
+  * `[MODIFY] docs/tv/REVIEW.md`
+  * `[MODIFY] docs/tv/README.md`
+  * `[MODIFY] docs/tv/README.en.md`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+  * `[MODIFY] README.md`
+  * `[MODIFY] README.en.md`
+* **Live Verification & Documentation Summary**:
+  1. **APK Build, Side-by-Side Installation & Live D-Pad Verification on `<vm-tv>`**:
+     * Applied all 38 patches (`./tool/tv_patch.sh apply`), built both split-ABI release (`app-arm64-v8a-release.apk`) and side-by-side debug (`app-debug.apk` / `com.lemontea.piliplus.tv.debug`) APKs, and immediately reverted all 38 patches (`./tool/tv_patch.sh revert`).
+     * Installed `com.lemontea.piliplus.tv.debug` onto `<vm-tv>` alongside the pre-existing `com.lemontea.piliplus.tv` installation without disturbing user login state, navigated to `VideoDetailPageV` -> `评论 1958`, and verified via live frame captures + `adb logcat`:
+       * **2nd-Layer Opening Promotion**: Pressing `DPAD_CENTER` on a 1st-layer comment opens `评论详情` (`VideoReplyReplyPanel`) and promotes the yellow focus ring immediately onto `评论详情`'s top-right `关闭` button (zero phantom focus ring on hidden 1st-layer cards).
+       * **2nd-Layer D-Pad Traversal & Scroll Isolation**: Pressing `DPAD_DOWN` / `DPAD_UP` steps through 2nd-layer replies and scrolls `评论详情` smoothly while the occluded 1st-layer comment list underneath stays untouched.
+       * **Cross-Pane Left/Right Isolation**: Pressing `DPAD_LEFT` crosses to the left video title/intro column and `DPAD_RIGHT` returns directly into the visible 2nd-layer `评论详情` reply.
+       * **Nested 3rd-Layer `对话列表` (`VideoReplyDlgPanel`) & LIFO Stack**: Opening `对话列表` (`查看对话`) promotes focus into 3rd-layer `对话列表`, supports D-pad traversal across 3rd-layer replies, and unwinds cleanly across two `KEYCODE_BACK` presses (`3rd -> 2nd -> 1st`).
+       * **Scrolled 1st-Layer Minimal-Scroll Restoration**: Opening `评论详情` from a scrolled bottom-half 1st-layer comment and closing via either `KEYCODE_BACK` or `DPAD_CENTER` on `关闭` restores the yellow focus ring to that exact 1st-layer comment at its pixel-identical scroll offset (`0` top-jump).
+       * **Runtime Health**: `adb logcat` reported `0` `FlutterError`, `0` `FATAL EXCEPTION`, and `0` `ANR`.
+  2. **Documentation & Invariant Sync (`C22`, `R7`)**:
+     * Added Section `2.12` (*Multi-Layer `MiniScaffold` Inline Bottom Sheet Focus Isolation & Restoration (M9)*) and Invariant `C22` to `docs/tv/ARCHITECTURE.md`.
+     * Updated `docs/tv/REVIEW.md` (baseline commit `eb746dd8f`, `46/46` TV tests, Section `2.2` M9 coverage, observation `R7` on `ReplyItemGrpc` card-level focus vs. nested `查看对话` button under Invariant `C12`), `docs/tv/README.md`, `docs/tv/README.en.md`, `README.md`, and `README.en.md`.
+  3. **Patch Revert, Zero Upstream Diff & Privacy Audit**:
+     * Confirmed `./tool/tv_patch.sh status` reports `[NOT APPLIED]` for all 38 patches, verified `0` diff across all upstream files outside `lib/tv/`, `test/`, `docs/tv/`, and `README*.md`, and verified zero private paths, file-scheme URLs, LAN IPs, usernames, or device serials in committed files or commit messages.

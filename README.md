@@ -77,8 +77,8 @@
 | 文档 | 内容说明 |
 | :--- | :--- |
 | [**docs/tv/README.md**](docs/tv/README.md)（[English](docs/tv/README.en.md)） | **TV 模块总览、上游同步指南（GitHub Actions 与本地命令）、本地 APK 构建指南与签名配置说明** |
-| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M7`）与 21 项 TV 功能不变量（`C1`–`C21`） |
-| [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **TV 控制层全面代码与架构审查报告**：逐文件工程审计、边界细节（`R1`–`R6`）与上游合并风险评估 |
+| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M9`）与 22 项 TV 功能不变量（`C1`–`C22`） |
+| [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **TV 控制层全面代码与架构审查报告**：逐文件工程审计、边界细节（`R1`–`R7`）与上游合并风险评估 |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | 完整实施与演进路线图（Phase 1 基础移植、Phase 2 深度优化 & Phase 3 回归修复） |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | 任务级演进日志、性能基准测试对比与真机/模拟器双端验证记录 |
 | [**docs/thread-ripper.md**](docs/thread-ripper.md) | B站线程撕裂者（BTR）多线程加速模块架构与自适应并发设计说明 |
