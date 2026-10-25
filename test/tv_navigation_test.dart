@@ -3202,6 +3202,862 @@ void main() {
         expect(leftPlayerNode.hasPrimaryFocus, isFalse);
       },
     );
+
+    testWidgets(
+      'MiniScaffold async-loading sheet (HorizontalMemberPage pattern) promotes focus when focusables mount after animation completes, without idle frame spin, unless user manually moved focus (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final leftFullscreenNode = FocusNode(debugLabel: 'left_fullscreen');
+        final upOwnerNode = FocusNode(debugLabel: 'left_up_owner');
+        final bodyCommentNode = FocusNode(debugLabel: 'body_comment');
+        final followBtnNode = FocusNode(debugLabel: 'member_follow_btn');
+        final homeBtnNode = FocusNode(debugLabel: 'member_home_btn');
+
+        addTearDown(() {
+          leftFullscreenNode.dispose();
+          upOwnerNode.dispose();
+          bodyCommentNode.dispose();
+          followBtnNode.dispose();
+          homeBtnNode.dispose();
+        });
+
+        bool sheetLoaded = false;
+        StateSetter? setSheetState;
+
+        void openAsyncMemberSheet() {
+          sheetLoaded = false;
+          miniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => StatefulBuilder(
+              builder: (context, setState) {
+                setSheetState = setState;
+                return ColoredBox(
+                  color: Colors.grey.shade900,
+                  child: sheetLoaded
+                      ? Column(
+                          children: [
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              focusNode: followBtnNode,
+                              onPressed: () {},
+                              child: const Text('关注'),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              focusNode: homeBtnNode,
+                              onPressed: () {},
+                              child: const Text('查看主页'),
+                            ),
+                          ],
+                        )
+                      : const Center(
+                          child: SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(value: 0.4),
+                          ),
+                        ),
+                );
+              },
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          focusNode: leftFullscreenNode,
+                          onPressed: () {},
+                          child: const Text('全屏'),
+                        ),
+                        const SizedBox(height: 24),
+                        InkWell(
+                          focusNode: upOwnerNode,
+                          autofocus: true,
+                          onTap: openAsyncMemberSheet,
+                          child: const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('UP主: 尴尬的铁根er'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: ElevatedButton(
+                          focusNode: bodyCommentNode,
+                          onPressed: () {},
+                          child: const Text('1st Layer Comment'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(upOwnerNode.hasPrimaryFocus, isTrue);
+
+        // 1. Click UP owner card -> opens HorizontalMemberPage in loading state
+        //    past the 250ms StandardBottomSheet open animation (pumpAndSettle
+        //    also verifies zero infinite frame spin while sheetLoaded == false).
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(bodyCommentNode),
+          isFalse,
+        );
+        // Zero idle frame spin while waiting for async HTTP response.
+        expect(tester.binding.hasScheduledFrame, isFalse);
+
+        // HTTP finishes and mounts [关注] + [查看主页] -> focus promotes to [关注]!
+        setSheetState!(() {
+          sheetLoaded = true;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(followBtnNode.hasPrimaryFocus, isTrue);
+
+        // Back closes HorizontalMemberPage and restores UP owner card focus.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(upOwnerNode.hasPrimaryFocus, isTrue);
+
+        // 2. Re-open loading sheet, manually navigate Up to [全屏] BEFORE async
+        //    data arrives -> async mount must respect user's manual navigation.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(leftFullscreenNode.hasPrimaryFocus, isTrue);
+
+        setSheetState!(() {
+          sheetLoaded = true;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(leftFullscreenNode.hasPrimaryFocus, isTrue);
+        expect(followBtnNode.hasPrimaryFocus, isFalse);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(upOwnerNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'MiniScaffold async-triggered & programmatic external sheets (_aiBtn / showMediaListPanel pattern) promote focus after delayed Future and restore trigger on Back (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final aiAsyncBtnNode = FocusNode(debugLabel: 'left_ai_async_btn');
+        final bodyCommentNode = FocusNode(debugLabel: 'body_comment');
+        final aiSheetCloseNode = FocusNode(debugLabel: 'ai_sheet_close');
+        final programmaticSheetNode = FocusNode(
+          debugLabel: 'programmatic_sheet_btn',
+        );
+
+        addTearDown(() {
+          aiAsyncBtnNode.dispose();
+          bodyCommentNode.dispose();
+          aiSheetCloseNode.dispose();
+          programmaticSheetNode.dispose();
+        });
+
+        void openProgrammaticSheet() {
+          miniScaffoldKey.currentState!.showBottomSheet(
+            enableDrag: false,
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade900,
+              child: Center(
+                child: ElevatedButton(
+                  focusNode: programmaticSheetNode,
+                  onPressed: Get.back,
+                  child: const Text('选集 #1'),
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Center(
+                      child: ElevatedButton(
+                        focusNode: aiAsyncBtnNode,
+                        autofocus: true,
+                        onPressed: () async {
+                          await Future<void>.delayed(
+                            const Duration(milliseconds: 450),
+                          );
+                          miniScaffoldKey.currentState?.showBottomSheet(
+                            enableDrag: false,
+                            constraints: const BoxConstraints(),
+                            (context) => ColoredBox(
+                              color: Colors.grey.shade900,
+                              child: Center(
+                                child: IconButton(
+                                  focusNode: aiSheetCloseNode,
+                                  icon: const Icon(Icons.close),
+                                  onPressed: Get.back,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text('AI视频总结'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: ElevatedButton(
+                          focusNode: bodyCommentNode,
+                          onPressed: () {},
+                          child: const Text('1st Layer Comment'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(aiAsyncBtnNode.hasPrimaryFocus, isTrue);
+
+        // 1. Programmatic external showBottomSheet WITHOUT any Select key press
+        //    (detected via ModalRoute.willHandlePopInternally transition).
+        openProgrammaticSheet();
+        await tester.pumpAndSettle();
+        expect(programmaticSheetNode.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(aiAsyncBtnNode.hasPrimaryFocus, isTrue);
+
+        // 2. Press Select on _aiBtn -> awaits 450ms HTTP Future (> 25 frames)
+        //    before calling showBottomSheet -> promotes focus into AI sheet.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(aiAsyncBtnNode.hasPrimaryFocus, isTrue);
+
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+        expect(aiSheetCloseNode.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(aiAsyncBtnNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'MiniScaffold zero-focusable sheet immediately unfocuses occluded GestureDetector, avoids hijacking focus to left column or spinning idle frames, and restores trigger on Back (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final leftFullscreenNode = FocusNode(debugLabel: 'left_fullscreen');
+        int occludedGestureTaps = 0;
+
+        addTearDown(leftFullscreenNode.dispose);
+
+        void openZeroFocusableSheet() {
+          miniScaffoldKey.currentState!.showBottomSheet(
+            enableDrag: false,
+            constraints: const BoxConstraints(),
+            (context) => const ColoredBox(
+              color: Colors.black,
+              child: Center(child: Text('Zero Focusables')),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Center(
+                      child: ElevatedButton(
+                        focusNode: leftFullscreenNode,
+                        onPressed: () {},
+                        child: const Text('全屏'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: GestureDetector(
+                          onTap: () {
+                            occludedGestureTaps++;
+                            openZeroFocusableSheet();
+                          },
+                          child: const SizedBox(
+                            width: 180,
+                            height: 60,
+                            child: Center(child: Text('Image Thumbnail')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Move focus from leftFullscreenNode to right-column GestureDetector.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(leftFullscreenNode.hasPrimaryFocus, isFalse);
+
+        // Press Select once to open the zero-focusable sheet.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(occludedGestureTaps, 1);
+
+        // Mid-animation Select must NOT activate the occluded GestureDetector!
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(occludedGestureTaps, 1);
+
+        // Settle animation -> must NOT hijack focus to leftFullscreenNode,
+        // must NOT activate occluded GestureDetector on Select, and must NOT
+        // schedule idle frames.
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+        expect(leftFullscreenNode.hasPrimaryFocus, isFalse);
+        expect(tester.binding.hasScheduledFrame, isFalse);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(occludedGestureTaps, 1);
+        expect(leftFullscreenNode.hasPrimaryFocus, isFalse);
+
+        // Explicit D-pad Left still allows reaching the left column.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+        expect(leftFullscreenNode.hasPrimaryFocus, isTrue);
+
+        // Back closes the zero-focusable sheet and restores focus to the
+        // right-column GestureDetector thumbnail.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(leftFullscreenNode.hasPrimaryFocus, isFalse);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(occludedGestureTaps, 2);
+      },
+    );
+
+    testWidgets(
+      'ReplyItemGrpc pattern: D-pad Right steps into 回复 / 查看对话 / 点赞 to open 3rd-layer 对话列表 and 跳转回复 while preserving 1-card vertical steps and grid neighbors (M9)',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final outerMiniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final innerMiniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final leftFullscreenNode = FocusNode(debugLabel: 'left_fullscreen');
+        final gridLeftCardNode = FocusNode(debugLabel: 'grid_left_card');
+        final gridLeftEmbeddedBtnNode = FocusNode(
+          debugLabel: 'grid_left_embedded_btn',
+        );
+        final firstLayerCommentNode = FocusNode(debugLabel: 'first_comment');
+        final secondCloseNode = FocusNode(debugLabel: 'second_close');
+        final replyCardNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'reply_card_$i'),
+        );
+        final replyHeaderNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'reply_header_$i'),
+        );
+        final replyBtnNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'reply_btn_$i'),
+        );
+        final viewDialogueBtnNode = FocusNode(debugLabel: 'view_dialogue_btn');
+        final hateBtnNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'hate_btn_$i'),
+        );
+        final likeBtnNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'like_btn_$i'),
+        );
+        final thirdCloseNode = FocusNode(debugLabel: 'third_close');
+        final thirdCardNode = FocusNode(debugLabel: 'third_card_0');
+        final thirdReplyBtnNode = FocusNode(debugLabel: 'third_reply_btn');
+        final jumpReplyBtnNode = FocusNode(debugLabel: 'jump_reply_btn');
+        int jumpedToReplyCount = 0;
+
+        addTearDown(() {
+          leftFullscreenNode.dispose();
+          gridLeftCardNode.dispose();
+          gridLeftEmbeddedBtnNode.dispose();
+          firstLayerCommentNode.dispose();
+          secondCloseNode.dispose();
+          for (final n in replyCardNodes) {
+            n.dispose();
+          }
+          for (final n in replyHeaderNodes) {
+            n.dispose();
+          }
+          for (final n in replyBtnNodes) {
+            n.dispose();
+          }
+          viewDialogueBtnNode.dispose();
+          for (final n in hateBtnNodes) {
+            n.dispose();
+          }
+          for (final n in likeBtnNodes) {
+            n.dispose();
+          }
+          thirdCloseNode.dispose();
+          thirdCardNode.dispose();
+          thirdReplyBtnNode.dispose();
+          jumpReplyBtnNode.dispose();
+        });
+
+        void openThirdLayerDialogue() {
+          innerMiniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.black,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 45,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('对话列表'),
+                        IconButton(
+                          focusNode: thirdCloseNode,
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: Get.back,
+                        ),
+                      ],
+                    ),
+                  ),
+                  InkWell(
+                    focusNode: thirdCardNode,
+                    // Mirrors ReplyItemGrpc(replyLevel: 3): replyReply is null,
+                    // so outer InkWell.onTap is a no-op closure.
+                    onTap: () {},
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(
+                            height: 34,
+                            child: Text('搞丢两个账号  10-09'),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('回复 @想要fumo :给地球OL吗？'),
+                          ),
+                          Row(
+                            children: [
+                              const SizedBox(width: 36),
+                              SizedBox(
+                                height: 32,
+                                child: TextButton(
+                                  focusNode: thirdReplyBtnNode,
+                                  onPressed: () {},
+                                  child: const Text('回复'),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              SizedBox(
+                                height: 32,
+                                child: TextButton(
+                                  focusNode: jumpReplyBtnNode,
+                                  onPressed: () {
+                                    jumpedToReplyCount++;
+                                  },
+                                  child: const Text('跳转回复'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        Widget buildReplyItemCard(int index) {
+          return InkWell(
+            focusNode: replyCardNodes[index],
+            // Mirrors ReplyItemGrpc(replyLevel: 2): replyReply is null!
+            onTap: () {},
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Focus(
+                    focusNode: replyHeaderNodes[index],
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: SizedBox(
+                        width: 180,
+                        height: 34,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('User #$index'),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text('Second-layer reply content #$index'),
+                  ),
+                  Row(
+                    children: [
+                      const SizedBox(width: 36),
+                      SizedBox(
+                        height: 32,
+                        child: TextButton(
+                          focusNode: replyBtnNodes[index],
+                          onPressed: () {},
+                          child: const Text('回复'),
+                        ),
+                      ),
+                      if (index == 1) ...[
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          height: 32,
+                          child: TextButton(
+                            focusNode: viewDialogueBtnNode,
+                            onPressed: openThirdLayerDialogue,
+                            child: const Text('查看对话'),
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      SizedBox(
+                        height: 32,
+                        child: TextButton(
+                          focusNode: hateBtnNodes[index],
+                          onPressed: () {},
+                          child: const Icon(Icons.thumb_down, size: 16),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 72,
+                        height: 32,
+                        child: TextButton(
+                          focusNode: likeBtnNodes[index],
+                          onPressed: () {},
+                          child: const Text('点赞 12.3万'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        void openSecondLayerSheet() {
+          outerMiniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => ColoredBox(
+              color: Colors.grey.shade900,
+              child: MiniScaffold(
+                key: innerMiniScaffoldKey,
+                body: Column(
+                  children: [
+                    SizedBox(
+                      height: 45,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('评论详情'),
+                          IconButton(
+                            focusNode: secondCloseNode,
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: Get.back,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: 3,
+                        itemBuilder: (context, index) =>
+                            buildReplyItemCard(index),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          focusNode: leftFullscreenNode,
+                          onPressed: () {},
+                          child: const Text('全屏'),
+                        ),
+                        const SizedBox(height: 24),
+                        // Left-column InkWell card with an embedded TextButton
+                        // AND a right-column neighbor: pressing Right must still
+                        // cross to the right column rather than entering the
+                        // embedded button!
+                        InkWell(
+                          focusNode: gridLeftCardNode,
+                          onTap: () {},
+                          child: SizedBox(
+                            width: 300,
+                            height: 110,
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: SizedBox(
+                                height: 32,
+                                child: TextButton(
+                                  focusNode: gridLeftEmbeddedBtnNode,
+                                  onPressed: () {},
+                                  child: const Text('Embedded Left Action'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: outerMiniScaffoldKey,
+                      body: Align(
+                        alignment: Alignment.center,
+                        child: SizedBox(
+                          width: 380,
+                          height: 110,
+                          child: ElevatedButton(
+                            focusNode: firstLayerCommentNode,
+                            autofocus: true,
+                            onPressed: openSecondLayerSheet,
+                            child: const Text('1st Layer Comment'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(firstLayerCommentNode.hasPrimaryFocus, isTrue);
+
+        // Verify left-column card with external right neighbor crosses to right
+        // column instead of getting trapped in its embedded button.
+        gridLeftCardNode.requestFocus();
+        await tester.pumpAndSettle();
+        expect(gridLeftCardNode.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(firstLayerCommentNode.hasPrimaryFocus, isTrue);
+        expect(gridLeftEmbeddedBtnNode.hasPrimaryFocus, isFalse);
+
+        // Open 2nd-layer 评论详情 -> focuses close button -> Down steps 1 card per press!
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(secondCloseNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(replyCardNodes[0].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(replyCardNodes[1].hasPrimaryFocus, isTrue);
+
+        // Right on Reply #1 steps across 回复 -> 查看对话 -> 点踩 -> 点赞 12.3万.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(replyBtnNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(viewDialogueBtnNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(hateBtnNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(likeBtnNodes[1].hasPrimaryFocus, isTrue);
+
+        // Right at rightmost button stops at edge (does NOT jump to parent card).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(likeBtnNodes[1].hasPrimaryFocus, isTrue);
+
+        // Step Left back to 查看对话 -> press Select -> opens 3rd-layer 对话列表!
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(viewDialogueBtnNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(thirdCloseNode.hasPrimaryFocus, isTrue);
+
+        // Down in 3rd-layer 对话列表 -> dialogue card -> Right -> 回复 -> Right -> 跳转回复.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(thirdCardNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(thirdReplyBtnNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(jumpReplyBtnNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(jumpedToReplyCount, 1);
+
+        // Back from 3rd-layer 对话列表 restores focus directly onto 查看对话!
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(viewDialogueBtnNode.hasPrimaryFocus, isTrue);
+
+        // Down from 查看对话 steps directly to Reply #2's primary card (never
+        // trapped on Reply #1's card or Reply #2's header GestureDetector).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(replyCardNodes[2].hasPrimaryFocus, isTrue);
+
+        // Up returns to Reply #1's card -> Right -> 回复 -> Left returns to
+        // Reply #1's card -> Left crosses to left column!
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(replyCardNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(replyBtnNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(replyCardNodes[1].hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(
+          leftFullscreenNode.hasPrimaryFocus ||
+              gridLeftCardNode.hasPrimaryFocus,
+          isTrue,
+        );
+
+        // Back closes 2nd-layer 评论详情 and restores 1st-layer comment!
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(firstLayerCommentNode.hasPrimaryFocus, isTrue);
+      },
+    );
   });
 }
 
