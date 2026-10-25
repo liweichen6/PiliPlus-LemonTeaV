@@ -18,6 +18,7 @@ import 'package:flutter/rendering.dart'
         RenderSliverFillViewport,
         RenderSliverPersistentHeader,
         RenderSliverSingleBoxAdapter,
+        RenderSliverToBoxAdapter,
         RenderViewportBase,
         SliverLogicalParentData,
         SliverMultiBoxAdaptorParentData;
@@ -40,6 +41,7 @@ import 'package:material_ui/material_ui.dart';
 class _TvNodeMeta {
   const _TvNodeMeta({
     required this.rect,
+    required this.visualRect,
     required this.isFocusable,
     required this.ancestorsComplete,
     required this.verticalScrollable,
@@ -51,6 +53,7 @@ class _TvNodeMeta {
   });
 
   final Rect rect;
+  final Rect visualRect;
   final bool isFocusable;
   final bool ancestorsComplete;
   final ScrollableState? verticalScrollable;
@@ -218,6 +221,9 @@ class _TvTraversalCache {
   Rect rectOf(FocusNode node) =>
       (_nodeMeta[node] ?? evaluateNode(node)).rect;
 
+  Rect visualRectOf(FocusNode node) =>
+      (_nodeMeta[node] ?? evaluateNode(node)).visualRect;
+
   ScrollableState? verticalScrollableOf(FocusNode node) =>
       _metaWithAncestors(node).verticalScrollable;
 
@@ -253,6 +259,7 @@ class _TvTraversalCache {
     if (context == null || !context.mounted) {
       const meta = _TvNodeMeta(
         rect: Rect.zero,
+        visualRect: Rect.zero,
         isFocusable: false,
         ancestorsComplete: true,
         verticalScrollable: null,
@@ -291,6 +298,7 @@ class _TvTraversalCache {
     if (!focusable && !includeAncestorsIfUnfocusable) {
       final meta = _TvNodeMeta(
         rect: globalRect,
+        visualRect: globalRect,
         isFocusable: false,
         ancestorsComplete: false,
         verticalScrollable: null,
@@ -565,6 +573,7 @@ class _TvTraversalCache {
 
     final meta = _TvNodeMeta(
       rect: effectiveRect,
+      visualRect: globalRect,
       isFocusable: focusable,
       ancestorsComplete: ancestorsComplete,
       verticalScrollable: verticalScrollable,
@@ -658,6 +667,38 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       if (_canUserScroll(scrollable)) {
         final RenderObject? target = context.findRenderObject();
         if (target != null && target.attached) {
+          double? pinnedSliverPrecedingExtent;
+          final RenderObject? scrollableRo = scrollable.context
+              .findRenderObject();
+          RenderObject? ancestorRo = target.parent;
+          while (ancestorRo != null && ancestorRo != scrollableRo) {
+            if (ancestorRo is RenderSliverSingleBoxAdapter &&
+                ancestorRo.child != null &&
+                ancestorRo.constraints.axisDirection == AxisDirection.down &&
+                ancestorRo.constraints.scrollOffset > 0.0) {
+              final double delta =
+                  ancestorRo.constraints.scrollOffset +
+                  ancestorRo.childMainAxisPosition(ancestorRo.child!) +
+                  (ancestorRo.geometry?.paintOrigin ?? 0.0);
+              final bool isCustomHeaderSliver =
+                  ancestorRo is! RenderSliverToBoxAdapter &&
+                  (ancestorRo.geometry?.maxPaintExtent ?? double.infinity) <=
+                      ancestorRo.constraints.viewportMainAxisExtent * 0.5;
+              if (delta > 0.5 || isCustomHeaderSliver) {
+                pinnedSliverPrecedingExtent =
+                    ancestorRo.constraints.precedingScrollExtent;
+                break;
+              }
+            } else if (ancestorRo is RenderSliverPersistentHeader &&
+                ancestorRo.child != null &&
+                ancestorRo.constraints.axisDirection == AxisDirection.down &&
+                ancestorRo.constraints.scrollOffset > 0.0) {
+              pinnedSliverPrecedingExtent =
+                  ancestorRo.constraints.precedingScrollExtent;
+              break;
+            }
+            ancestorRo = ancestorRo.parent;
+          }
           scrollable.position.ensureVisible(
             target,
             alignment: alignment,
@@ -665,6 +706,25 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             curve: curve,
             alignmentPolicy: alignmentPolicy,
           );
+          if (pinnedSliverPrecedingExtent != null &&
+              scrollable.position.hasPixels &&
+              scrollable.position.hasContentDimensions) {
+            final double targetPixels = pinnedSliverPrecedingExtent.clamp(
+              scrollable.position.minScrollExtent,
+              scrollable.position.maxScrollExtent,
+            );
+            if (scrollable.position.pixels > targetPixels + 1e-3) {
+              if (duration == Duration.zero) {
+                scrollable.position.jumpTo(targetPixels);
+              } else {
+                scrollable.position.animateTo(
+                  targetPixels,
+                  duration: duration,
+                  curve: curve,
+                );
+              }
+            }
+          }
         }
       }
       final BuildContext scrollableContext = scrollable.context;
@@ -1119,10 +1179,18 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   }
 
   static bool _isRectVisibleInScrollable(Rect r, Rect scrollableRect) {
-    return r.bottom > scrollableRect.top + 1.0 &&
-        r.top < scrollableRect.bottom - 1.0 &&
-        r.center.dy >= scrollableRect.top - 1.0 &&
-        r.center.dy <= scrollableRect.bottom + 1.0;
+    if (r.bottom <= scrollableRect.top + 1.0 ||
+        r.top >= scrollableRect.bottom - 1.0) {
+      return false;
+    }
+    if (r.center.dy >= scrollableRect.top - 1.0 &&
+        r.center.dy <= scrollableRect.bottom + 1.0) {
+      return true;
+    }
+    final double visibleHeight =
+        math.min(r.bottom, scrollableRect.bottom) -
+        math.max(r.top, scrollableRect.top);
+    return visibleHeight >= scrollableRect.height * 0.5 - 1.0;
   }
 
   static bool _isInOppositeHalfPlane(
@@ -1330,20 +1398,33 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       final ScrollableState? focusedHorizScrollable = cache
           .horizontalScrollableOf(focusedChild);
       final Rect target = cache.rectOf(focusedChild);
+      final Rect rawVisualTarget = cache.visualRectOf(focusedChild);
+      final Rect visualTarget =
+          focusedScrollableRect != null &&
+              !rawVisualTarget.isEmpty &&
+              !focusedScrollableRect.isEmpty
+          ? (rawVisualTarget.bottom <= focusedScrollableRect.top + 0.5
+                ? rawVisualTarget.translate(
+                    0.0,
+                    focusedScrollableRect.top - rawVisualTarget.top,
+                  )
+                : (rawVisualTarget.top >= focusedScrollableRect.bottom - 0.5
+                      ? rawVisualTarget.translate(
+                          0.0,
+                          focusedScrollableRect.bottom - rawVisualTarget.bottom,
+                        )
+                      : rawVisualTarget))
+          : rawVisualTarget;
 
       final List<FocusNode> rawDescendants = <FocusNode>[];
       for (final FocusNode node in nearestScope.traversalDescendants) {
         if (node.context == null) continue;
-        final RenderObject? ro = node.context!.findRenderObject();
-        if (ro is RenderBox && ro.attached && ro.hasSize) {
-          final Rect nr = cache.boxRect(ro);
-          if (_isInOppositeHalfPlane(nr, target, direction)) {
-            continue;
+        if (cache.isEffectivelyFocusable(node)) {
+          final Rect nr = cache.rectOf(node);
+          if (!_isInOppositeHalfPlane(nr, target, direction) ||
+              !_isInOppositeHalfPlane(nr, visualTarget, direction)) {
+            rawDescendants.add(node);
           }
-        }
-        if (cache.isEffectivelyFocusable(node) &&
-            !_isInOppositeHalfPlane(cache.rectOf(node), target, direction)) {
-          rawDescendants.add(node);
         }
       }
       final Set<FocusNode> rawSet = rawDescendants.toSet();
@@ -1384,6 +1465,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           _findVerticalCandidate(
             focusedChild: focusedChild,
             target: target,
+            visualTarget: visualTarget,
             focusedScrollable: focusedScrollable,
             focusedScrollableRect: focusedScrollableRect,
             focusedHorizScrollable: focusedHorizScrollable,
@@ -1394,7 +1476,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         TraversalDirection.left || TraversalDirection.right =>
           _findHorizontalCandidate(
             focusedChild: focusedChild,
-            target: target,
+            target: visualTarget,
             focusedScrollable: focusedScrollable,
             focusedScrollableRect: focusedScrollableRect,
             focusedHorizScrollable: focusedHorizScrollable,
@@ -1415,6 +1497,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   FocusNode? _findVerticalCandidate({
     required FocusNode focusedChild,
     required Rect target,
+    required Rect visualTarget,
     required ScrollableState? focusedScrollable,
     required Rect? focusedScrollableRect,
     required ScrollableState? focusedHorizScrollable,
@@ -1423,10 +1506,11 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     required _TvTraversalCache cache,
   }) {
     final bool isDown = direction == TraversalDirection.down;
+    final Rect sameScrollableTarget = isDown ? visualTarget : target;
     final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
       allNodes,
       focusedChild,
-      cache,
+    cache,
     ).where((FocusNode node) {
       if (focusedChild.ancestors.contains(node)) return false;
       final ScrollableState? nodeHorizScrollable = cache.horizontalScrollableOf(
@@ -1454,11 +1538,13 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       ) {
         if (cache.verticalScrollableOf(node) != focusedScrollable) return false;
         final Rect r = cache.rectOf(node);
-        return isDown ? r.center.dy >= target.bottom : r.center.dy <= target.top;
+        return isDown
+            ? r.center.dy >= sameScrollableTarget.bottom
+            : r.center.dy <= sameScrollableTarget.top;
       }).toList();
       if (sameScrollable.isNotEmpty) {
         return _pickFromClosestRow(
-          referenceRect: target,
+          referenceRect: sameScrollableTarget,
           candidates: sameScrollable,
           isDown: isDown,
           preferLeadingOnRow: false,
@@ -1473,16 +1559,17 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final double exitBoundary = focusedScrollableRect != null
         ? (isDown
               ? math.max(
-                  math.min(target.bottom, focusedScrollableRect.bottom) - 2.0,
+                  math.min(visualTarget.bottom, focusedScrollableRect.bottom) -
+                      2.0,
                   focusedScrollableRect.bottom - 4.0,
                 )
               : math.min(
-                  math.max(target.top, focusedScrollableRect.top) + 2.0,
+                  math.max(visualTarget.top, focusedScrollableRect.top) + 2.0,
                   focusedScrollableRect.top + 4.0,
                 ))
-        : (isDown ? target.bottom : target.top);
+        : (isDown ? visualTarget.bottom : visualTarget.top);
 
-    final Rect referenceHorizontalRect = focusedScrollableRect ?? target;
+    final Rect referenceHorizontalRect = focusedScrollableRect ?? visualTarget;
     final List<FocusNode> externalCandidates = <FocusNode>[];
     final List<FocusNode> fallbackScrollableCandidates = <FocusNode>[];
 
@@ -1493,11 +1580,11 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           cache.scrollableRect(cache.verticalScrollableOf(other)) ??
           cache.rectOf(other);
       final bool overlapsTargetVertically =
-          otherBounds.bottom > target.top + 1.0 &&
-          otherBounds.top < target.bottom - 1.0;
+          otherBounds.bottom > visualTarget.top + 1.0 &&
+          otherBounds.top < visualTarget.bottom - 1.0;
       final bool disjointFromTargetHorizontally =
-          otherBounds.left >= target.right - 2.0 ||
-          otherBounds.right <= target.left + 2.0;
+          otherBounds.left >= visualTarget.right - 2.0 ||
+          otherBounds.right <= visualTarget.left + 2.0;
       if (overlapsTargetVertically && disjointFromTargetHorizontally) {
         adjacentColumnSpans.add((otherBounds.left, otherBounds.right));
       }
@@ -1516,15 +1603,15 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             referenceHorizontalRect.left < nodeScrollableRect.right - 2.0;
         if (!overlapsHorizontally) continue;
         final bool scrollableInDirection = isDown
-            ? target.center.dy <= nodeScrollableRect.top + 4.0 ||
+            ? visualTarget.center.dy <= nodeScrollableRect.top + 4.0 ||
                   nodeScrollableRect.top >= exitBoundary - 4.0
-            : target.center.dy >= nodeScrollableRect.bottom - 4.0 ||
+            : visualTarget.center.dy >= nodeScrollableRect.bottom - 4.0 ||
                   nodeScrollableRect.bottom <= exitBoundary + 4.0;
         if (!scrollableInDirection) continue;
         if (_isRectVisibleInScrollable(nr, nodeScrollableRect)) {
           final bool nodeInDirection = isDown
-              ? nr.center.dy >= target.bottom
-              : nr.center.dy <= target.top;
+              ? nr.center.dy >= visualTarget.bottom
+              : nr.center.dy <= visualTarget.top;
           if (nodeInDirection) {
             externalCandidates.add(node);
           }
@@ -1539,7 +1626,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           if (!overlapsFocusedScrollableHorizontally) continue;
         } else {
           final bool overlapsTargetHorizontally =
-              nr.right > target.left - 4.0 && nr.left < target.right + 4.0;
+              nr.right > visualTarget.left - 4.0 &&
+              nr.left < visualTarget.right + 4.0;
           if (!overlapsTargetHorizontally) {
             // Reject candidates that belong to a separate side-by-side column
             // which already has items or a scrollable at target's vertical band.
@@ -1551,8 +1639,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           }
         }
         final bool nodeInDirection = isDown
-            ? nr.center.dy >= exitBoundary && nr.center.dy > target.center.dy
-            : nr.center.dy <= exitBoundary && nr.center.dy < target.center.dy;
+            ? nr.center.dy >= exitBoundary &&
+                  nr.center.dy > visualTarget.center.dy
+            : nr.center.dy <= exitBoundary &&
+                  nr.center.dy < visualTarget.center.dy;
         if (nodeInDirection) {
           externalCandidates.add(node);
         }
@@ -1565,7 +1655,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     if (pool.isEmpty) return null;
 
     return _pickFromClosestRow(
-      referenceRect: target,
+      referenceRect: visualTarget,
       candidates: pool,
       isDown: isDown,
       preferLeadingOnRow: isDown && focusedScrollable == null,
@@ -1839,9 +1929,16 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     if (directionalNodes.isEmpty) return embeddedCardActionFallback();
 
     // 2. Prefer candidates on the same visual row (vertically overlapping target).
+    final Rect scrollTarget = cache.rectOf(focusedChild);
     final List<FocusNode> inBand = directionalNodes.where((FocusNode node) {
       final Rect r = cache.rectOf(node);
-      return r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
+      final Rect bandTarget =
+          (focusedScrollable != null &&
+              cache.verticalScrollableOf(node) == focusedScrollable)
+          ? scrollTarget
+          : target;
+      return r.bottom > bandTarget.top + 1.0 &&
+          r.top < bandTarget.bottom - 1.0;
     }).toList();
 
     if (inBand.isNotEmpty) {

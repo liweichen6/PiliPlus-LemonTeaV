@@ -4422,10 +4422,15 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
         expect(pinnedSortNode.hasPrimaryFocus, isTrue);
+        // Focusing pinnedSortNode must scroll CustomScrollView back to
+        // precedingScrollExtent (120.0) so replyCard_0 is no longer occluded
+        // behind the pinned header!
+        expect(scrollController.offset, closeTo(120.0, 0.5));
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
         expect(firstFloorNode.hasPrimaryFocus, isTrue);
+        expect(scrollController.offset, closeTo(0.0, 0.5));
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
@@ -4454,7 +4459,18 @@ void main() {
         );
 
         // Also verify SliverFloatingHeaderWidget (used in 1st-layer VideoReplyPanel)
-        // does not hijack upward D-pad traversal when floating back into view.
+        // with an external TabBar (简介 / 评论) above it and a left-column control:
+        // 1) Does not hijack upward D-pad traversal when floating back into view;
+        // 2) Scrolls CustomScrollView back to 0.0 when floatingSortNode is focused;
+        // 3) Exits upward from floatingSortNode to the external TabBar even if
+        //    scrolled down when floatingSortNode is focused.
+        final FocusNode leftPlayerNode = FocusNode(
+          debugLabel: 'leftPlayerNode',
+        );
+        final FocusNode tabIntroNode = FocusNode(debugLabel: 'tabIntroNode');
+        final FocusNode tabCommentNode = FocusNode(
+          debugLabel: 'tabCommentNode',
+        );
         final FocusNode floatingSortNode = FocusNode(
           debugLabel: 'floatingSortNode',
         );
@@ -4470,7 +4486,11 @@ void main() {
           5,
           (i) => FocusNode(debugLabel: 'commentLikeBtn_$i'),
         );
+        final ScrollController floatingScrollController = ScrollController();
         addTearDown(() {
+          leftPlayerNode.dispose();
+          tabIntroNode.dispose();
+          tabCommentNode.dispose();
           floatingSortNode.dispose();
           for (final n in commentNodes) {
             n.dispose();
@@ -4481,52 +4501,100 @@ void main() {
           for (final n in commentLikeBtns) {
             n.dispose();
           }
+          floatingScrollController.dispose();
         });
 
         await tester.pumpWidget(
           GetMaterialApp(
             builder: (context, child) => TvNavigation(child: child!),
             home: Scaffold(
-              body: Center(
-                child: SizedBox(
-                  width: 400,
-                  height: 300,
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverFloatingHeaderWidget(
-                        backgroundColor: Colors.black,
-                        child: SizedBox(
-                          height: 36,
+              body: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 200,
+                    height: 346,
+                    child: Align(
+                      alignment: const Alignment(0, -0.65),
+                      child: ElevatedButton(
+                        focusNode: leftPlayerNode,
+                        onPressed: () {},
+                        child: const Text('全屏'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 346,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 46,
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('100条回复'),
-                              SizedBox(
-                                height: 34,
-                                child: TextButton.icon(
-                                  focusNode: floatingSortNode,
-                                  autofocus: true,
-                                  onPressed: () {},
-                                  icon: const Icon(Icons.sort, size: 16),
-                                  label: const Text('按热度'),
+                              Expanded(
+                                child: InkWell(
+                                  focusNode: tabIntroNode,
+                                  onTap: () {},
+                                  child: const Center(child: Text('简介')),
+                                ),
+                              ),
+                              Expanded(
+                                child: InkWell(
+                                  focusNode: tabCommentNode,
+                                  onTap: () {},
+                                  child: const Center(child: Text('评论 100')),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      SliverList.builder(
-                        itemCount: 5,
-                        itemBuilder: (context, index) => buildReplyCard(
-                          cardNode: commentNodes[index],
-                          replyBtnNode: commentReplyBtns[index],
-                          likeBtnNode: commentLikeBtns[index],
-                          title: 'Comment #$index',
+                        Expanded(
+                          child: CustomScrollView(
+                            controller: floatingScrollController,
+                            slivers: [
+                              SliverFloatingHeaderWidget(
+                                backgroundColor: Colors.black,
+                                child: SizedBox(
+                                  height: 36,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('100条回复'),
+                                      SizedBox(
+                                        height: 34,
+                                        child: TextButton.icon(
+                                          focusNode: floatingSortNode,
+                                          autofocus: true,
+                                          onPressed: () {},
+                                          icon: const Icon(
+                                            Icons.sort,
+                                            size: 16,
+                                          ),
+                                          label: const Text('按热度'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              SliverList.builder(
+                                itemCount: 5,
+                                itemBuilder: (context, index) => buildReplyCard(
+                                  cardNode: commentNodes[index],
+                                  replyBtnNode: commentReplyBtns[index],
+                                  likeBtnNode: commentLikeBtns[index],
+                                  title: 'Comment #$index',
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -4539,6 +4607,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(commentNodes[i].hasPrimaryFocus, isTrue);
         }
+        expect(floatingScrollController.offset, greaterThan(150.0));
 
         for (int i = 2; i >= 0; i--) {
           await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -4546,7 +4615,8 @@ void main() {
           expect(
             commentNodes[i].hasPrimaryFocus,
             isTrue,
-            reason: 'Expected comment_$i after pressing Up from comment_${i + 1}',
+            reason:
+                'Expected comment_$i after pressing Up from comment_${i + 1}',
           );
           expect(floatingSortNode.hasPrimaryFocus, isFalse);
         }
@@ -4554,6 +4624,273 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
         expect(floatingSortNode.hasPrimaryFocus, isTrue);
+        // Focusing floatingSortNode must scroll CustomScrollView back to 0.0!
+        expect(floatingScrollController.offset, closeTo(0.0, 0.5));
+
+        // Pressing Up from floatingSortNode must exit CustomScrollView to the
+        // external TabBar (tabCommentNode).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(tabCommentNode.hasPrimaryFocus, isTrue);
+
+        // Even if floatingScrollController is scrolled down (e.g. 200px) while
+        // floatingSortNode is focused, D-pad Up must still reach tabCommentNode,
+        // D-pad Left must reach leftPlayerNode, and D-pad Down must reach the
+        // visible comment below the floating header.
+        floatingScrollController.jumpTo(200.0);
+        await tester.pumpAndSettle();
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        expect(floatingSortNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(tabCommentNode.hasPrimaryFocus, isTrue);
+
+        floatingScrollController.jumpTo(200.0);
+        await tester.pumpAndSettle();
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(leftPlayerNode.hasPrimaryFocus, isTrue);
+
+        floatingScrollController.jumpTo(200.0);
+        await tester.pumpAndSettle();
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(commentNodes[2].hasPrimaryFocus, isTrue);
+
+        // Also verify when SliverFloatingHeaderWidget is visibly floating in
+        // the viewport at scrollOffset ~200 (after scrolling down to 240 and
+        // dragging upward by 40px so effectiveScrollOffset == 0).
+        floatingScrollController.jumpTo(240.0);
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byType(CustomScrollView).last,
+          const Offset(0.0, 60.0),
+        );
+        await tester.pumpAndSettle();
+        expect(floatingScrollController.offset, closeTo(200.0, 5.0));
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(leftPlayerNode.hasPrimaryFocus, isTrue);
+
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(tabCommentNode.hasPrimaryFocus, isTrue);
+
+        floatingSortNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(commentNodes[2].hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'compact item partially under SliverPinnedHeader can traverse Up to header and tall viewport-filling comment card receives primary focus',
+      (tester) async {
+        // Part 1: Compact reply item (height 50px) partially scrolled behind
+        // SliverPinnedHeader (height 36px) so reply_0.bottom < pinnedHeader.boxRect.top + 36
+        // and even when reply_0 is almost completely behind pinnedHeader, pressing
+        // Up from reply_0 reaches pinnedSortNode without coordinate-space culling.
+        final FocusNode firstFloorNode = FocusNode(debugLabel: 'firstFloor');
+        final FocusNode pinnedSortNode = FocusNode(debugLabel: 'pinnedSort');
+        final FocusNode compactReply0 = FocusNode(debugLabel: 'compactReply0');
+        final FocusNode compactReply1 = FocusNode(debugLabel: 'compactReply1');
+        final ScrollController scrollController = ScrollController();
+
+        // Part 2: Tall root comment card (height 650px > 2x viewport height 300px)
+        // with embedded secondary buttons at the top of CustomScrollView.
+        final FocusNode leftButtonNode = FocusNode(debugLabel: 'leftButton');
+        final FocusNode tallCardNode = FocusNode(debugLabel: 'tallCard');
+        final FocusNode tallCardReplyBtn = FocusNode(
+          debugLabel: 'tallCardReplyBtn',
+        );
+        final FocusNode tallCardLikeBtn = FocusNode(
+          debugLabel: 'tallCardLikeBtn',
+        );
+
+        addTearDown(() {
+          firstFloorNode.dispose();
+          pinnedSortNode.dispose();
+          compactReply0.dispose();
+          compactReply1.dispose();
+          scrollController.dispose();
+          leftButtonNode.dispose();
+          tallCardNode.dispose();
+          tallCardReplyBtn.dispose();
+          tallCardLikeBtn.dispose();
+        });
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                height: 300,
+                child: CustomScrollView(
+                  controller: scrollController,
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: InkWell(
+                        focusNode: firstFloorNode,
+                        onTap: () {},
+                        child: const SizedBox(
+                          height: 120,
+                          child: Text('First floor'),
+                        ),
+                      ),
+                    ),
+                    SliverPinnedHeader(
+                      child: ColoredBox(
+                        color: Colors.black,
+                        child: SizedBox(
+                          height: 36,
+                          child: TextButton(
+                            focusNode: pinnedSortNode,
+                            onPressed: () {},
+                            child: const Text('按热度'),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: InkWell(
+                        focusNode: compactReply0,
+                        onTap: () {},
+                        child: const SizedBox(
+                          height: 50,
+                          child: Text('Compact Reply 0'),
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: InkWell(
+                        focusNode: compactReply1,
+                        onTap: () {},
+                        child: const SizedBox(
+                          height: 400,
+                          child: Text('Reply 1'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Scroll to 156.0 so pinnedSortNode is pinned at y = 0..36 (scroll-order y = -36..0)
+        // and compactReply0 is at y = 0..50 (scroll-order y = 0..50).
+        scrollController.jumpTo(156.0);
+        await tester.pumpAndSettle();
+        compactReply0.requestFocus();
+        await tester.pumpAndSettle();
+        expect(compactReply0.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(pinnedSortNode.hasPrimaryFocus, isTrue);
+        expect(scrollController.offset, closeTo(120.0, 0.5));
+
+        // Now test Part 2: Tall viewport-filling comment card (height 650px in
+        // a 300px viewport) with an embedded 回复 button at y = 40..72 (inside viewport)
+        // and a 点赞 button at the bottom.
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 200,
+                    height: 300,
+                    child: Center(
+                      child: ElevatedButton(
+                        focusNode: leftButtonNode,
+                        autofocus: true,
+                        onPressed: () {},
+                        child: const Text('左侧按钮'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 300,
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: InkWell(
+                            focusNode: tallCardNode,
+                            onTap: () {},
+                            child: SizedBox(
+                              height: 650,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 40),
+                                  SizedBox(
+                                    height: 32,
+                                    child: TextButton(
+                                      focusNode: tallCardReplyBtn,
+                                      onPressed: () {},
+                                      child: const Text('回复'),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  SizedBox(
+                                    height: 32,
+                                    child: TextButton(
+                                      focusNode: tallCardLikeBtn,
+                                      onPressed: () {},
+                                      child: const Text('点赞'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(leftButtonNode.hasPrimaryFocus, isTrue);
+
+        // Pressing D-pad Right from leftButtonNode into the CustomScrollView
+        // must focus tallCardNode (the primary comment card filling 100% of the
+        // viewport), NOT fail to enter the scrollable or land on tallCardReplyBtn.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(tallCardNode.hasPrimaryFocus, isTrue);
+
+        // Also verify findFirstFocusInSubtree on the CustomScrollView picks
+        // tallCardNode rather than tallCardReplyBtn.
+        final Element tallScrollElement = tester.element(
+          find.byType(CustomScrollView),
+        );
+        final FocusNode? firstInTall = TvFocusTraversalPolicy()
+            .findFirstFocusInSubtree(
+              tallScrollElement,
+              FocusManager.instance.rootScope,
+            );
+        expect(firstInTall, equals(tallCardNode));
       },
     );
   });
