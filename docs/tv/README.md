@@ -9,7 +9,7 @@
 ## 1. 核心设计目标
 
 1. **近零上游合并冲突（Near-Zero Merge Conflicts）**：将上游业务代码改动压缩到极致（**仅触碰 `lib/` 下 5 个文件，共计 `< 20 行`挂载代码**），确保每周自动合并 `lemonteaau/PiliPlus` 时无需人工处理冲突。
-2. **原生级 10 英尺遥控器交互（D-Pad First Experience）**：提供 2D 空间方向键焦点寻路引擎（`TvFocusTraversalPolicy`）、零重建（Zero-Rebuild）独立重绘焦点高亮框（`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`）、离屏预渲染平滑滚动（`cacheExtent`）、保活离屏页面焦点隔离（`PageView`/`TabBarView`）、`MiniScaffold` 多层内嵌面板焦点隔离与自动晋升/还原（`评论详情` / `对话列表` / `选集`）、弹窗/菜单/列表边界闭环跳出，以及支持长按确认键 `3.0x` 倍速与虚拟进度快进的 10 英尺电视播控 HUD（`TvPlayerHud`）。
+2. **原生级 10 英尺遥控器交互（D-Pad First Experience）**：提供 2D 空间方向键焦点寻路引擎（`TvFocusTraversalPolicy`）、零重建（Zero-Rebuild）独立重绘焦点高亮框（`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`）、离屏预渲染平滑滚动（`cacheExtent`）、保活离屏页面焦点隔离（`PageView`/`TabBarView`）、`MiniScaffold` 多层内嵌面板焦点隔离与自动晋升/还原（`评论详情` / `对话列表` / `选集` / `AI总结`）、吸顶/浮动 Sliver 标题双坐标空间滚动与退出、嵌入式评论操作步进、弹窗/菜单/列表边界闭环跳出，以及支持长按确认键 `3.0x` 倍速与虚拟进度快进的 10 英尺电视播控 HUD（`TvPlayerHud`）。
 3. **框架层补丁适配（`patch.ps1` / `tool/tv_patch.sh`）**：通过构建期补丁解决 Flutter/Material 在电视端的焦点限制（`GestureDetector` 不可聚焦、`RadioGroup` 吞噬上下方向键、`InkResponse` 缺少键盘长按三连/坐标菜单触发及 `NavigationMode.directional` 下忽略 `enabled && canRequestFocus` 的缺陷），无需侵入修改 40+ 个上游业务页面。
 4. **通用安装包与多版本并存（Universal APK & Side-by-Side Coexistence）**：
    - **独立包名**：`com.lemontea.piliplus.tv`（桌面名称：**`PiliPlus TV`**），可与原版 PiliPlus（`com.example.piliplus`）及海外加速版（`com.lemontea.piliplus`）在同一台设备上并存安装。

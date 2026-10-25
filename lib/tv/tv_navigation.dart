@@ -1419,6 +1419,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       final List<FocusNode> rawDescendants = <FocusNode>[];
       for (final FocusNode node in nearestScope.traversalDescendants) {
         if (node.context == null) continue;
+        final RenderObject? ro = node.context!.findRenderObject();
+        if (ro is RenderBox && ro.attached && ro.hasSize) {
+          final Rect rawRect = cache.boxRect(ro);
+          if (_isInOppositeHalfPlane(rawRect, target, direction) &&
+              _isInOppositeHalfPlane(rawRect, visualTarget, direction)) {
+            continue;
+          }
+        }
         if (cache.isEffectivelyFocusable(node)) {
           final Rect nr = cache.rectOf(node);
           if (!_isInOppositeHalfPlane(nr, target, direction) ||

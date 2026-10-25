@@ -13,7 +13,11 @@
 ## Key Features
 
 ### 1. Native-Grade Android TV & 10-Foot D-Pad Experience
-- **2D Spatial Directional Focus Engine (`TvFocusTraversalPolicy`)**: Smooth, predictable D-pad navigation across video grids, sidebars, settings lists, and dialogs, paired with a high-contrast focus ring (`#FFFFD166`) rendered on an isolated zero-rebuild `RepaintBoundary` layer.
+- **2D Spatial Directional Focus Engine (`TvFocusTraversalPolicy`)**:
+  - Smooth, predictable D-pad navigation across video grids, sidebars, settings lists, and dialogs, paired with a high-contrast focus ring (`#FFFFD166`) rendered on an isolated zero-rebuild `RepaintBoundary` layer.
+  - **Multi-Layer Inline Sheet Focus Isolation & LIFO Promotion/Restoration**: Deep integration with `MiniScaffold` multi-layer inline bottom sheets (`Comment Details` / `Reply Dialog` / `Episodes` / `AI Summary`), auto-promoting focus on open, isolating underlying pages, and restoring focus to the trigger on dismissal.
+  - **Pinned/Floating Sliver Header Smooth Scrolling & D-Pad Exit**: Full support for `SliverPinnedHeader` and `SliverFloatingHeaderWidget` — upward D-pad scrolling is never prematurely hijacked by pinned headers, with dual-coordinate directional exits.
+  - **Embedded Comment Action Stepping**: Pressing D-pad Right on a comment card steps directly into its embedded action buttons (`Reply`, `View Thread`, `Like`, etc.), pressing Left steps back to the card, while Up/Down continues smooth single-card scrolling.
 - **10-Foot Fullscreen & Split-Screen Player HUD (`TvPlayerHud`)**:
   - Dedicated TV On-Screen Display (OSD) overlay with D-pad transport controls for **Play/Pause, Previous/Next Episode, Episode/Part Picker, Video Quality, Playback Speed, Aspect Ratio, Danmaku Toggle, and Danmaku Settings**.
   - **Virtual Seek Target Accumulator**: Press Left/Right for `-10s / +10s` steps, or hold/rapid-press for smooth `1x → 2x → 3x` (`10s / 20s / 30s`) progressive scrubbing decoupled from hardware decoder latency.

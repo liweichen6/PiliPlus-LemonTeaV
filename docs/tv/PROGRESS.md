@@ -80,6 +80,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.3 | `M9.3` | Automated Regression Tests for Multi-Layer `MiniScaffold` Sheets (`test/tv_navigation_test.dart`) | ✅ Done | `test/tv_navigation_test.dart` (`eb746dd8f`) |
 | **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.4 | `M9.4` | Live `<vm-tv>` Verification, Documentation Sync (`C22`) & Patch Revert Discipline | ✅ Done | `docs/tv/*`, `README*.md`, `<vm-tv>` |
 | **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.5 | `M9.5` | Embedded Comment Actions (`R7`), Async/Delayed Sheets, Zero-Focusable Sheets & Route PopScope Tracking | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
+| **M9: Second-Layer Comment & `MiniScaffold` Focus** | Epic M9.5 | `M9.6` | Restore F2 Dual-Target Opposite Half-Plane Candidate Culling & Target Viewport Clamping Refinement | ✅ Done | `lib/tv/tv_navigation.dart` (`c663e8ff8`) |
 
 ---
 
@@ -516,3 +517,27 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
        6. `SliverPinnedHeader` and `SliverFloatingHeaderWidget` upward D-pad traversal without pinned header hijacking, plus half-scrolled primary card initial focus preference;
        7. Pinned/floating sliver header scroll-reveal to `precedingScrollExtent`, directional exits (`Up`/`Down`/`Left`) while scrolled, and tall viewport-filling comment card visibility.
      * Validated live on `<vm-tv>` with 0 logcat errors, 0 runtime exceptions, and clean patch revert discipline (`[NOT APPLIED]` for all 38 patches).
+
+---
+
+### [2026-10-25] Milestone M9 (Task `M9.6`): Restore F2 Dual-Target Opposite Half-Plane Candidate Culling & Target Viewport Clamping Refinement
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] docs/tv/REVIEW.md`
+  * `[MODIFY] docs/tv/README.md`
+  * `[MODIFY] docs/tv/README.en.md`
+  * `[MODIFY] README.md`
+  * `[MODIFY] README.en.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Technical Details & Changes Summary**:
+  1. **Dual-Target Opposite Half-Plane Candidate Culling (F2 Restoration)**:
+     * In `TvFocusTraversalPolicy.inDirection`, restored spatial candidate pre-filtering to prune RenderBoxes situated completely in the opposite half-plane of both the scroll-order `target` Rect and the screen-space `visualTarget` Rect (`_isInOppositeHalfPlane(rawRect, target, direction) && _isInOppositeHalfPlane(rawRect, visualTarget, direction)`).
+     * Preserves performance benefits of spatial culling during high-frequency D-pad traversal while seamlessly supporting dual-coordinate sliver headers.
+  2. **Preservation of Scroll-Order Coordinates for Upward Traversal**:
+     * Preserved scroll-order `target` coordinates (`cache.rectOf(focusedChild)`) during upward candidate selection while leveraging clamped `visualTarget` for downward, horizontal, and external boundary exits.
+     * Prevents clobbering `sliverScrollOffsetDelta`-adjusted coordinates on pinned/floating sliver headers (`SliverPinnedHeader` / `SliverFloatingHeaderWidget`), guaranteeing robust directional exits while scrolled.
+  3. **Test Suite Verification & Documentation Sync**:
+     * Verified all 53 automated widget tests pass cleanly (`36/36` navigation tests in `test/tv_navigation_test.dart` and `17/17` player HUD tests in `test/tv_player_hud_test.dart`).
+     * `flutter analyze` reports 0 issues.
+     * Synchronized documentation suite across `docs/tv/REVIEW.md`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, and `docs/tv/PROGRESS.md`.
