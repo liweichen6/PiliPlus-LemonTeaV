@@ -28,6 +28,8 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
+part 'tv_focus_layers.dart';
+
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
 ///    chain so collapsed (`AnimatedHeight`) or offscreen (`AppBarAni`) widgets
@@ -308,7 +310,11 @@ class _TvTraversalCache {
         ? boxRect(renderObject)
         : node.rect;
 
+    // Behind an open focus layer (an overlay dialog, ...): not reachable.
+    final bool occluded = _TvFocusLayerStack.current?.occludes(node) ?? false;
+
     bool focusable =
+        !occluded &&
         node.canRequestFocus &&
         !node.skipTraversal &&
         isAttachedBox &&
@@ -935,12 +941,30 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     FocusScopeNode currentScope,
   ) => _withCache((_TvTraversalCache cache) {
     if (!subtreeRoot.mounted) return null;
+    return _firstFocusAmong(
+      currentScope.traversalDescendants.where(
+        (FocusNode node) => _isElementInSubtree(node.context, subtreeRoot),
+      ),
+      cache,
+    );
+  });
+
+  /// The initial focus target among [candidates], with the same preferences as
+  /// [findFirstFocusInSubtree]: an `autofocus` node first, otherwise the
+  /// first one in reading order among those visible in their scrollables.
+  FocusNode? findFirstFocusAmong(Iterable<FocusNode> candidates) => _withCache(
+    (_TvTraversalCache cache) => _firstFocusAmong(candidates, cache),
+  );
+
+  static FocusNode? _firstFocusAmong(
+    Iterable<FocusNode> candidates,
+    _TvTraversalCache cache,
+  ) {
     FocusNode? autofocusCandidate;
     final List<FocusNode> visibleInScrollables = <FocusNode>[];
     final List<FocusNode> fallbackCandidates = <FocusNode>[];
     final List<FocusNode> allFocusable = <FocusNode>[];
-    for (final FocusNode node in currentScope.traversalDescendants) {
-      if (!_isElementInSubtree(node.context, subtreeRoot)) continue;
+    for (final FocusNode node in candidates) {
       if (cache.isEffectivelyFocusable(node)) {
         allFocusable.add(node);
         final bool visible = cache.isVisibleInEnclosingScrollables(node);
@@ -967,7 +991,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       cache,
     );
     return _findFirstReadingOrderNode(pool, cache);
-  });
+  }
 
   /// Finds the best focus target in [currentScope] when [invalidNode] has
   /// become offscreen or unfocusable (e.g. after switching tabs in a
@@ -2163,6 +2187,17 @@ class _TvNavigationState extends State<TvNavigation>
     _TvVerticalFocusIntent: _TvVerticalFocusAction(_policy),
   };
   final ValueNotifier<Rect?> _rectNotifier = ValueNotifier<Rect?>(null);
+  final FocusNode _layerAnchor = FocusNode(
+    debugLabel: 'TvFocusLayerAnchor',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  late final _TvFocusLayerStack _layers = _TvFocusLayerStack(
+    providers: <_TvFocusLayerProvider>[_OverlayFocusLayer(_layerAnchor)],
+    policy: _policy,
+    showRing: (FocusNode node) => _updateRect(_computeFocusedRect(node)),
+    currentRing: () => _rectNotifier.value,
+  );
   final List<Element> _trackedBottomSheetLayouts = <Element>[];
   final List<Element> _knownBottomSheetLayouts = <Element>[];
   late final Stopwatch _repeatClock =
@@ -2191,6 +2226,7 @@ class _TvNavigationState extends State<TvNavigation>
       FocusManager.instance.highlightStrategy =
           FocusHighlightStrategy.alwaysTraditional;
     }
+    _TvFocusLayerStack.current = _layers;
     WidgetsBinding.instance.addPersistentFrameCallback(
       _syncFocusRectAfterLayout,
     );
@@ -2201,6 +2237,10 @@ class _TvNavigationState extends State<TvNavigation>
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_observeHardwareKeyEvent);
     FocusManager.instance.removeListener(_onFocus);
+    if (identical(_TvFocusLayerStack.current, _layers)) {
+      _TvFocusLayerStack.current = null;
+    }
+    _layerAnchor.dispose();
     _rectNotifier.dispose();
     super.dispose();
   }
@@ -2497,6 +2537,14 @@ class _TvNavigationState extends State<TvNavigation>
     }
   }
 
+  /// Focus layers (modal overlays) first, then the inline sheets. Returns
+  /// `true` when either moved focus or is waiting on a layer, so the caller
+  /// skips its own recovery.
+  bool _reconcileFocusLayers() {
+    if (!mounted || !TvPlatform.isTv) return false;
+    return _layers.reconcile() || _reconcileBottomSheets();
+  }
+
   bool _reconcileBottomSheets() {
     if (!mounted || !TvPlatform.isTv) return false;
     final FocusNode? primary = FocusManager.instance.primaryFocus;
@@ -2666,6 +2714,7 @@ class _TvNavigationState extends State<TvNavigation>
         node is FocusScopeNode ||
         !node.canRequestFocus ||
         node.skipTraversal ||
+        _layers.occludes(node) ||
         _TvTraversalCache._inspectBottomSheetNode(node).isInvalidated) {
       return null;
     }
@@ -2829,6 +2878,33 @@ class _TvNavigationState extends State<TvNavigation>
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
+
+    // Focus layers come first, ahead of the stationary fast path: a layer that
+    // opens, closes or loses focus must be handled even though the focused
+    // node itself has not moved. With no layer open this is one empty-list
+    // check.
+    if (_layers.hasPendingWork(node)) {
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+      if (!_focusSyncScheduled) {
+        _focusSyncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _focusSyncScheduled = false;
+          if (!mounted) return;
+          _reconcileFocusLayers();
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+      return;
+    }
+    if (_layers.isSettling(
+      SchedulerBinding.instance.currentSystemFrameTimeStamp,
+    )) {
+      // Re-measure the ring while the layer's open transition is still moving.
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+    }
+
     final _BottomSheetNodeStatus sheetStatus =
         _TvTraversalCache._inspectBottomSheetNode(node);
     _captureBottomSheetTransitions(node, sheetStatus);
@@ -2840,7 +2916,7 @@ class _TvNavigationState extends State<TvNavigation>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _focusSyncScheduled = false;
           if (!mounted) return;
-          if (_reconcileBottomSheets()) return;
+          if (_reconcileFocusLayers()) return;
           final FocusNode? current = FocusManager.instance.primaryFocus;
           final FocusScopeNode? scope = current is FocusScopeNode
               ? current
@@ -2898,7 +2974,7 @@ class _TvNavigationState extends State<TvNavigation>
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _focusSyncScheduled = false;
               if (!mounted) return;
-              if (_reconcileBottomSheets()) return;
+              if (_reconcileFocusLayers()) return;
               if (_hasUnpromotedActiveSheetInScope(targetScope)) {
                 _updateRect(null);
                 return;
@@ -3038,7 +3114,7 @@ class _TvNavigationState extends State<TvNavigation>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _focusSyncScheduled = false;
           if (!mounted) return;
-          if (_reconcileBottomSheets()) return;
+          if (_reconcileFocusLayers()) return;
           final FocusNode resolvedFirst =
               _policy.findRecoveryFocus(
                 node,
@@ -3126,7 +3202,7 @@ class _TvNavigationState extends State<TvNavigation>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusSyncScheduled = false;
       if (!mounted) return;
-      if (_reconcileBottomSheets()) return;
+      if (_reconcileFocusLayers()) return;
       final FocusNode? node = FocusManager.instance.primaryFocus;
       if (node is FocusScopeNode) {
         FocusScopeNode targetScope = node;
@@ -3268,7 +3344,7 @@ class _TvNavigationState extends State<TvNavigation>
       if (primary == null ||
           primary is FocusScopeNode ||
           !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
-        if (_pendingInvalidNode != null || _reconcileBottomSheets()) {
+        if (_pendingInvalidNode != null || _reconcileFocusLayers()) {
           WidgetsBinding.instance.ensureVisualUpdate();
           return KeyEventResult.handled;
         }
@@ -3345,7 +3421,16 @@ class _TvNavigationState extends State<TvNavigation>
                 children: <Widget>[
                   FocusTraversalGroup(
                     policy: _policy,
-                    child: child,
+                    // Top of the subtree: the root Navigator's focus branch and
+                    // those of overlay dialogs attach below it (see
+                    // _OverlayFocusLayer).
+                    child: Focus(
+                      focusNode: _layerAnchor,
+                      canRequestFocus: false,
+                      skipTraversal: true,
+                      includeSemantics: false,
+                      child: child,
+                    ),
                   ),
                   Positioned.fill(
                     child: IgnorePointer(

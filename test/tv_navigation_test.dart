@@ -13,6 +13,7 @@ import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
@@ -5078,6 +5079,523 @@ void main() {
         await tester.pumpAndSettle();
         expect(offscreen.hasPrimaryFocus, isFalse);
         expect(top.hasPrimaryFocus, isTrue);
+      },
+    );
+  });
+
+  group('overlay dialogs outside the Navigator (M10, SmartDialog)', () {
+    late FocusNode versionNode;
+    late FocusNode otherNode;
+    late FocusNode linkNode;
+    late FocusNode cancelNode;
+    late FocusNode updateNode;
+    late FocusNode grantNode;
+
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+      versionNode = FocusNode(debugLabel: 'version');
+      otherNode = FocusNode(debugLabel: 'other');
+      linkNode = FocusNode(debugLabel: 'link');
+      cancelNode = FocusNode(debugLabel: 'cancel');
+      updateNode = FocusNode(debugLabel: 'update');
+      grantNode = FocusNode(debugLabel: 'grant');
+      // Disposed while the test's FocusManager is still alive, as in the other
+      // groups; a group-level tearDown runs too late for that.
+      addTearDown(() {
+        for (final FocusNode node in [
+          versionNode,
+          otherNode,
+          linkNode,
+          cancelNode,
+          updateNode,
+          grantNode,
+        ]) {
+          node.dispose();
+        }
+      });
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    // Mirrors MyApp._builder: FlutterSmartDialog.init(builder: ...) passes the
+    // builder a FlutterSmartDialog that wraps the Navigator, and TvNavigation
+    // sits outside all of it, so overlay entries and the Navigator are
+    // siblings below TvNavigation.
+    Widget buildApp(Widget home) => MaterialApp(
+      navigatorObservers: [FlutterSmartDialog.observer],
+      builder: FlutterSmartDialog.init(
+        builder: (BuildContext context, Widget? child) => TvNavigation(
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.noScaling),
+            child: child!,
+          ),
+        ),
+      ),
+      home: home,
+    );
+
+    // An /about-like page: a tile that opens the dialog (after an awaited
+    // Future, like Update.checkUpdate) and another tile below it.
+    Widget aboutPage({
+      Future<void> Function()? onVersionTap,
+      bool autofocus = true,
+    }) => Scaffold(
+      body: ListView(
+        children: [
+          ListTile(
+            focusNode: versionNode,
+            autofocus: autofocus,
+            title: const Text('版本'),
+            // A ListTile without onTap is not focusable.
+            onTap: onVersionTap ?? () {},
+          ),
+          ListTile(
+            focusNode: otherNode,
+            title: const Text('检查更新'),
+            onTap: () {},
+          ),
+        ],
+      ),
+    );
+
+    // The 🎉 发现新版本 dialog from lib/utils/update.dart.
+    void showUpdateDialog() {
+      SmartDialog.show<void>(
+        animationType: SmartAnimationType.centerFade_otherSlide,
+        builder: (context) => AlertDialog(
+          title: const Text('🎉 发现新版本 '),
+          content: SizedBox(
+            height: 280,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('v1.2.3', style: TextStyle(fontSize: 20)),
+                  const SizedBox(height: 8),
+                  const Text('release notes'),
+                  TextButton(
+                    focusNode: linkNode,
+                    onPressed: () {},
+                    child: const Text('点此查看完整更新(即commit)内容'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              focusNode: cancelNode,
+              onPressed: SmartDialog.dismiss,
+              child: const Text('取消'),
+            ),
+            TextButton(
+              focusNode: updateNode,
+              onPressed: () {},
+              child: const Text('更新'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // The storage-permission dialog from lib/utils/image_utils.dart: default
+    // animation (scale) and a single button.
+    void showPermissionDialog() {
+      SmartDialog.show<void>(
+        builder: (context) => AlertDialog(
+          title: const Text('提示'),
+          content: const Text('存储权限未授权'),
+          actions: [
+            TextButton(
+              focusNode: grantNode,
+              onPressed: SmartDialog.dismiss,
+              child: const Text('去授权'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Future<void> pumpApp(WidgetTester tester, Widget home) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(buildApp(home));
+      await tester.pumpAndSettle();
+    }
+
+    Rect? ringRect(WidgetTester tester) {
+      final Finder ring = find
+          .descendant(
+            of: find.byType(TvNavigation),
+            matching: find.byType(CustomPaint),
+          )
+          .last;
+      return (tester.widget<CustomPaint>(ring).painter! as dynamic).rect
+          as Rect?;
+    }
+
+    void expectRingOn(WidgetTester tester, FocusNode node) {
+      final Rect? ring = ringRect(tester);
+      expect(ring, isNotNull, reason: 'no focus ring is shown');
+      expect(ring!.left, closeTo(node.rect.left, 0.5));
+      expect(ring.top, closeTo(node.rect.top, 0.5));
+      expect(ring.right, closeTo(node.rect.right, 0.5));
+      expect(ring.bottom, closeTo(node.rect.bottom, 0.5));
+    }
+
+    bool inDialog() =>
+        linkNode.hasPrimaryFocus ||
+        cancelNode.hasPrimaryFocus ||
+        updateNode.hasPrimaryFocus ||
+        grantNode.hasPrimaryFocus;
+
+    testWidgets(
+      'update dialog opened from a tile takes focus and the ring, and the page behind it is unreachable',
+      (tester) async {
+        await pumpApp(
+          tester,
+          aboutPage(
+            onVersionTap: () async {
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+              showUpdateDialog();
+            },
+          ),
+        );
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+
+        // Select on 版本: the dialog appears after the awaited Future.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
+        expect(find.text('🎉 发现新版本 '), findsOneWidget);
+
+        // Focus and the ring moved to the first control in reading order.
+        expect(linkNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, linkNode);
+
+        // The page behind the mask is neither focusable nor focused.
+        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode), isFalse);
+        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(otherNode), isFalse);
+        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(cancelNode), isTrue);
+        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(updateNode), isTrue);
+
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'D-pad moves between the dialog controls and never lands on the page behind it',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+
+        Future<void> press(LogicalKeyboardKey key) async {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          expect(
+            versionNode.hasPrimaryFocus || otherNode.hasPrimaryFocus,
+            isFalse,
+            reason: 'focus leaked to the page behind the dialog on $key',
+          );
+          expect(inDialog(), isTrue, reason: 'focus left the dialog on $key');
+          expectRingOn(tester, FocusManager.instance.primaryFocus!);
+        }
+
+        await press(LogicalKeyboardKey.arrowDown);
+        expect(cancelNode.hasPrimaryFocus, isTrue);
+        await press(LogicalKeyboardKey.arrowRight);
+        expect(updateNode.hasPrimaryFocus, isTrue);
+        await press(LogicalKeyboardKey.arrowLeft);
+        expect(cancelNode.hasPrimaryFocus, isTrue);
+
+        // Edges of the dialog: nothing beyond them to move to.
+        await press(LogicalKeyboardKey.arrowDown);
+        await press(LogicalKeyboardKey.arrowLeft);
+        await press(LogicalKeyboardKey.arrowRight);
+        await press(LogicalKeyboardKey.arrowRight);
+        await press(LogicalKeyboardKey.arrowUp);
+        await press(LogicalKeyboardKey.arrowUp);
+        await press(LogicalKeyboardKey.arrowUp);
+        expect(linkNode.hasPrimaryFocus, isTrue);
+
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'Select on 取消 dismisses the dialog and focus and the ring return to 版本',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(cancelNode.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        expect(find.text('取消'), findsNothing);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode), isTrue);
+
+        // The page responds to the D-pad again.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(otherNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, otherNode);
+      },
+    );
+
+    testWidgets(
+      'programmatic dismiss and the system Back both restore focus to the trigger',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+
+        // SmartDialog.dismiss() from code.
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+
+        // The system Back is handled by SmartDialog and never pops the page.
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('取消'), findsNothing);
+        expect(find.text('版本'), findsOneWidget);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+      },
+    );
+
+    testWidgets(
+      'closing the dialog returns to the control that had focus when it opened',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(otherNode.hasPrimaryFocus, isTrue);
+
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        expect(otherNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, otherNode);
+      },
+    );
+
+    testWidgets(
+      'a dialog shown in the first frame, before the page has focus, takes focus, and closing hands focus to the page',
+      (tester) async {
+        // Auto-update dialog at startup: it opens before any page control has
+        // focus, so the only candidate trigger is the Navigator's own node.
+        tester.view.physicalSize = const Size(1280, 720);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(buildApp(aboutPage(autofocus: false)));
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(find.text('取消'), findsOneWidget);
+        expect(linkNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, linkNode);
+
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        expect(find.text('取消'), findsNothing);
+        expect(
+          versionNode.hasPrimaryFocus || otherNode.hasPrimaryFocus,
+          isTrue,
+          reason: 'focus must end up on a page control, not nowhere',
+        );
+        expectRingOn(tester, FocusManager.instance.primaryFocus!);
+      },
+    );
+
+    testWidgets(
+      'toast, loading and non-interactive dialogs leave focus and the D-pad on the page',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        expect(versionNode.hasPrimaryFocus, isTrue);
+
+        SmartDialog.showToast('已是最新版本');
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('已是最新版本'), findsOneWidget);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(otherNode.hasPrimaryFocus, isTrue);
+        await tester.pump(const Duration(seconds: 3));
+
+        SmartDialog.showLoading();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(versionNode.hasPrimaryFocus || otherNode.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+        SmartDialog.dismiss(status: SmartStatus.loading);
+        await tester.pumpAndSettle();
+
+        SmartDialog.show<void>(
+          usePenetrate: true,
+          builder: (context) => const Text('banner without controls'),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('banner without controls'), findsOneWidget);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(otherNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, otherNode);
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        expect(otherNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'single-button dialog with the default scale transition ends with the ring exactly on its button',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showPermissionDialog();
+
+        // Mid-transition: focus is already in the dialog.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(grantNode.hasPrimaryFocus, isTrue);
+
+        await tester.pumpAndSettle();
+        expect(grantNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, grantNode);
+
+        // With a single control the D-pad has nowhere to go.
+        for (final LogicalKeyboardKey key in [
+          LogicalKeyboardKey.arrowUp,
+          LogicalKeyboardKey.arrowDown,
+          LogicalKeyboardKey.arrowLeft,
+          LogicalKeyboardKey.arrowRight,
+        ]) {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          expect(grantNode.hasPrimaryFocus, isTrue, reason: '$key');
+        }
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(find.text('去授权'), findsNothing);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+      },
+    );
+
+    testWidgets(
+      'focus pulled back to the page while the dialog is open returns to the dialog',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+
+        // Something on the page asks for focus (an autofocus, a restored
+        // route focus, ...).
+        versionNode.requestFocus();
+        await tester.pumpAndSettle();
+        expect(versionNode.hasPrimaryFocus, isFalse);
+        expect(inDialog(), isTrue);
+        expectRingOn(tester, FocusManager.instance.primaryFocus!);
+
+        // And closing still returns to the original trigger.
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+      },
+    );
+
+    testWidgets(
+      'a dialog replaced by another in the same frame keeps focus in the overlay and still restores the page',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        expect(linkNode.hasPrimaryFocus, isTrue);
+
+        SmartDialog.dismiss();
+        showPermissionDialog();
+        await tester.pumpAndSettle();
+        expect(find.text('去授权'), findsOneWidget);
+        expect(find.text('取消'), findsNothing);
+        expect(grantNode.hasPrimaryFocus, isTrue);
+        expect(versionNode.hasPrimaryFocus, isFalse);
+        expectRingOn(tester, grantNode);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(versionNode.hasPrimaryFocus, isTrue);
+        expectRingOn(tester, versionNode);
+      },
+    );
+
+    testWidgets(
+      'stationary fast path holds while a settled dialog is open and once it is gone',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        showUpdateDialog();
+        await tester.pumpAndSettle();
+        // Past the settling window that follows the dialog opening.
+        await tester.pump(const Duration(seconds: 1));
+
+        final Finder ring = find
+            .descendant(
+              of: find.byType(TvNavigation),
+              matching: find.byType(CustomPaint),
+            )
+            .last;
+        final CustomPainter before = tester.widget<CustomPaint>(ring).painter!;
+        for (int i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        final CustomPainter after = tester.widget<CustomPaint>(ring).painter!;
+        expect(after.shouldRepaint(before), isFalse);
+
+        SmartDialog.dismiss();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 1));
+        final CustomPainter pageBefore = tester
+            .widget<CustomPaint>(ring)
+            .painter!;
+        for (int i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        final CustomPainter pageAfter = tester
+            .widget<CustomPaint>(ring)
+            .painter!;
+        expect(pageAfter.shouldRepaint(pageBefore), isFalse);
+        expect(versionNode.hasPrimaryFocus, isTrue);
       },
     );
   });

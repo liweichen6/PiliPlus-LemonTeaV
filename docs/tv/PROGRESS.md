@@ -91,9 +91,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.1` | Root-Cause Analysis (`🎉 发现新版本` `SmartDialog` outside `Navigator`) & Unified `_TvFocusLayerStack` Design | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ✅ Done | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`d3faa0f0c`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ⏳ Planned | `lib/tv/tv_navigation.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ⏳ Planned | `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`ffae2ef3f`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ⏳ Planned | Android APK / `<vm-tv>` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Adapt M9 Inline Sheets → `_InlineSheetFocusLayer` + Per-Frame Sheet Cost (`R13`, `R15`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
@@ -660,3 +660,28 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `66/66` passed (`40` navigation, up from `36`, and `26` player HUD).
   * `./tool/tv_patch.sh status`: `[NOT APPLIED]` for all 38 patches after the revert.
   * Not run on a TV device: the live check at `uiScale 1.0` and `0.8` is part of `M10.7`.
+
+---
+
+### [2026-10-26] Milestone M10 (Tasks `M10.5`–`M10.6`): Unified Focus-Layer Core, Overlay (`SmartDialog`) Focus & Regression Tests
+* **Status**: ✅ Completed (both tasks in one commit, as `M9.2`–`M9.3` were)
+* **Files Changed**:
+  * `[NEW] lib/tv/tv_focus_layers.dart` (`part of 'tv_navigation.dart'`)
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Problem**: `设置 → 关于 → 版本 → 🎉 发现新版本` left focus and the focus ring on the `/about` page behind the dialog. `SmartDialog` renders in an `Overlay` entry next to the root `Navigator`: no route, no `FocusScope`, and `flutter_smart_dialog` never requests focus, so D-pad and Select kept acting on the hidden page. The storage-permission dialog (`去授权`) has the same bug.
+* **What was built** (details in [`PLAN.md` → M10.5](./PLAN.md)):
+  1. `_TvFocusLayer` / `_TvFocusLayerProvider` / `_TvFocusLayerStack`: the shared lifecycle every "new layer, focus stays behind" bug needs: save the trigger, promote into the layer, pull focus back if it escapes, restore the trigger on close, and keep the page behind the layer unfocusable with no focus ring.
+  2. `_OverlayFocusLayer`, the first provider: an anchor `Focus` above `TvNavigation`'s child separates the root `Navigator`'s focus branch from overlay content; any other branch with a focusable node is a modal layer over the whole `Navigator`. Generic: nothing in `lib/tv` imports `flutter_smart_dialog`.
+  3. Integration: per-frame check before the stationary fast path; occlusion in `evaluateNode` and `_computeFocusedRect`; `_reconcileFocusLayers()` (layers, then M9 sheets) at the five existing reconcile call sites; `TvFocusTraversalPolicy.findFirstFocusAmong`, extracted from `findFirstFocusInSubtree`.
+  4. A 500 ms ring-settling window after promotion, because the default `SmartDialog.show` transition is a scale and the stationary fast path ignores transforms (measured: the ring stayed 35 px off the button without it).
+* **Tests** (11, group `overlay dialogs outside the Navigator (M10, SmartDialog)`): a `FlutterSmartDialog.init` harness mirroring `MyApp._builder`, the real update and permission dialog shapes, and the real Select, D-pad, `SmartDialog.dismiss()` and system Back paths. Run against the original `lib/tv` code, 9 fail and 2 pass (the non-interactive-overlay guard and the stationary fast path). The first-frame startup test does not pin the "trigger must be effectively focusable" guard (it also passes without it); the guard is kept for correctness.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `77/77` passed (`51` navigation, up from `40`, and `26` player HUD). All M6/M7/M9 tests and the F1/F13/F14 benchmarks pass with unchanged assertions.
+  * `./tool/tv_patch.sh status`: `[NOT APPLIED]` for all 38 patches after the revert; zero diff in upstream files.
+  * Whole-repo `flutter test --no-pub`: `127` passed, `2` failed. Both failures are in `test/utils/accounts/deleted_account_test.dart` (upstream account / Hive `buvid` serialization) and fail identically against the unchanged `lib/` code at `HEAD`, so they predate this change and are not touched here.
+  * Not run on a TV device: the live check of `设置 → 关于 → 版本` is `M10.7`.
+* **Known limitations** (documented, not addressed): several overlay dialogs open at once are one layer, so a second dialog opened over the first does not take focus from it; an overlay with `usePenetrate: true` that contains focusable widgets would still be modal (the app has none).
