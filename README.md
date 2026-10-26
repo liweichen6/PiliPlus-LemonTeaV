@@ -1,4 +1,4 @@
-> **声明**：此 repo 完全是 wish coding 的产物，主要由 Argon High 完成。
+> **声明**：此 repo 完全是 wish coding 的产物，初期主要由 Argon 完成，之后混入了 3.8 Flash 和 Opus/Sonnet 5.5。
 
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png" alt="PiliPlus TV logo">

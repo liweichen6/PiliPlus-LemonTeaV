@@ -5801,6 +5801,104 @@ void main() {
     );
 
     testWidgets(
+      'a text field selection toolbar is not a modal layer: the field keeps focus and the toolbar stays open',
+      (tester) async {
+        // Flutter inserts selection toolbars and context menus into the root
+        // overlay, which is FlutterSmartDialog's, so their buttons attach next
+        // to the Navigator like an overlay dialog's. Moving focus into the
+        // toolbar makes the field lose focus, and the field then disposes it.
+        final FocusNode fieldNode = FocusNode(debugLabel: 'field');
+        final TextEditingController controller = TextEditingController(
+          text: 'hello world',
+        );
+        addTearDown(() {
+          fieldNode.dispose();
+          controller.dispose();
+        });
+
+        await pumpApp(
+          tester,
+          Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: TextField(
+                  focusNode: fieldNode,
+                  controller: controller,
+                  autofocus: true,
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(fieldNode.hasPrimaryFocus, isTrue);
+
+        controller.selection = const TextSelection(
+          baseOffset: 0,
+          extentOffset: 11,
+        );
+        await tester.pumpAndSettle();
+        expect(fieldNode.hasPrimaryFocus, isTrue);
+        final EditableTextState editable = tester.state<EditableTextState>(
+          find.byType(EditableText),
+        );
+        expect(editable.showToolbar(), isTrue);
+        await tester.pumpAndSettle();
+
+        expect(fieldNode.hasPrimaryFocus, isTrue);
+        expect(editable.selectionOverlay?.toolbarIsVisible, isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(fieldNode),
+          isTrue,
+        );
+
+        editable.hideToolbar();
+        await tester.pumpAndSettle();
+        expect(fieldNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'a dialog with its own FocusScope settles on its button instead of promoting the scope every frame',
+      (tester) async {
+        await pumpApp(tester, aboutPage());
+        expect(versionNode.hasPrimaryFocus, isTrue);
+
+        SmartDialog.show<void>(
+          builder: (context) => FocusScope(
+            child: AlertDialog(
+              title: const Text('提示'),
+              content: const Text('存储权限未授权'),
+              actions: [
+                TextButton(
+                  focusNode: grantNode,
+                  onPressed: SmartDialog.dismiss,
+                  child: const Text('去授权'),
+                ),
+              ],
+            ),
+          ),
+        );
+        // A scope picked as the target keeps primary focus on itself, which the
+        // stack does not count as inside the layer: it would promote it again
+        // on every frame, and pumpAndSettle would never settle.
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 5),
+        );
+        expect(grantNode.hasPrimaryFocus, isTrue);
+        expect(tester.binding.hasScheduledFrame, isFalse);
+        expectRingOn(tester, grantNode);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(find.text('去授权'), findsNothing);
+        expect(versionNode.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
       'D-pad moves between the dialog controls and never lands on the page behind it',
       (tester) async {
         await pumpApp(tester, aboutPage());

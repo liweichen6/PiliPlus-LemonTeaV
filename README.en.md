@@ -1,4 +1,4 @@
-> **Disclaimer**: This repo is entirely a product of wish coding, primarily completed by Argon High.
+> **Disclaimer**: This repo is entirely a product of wish coding, primarily completed by Argon at the beginning, then some 3.8 Flash and Opus/Sonnet 5.5 later.
 
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png" alt="PiliPlus TV logo">

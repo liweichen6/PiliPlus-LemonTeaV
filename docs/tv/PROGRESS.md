@@ -99,6 +99,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`) — **migration of M9 onto the stack deferred** | ✅ Done (`R13`, `R15`) | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`3f894408b`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart`, `docs/tv/*`, `README*.md` (`bad5fddc4`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ✅ Done (one `M10.8` regression found on the device and fixed) | `docs/tv/*`, `README*.md`, `lib/tv/tv_focus_layers.dart`, `test/tv_navigation_test.dart` (`9bb027680`, `75edded59`, `3a169e16a`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.12` | Post-Implementation Review Fixes (`R21`–`R24`) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` |
 
 ---
 
@@ -814,3 +815,23 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `88/88` passed (`60` navigation, up from `58`, and `28` player HUD).
   * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`. Privacy scan of the added lines: clean.
   * The rest of the suite (`test/utils`, `video_utils`, `thread_ripper`) has `2` failures, both in `test/utils/accounts/deleted_account_test.dart`, an upstream account-deletion test that imports nothing from the TV layer. `M10` changed no file under `lib/` outside `lib/tv/`.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.12`): Post-Implementation Review Fixes (`R21`–`R24`)
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_focus_layers.dart` (`R22`, `R24`)
+  * `[MODIFY] lib/tv/tv_player_hud.dart` (`R21`, `R23`)
+  * `[MODIFY] test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/REVIEW.md`
+* **Findings and fixes** (details in [`PLAN.md` → Task M10.12](./PLAN.md)):
+  1. `R21`: option-dialog rows are measured from the label's text style and scale instead of a fixed 52 px, so labels are not clipped at large font sizes.
+  2. `R22`: text selection handles, toolbars and context menus (root overlay, under a `TextFieldTapRegion`) are no longer treated as modal overlay layers.
+  3. `R23`: `mediaPlay` / `mediaPause` call the idempotent `play()` / `pause()` instead of toggling from a status that lags behind.
+  4. `R24`: focus scopes are never overlay promotion targets, so a `FocusScope`-wrapped dialog no longer re-promotes every frame.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `92/92` passed.
+  * With only the `lib/tv` changes reverted, all four new tests fail: `R21` on a clipped label (`23.6` px of `32` px), `R23` on a second toggle, `R24` on focus not reaching the button, and `R22` on the field's selection overlay already being gone (the selection handles share the toolbar's root overlay and `TextFieldTapRegion`).
+  * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`. Not verified on a device.

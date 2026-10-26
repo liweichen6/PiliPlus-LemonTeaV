@@ -334,6 +334,27 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     }
   }
 
+  // `playerStatus` only changes once media_kit reports the new state, so a
+  // toggle chosen from it is not idempotent: a second Pause inside that gap (or
+  // a duplicate HDMI-CEC event) would resume. play() and pause() are.
+  void _play() {
+    _virtualSeekTarget = null;
+    if (!_hasPlayer || !(_pl.isLive || (widget.canPlay?.call() ?? true))) {
+      return;
+    }
+    if (_pl.playerStatus.isCompleted) {
+      // Restarts from the beginning, like the Play/Pause pill does.
+      _pl.onDoubleTapCenter();
+    } else {
+      _pl.play();
+    }
+  }
+
+  void _pause() {
+    _virtualSeekTarget = null;
+    if (_hasPlayer) _pl.pause();
+  }
+
   void _seekRelative({required bool forward}) {
     if (_pl.isLive || !_hasPlayer) return;
     // The binding's sampling clock is the real clock in release builds and the
@@ -406,11 +427,11 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.mediaPlay) {
-        if (!_pl.playerStatus.isPlaying) _togglePlayPause();
+        _play();
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.mediaPause) {
-        if (_pl.playerStatus.isPlaying) _togglePlayPause();
+        _pause();
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.mediaFastForward) {
@@ -1825,40 +1846,68 @@ class _TvOptionListDialog extends StatefulWidget {
 }
 
 class _TvOptionListDialogState extends State<_TvOptionListDialog> {
-  /// Fixed row height (pill plus a 6 px gap). A lazy list only builds the rows
-  /// near its viewport, so the current option's `autofocus` can only fire if
-  /// the list starts scrolled to it, which needs known row positions.
-  static const double _kItemExtent = 52.0;
+  /// Smallest row height (pill plus a 6 px gap), used at normal text sizes.
+  static const double _kMinItemExtent = 52.0;
   static const double _kMaxListHeight = 420.0;
 
-  late final double _listHeight = math.min(
-    widget.items.length * _kItemExtent,
-    _kMaxListHeight,
-  );
+  /// The pill's vertical padding, its focused border on both sides, and the
+  /// gap between rows. The label row is added on top, measured.
+  static const double _kRowChrome = 2 * 10.0 + 2 * 2.2 + 6.0;
 
-  late final ScrollController _scrollController = ScrollController(
-    initialScrollOffset: _initialScrollOffset(),
-  );
+  /// Rows have a fixed height: a lazy list only builds the rows near its
+  /// viewport, so the current option's `autofocus` can only fire if the list
+  /// starts scrolled to it, which needs known row positions. The height is
+  /// measured from the label's real text style and text scale (the font size
+  /// setting goes up to 1.6x), so a large label is never clipped.
+  late double _itemExtent;
+  late double _listHeight;
+  ScrollController? _scrollController;
 
   int get _autofocusIndex {
     final int selectedIndex = widget.items.indexWhere((e) => e.selected);
     return selectedIndex >= 0 ? selectedIndex : 0;
   }
 
-  /// Puts the autofocus row in the middle of the viewport, clamped to the list.
-  double _initialScrollOffset() {
+  /// Measures the row height once, with the text style the pill labels inherit
+  /// inside the dialog ([contentContext]), and starts the list scrolled so
+  /// the autofocus row is in the middle of the viewport.
+  ScrollController _ensureLayout(BuildContext contentContext) {
+    final ScrollController? existing = _scrollController;
+    if (existing != null) return existing;
+
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: '国Ag',
+        style: DefaultTextStyle.of(contentContext).style.merge(
+          const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(contentContext),
+      maxLines: 1,
+    )..layout();
+    final double labelHeight = math.max(18.0, painter.height);
+    painter.dispose();
+
+    _itemExtent = math.max(
+      _kMinItemExtent,
+      (_kRowChrome + labelHeight).ceilToDouble(),
+    );
+    _listHeight = math.min(widget.items.length * _itemExtent, _kMaxListHeight);
     final double maxOffset = math.max(
       0.0,
-      widget.items.length * _kItemExtent - _listHeight,
+      widget.items.length * _itemExtent - _listHeight,
     );
     final double centered =
-        _autofocusIndex * _kItemExtent - (_listHeight - _kItemExtent) / 2;
-    return centered.clamp(0.0, maxOffset);
+        _autofocusIndex * _itemExtent - (_listHeight - _itemExtent) / 2;
+    return _scrollController = ScrollController(
+      initialScrollOffset: centered.clamp(0.0, maxOffset),
+    );
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _scrollController?.dispose();
     super.dispose();
   }
 
@@ -1877,32 +1926,37 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
           fontWeight: FontWeight.w600,
         ),
       ),
-      content: SizedBox(
-        width: 480,
-        height: _listHeight,
-        child: ListView.builder(
-          controller: _scrollController,
-          itemExtent: _kItemExtent,
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: _TvHudPillButton(
-                autofocus: index == autofocusIndex,
-                active: item.selected,
-                alignment: Alignment.centerLeft,
-                icon: item.selected
-                    ? Icons.radio_button_checked_rounded
-                    : Icons.radio_button_off_rounded,
-                label: item.subtitle != null && item.subtitle!.isNotEmpty
-                    ? '${item.title}  (${item.subtitle})'
-                    : item.title,
-                onPressed: item.onSelect,
-              ),
-            );
-          },
-        ),
+      content: Builder(
+        builder: (BuildContext contentContext) {
+          final ScrollController controller = _ensureLayout(contentContext);
+          return SizedBox(
+            width: 480,
+            height: _listHeight,
+            child: ListView.builder(
+              controller: controller,
+              itemExtent: _itemExtent,
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: _TvHudPillButton(
+                    autofocus: index == autofocusIndex,
+                    active: item.selected,
+                    alignment: Alignment.centerLeft,
+                    icon: item.selected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
+                    label: item.subtitle != null && item.subtitle!.isNotEmpty
+                        ? '${item.title}  (${item.subtitle})'
+                        : item.title,
+                    onPressed: item.onSelect,
+                  ),
+                );
+              },
+            ),
+          );
+        },
       ),
       actions: [
         _TvHudPillButton(

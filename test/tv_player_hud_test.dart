@@ -18,6 +18,7 @@ import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/tv/tv_player_hud.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -141,6 +142,27 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
           ? PlayerStatus.paused
           : PlayerStatus.playing;
       Timer(delay, () => emitPlayerStatus(next));
+    }
+  }
+
+  /// [play] and [pause] are idempotent in the real controller (media_kit
+  /// ignores a play while playing). Like [onDoubleTapCenter], they report the
+  /// new status after [statusFlipDelay] when it is set.
+  int playCount = 0;
+  @override
+  Future<void> play({bool repeat = false, bool hideControls = true}) async {
+    playCount++;
+    if (statusFlipDelay case final delay?) {
+      Timer(delay, () => emitPlayerStatus(PlayerStatus.playing));
+    }
+  }
+
+  int pauseCount = 0;
+  @override
+  Future<void> pause({bool notify = true, bool isInterrupt = false}) async {
+    pauseCount++;
+    if (statusFlipDelay case final delay?) {
+      Timer(delay, () => emitPlayerStatus(PlayerStatus.paused));
     }
   }
 
@@ -1226,6 +1248,65 @@ void main() {
     );
 
     testWidgets(
+      'R10: at the largest font size, option rows grow so no label is clipped',
+      (tester) async {
+        // The font size setting goes up to 1.6x. A fixed 52 px row left about
+        // 21.6 px inside a focused pill, less than a 14 px label at 1.6x.
+        tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..cid = 1030;
+        final videoDetailCtr = FakeVideoDetailController(
+          plPlayerController: pl,
+        )..cid.value = 1030;
+        final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr)
+          ..videoDetail.value = VideoDetailData(
+            title: '长剧集',
+            pages: [
+              for (var i = 1; i <= 40; i++)
+                Part(cid: 1000 + i, page: i, part: '第$i集'),
+            ],
+          );
+
+        await _pumpHud(
+          tester,
+          plPlayerController: pl,
+          introController: introCtr,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('选集 (40)'));
+        await tester.pumpAndSettle();
+
+        // Still opens on the current episode, focused (the thicker border).
+        expect(_pillHasPrimaryFocus('P30  第30集'), isTrue);
+
+        final Iterable<RenderParagraph> labels = tester
+            .renderObjectList<RenderParagraph>(
+              find.descendant(
+                of: find.byType(ListView),
+                matching: find.byType(RichText),
+              ),
+            );
+        expect(labels, isNotEmpty);
+        for (final RenderParagraph label in labels) {
+          expect(
+            label.size.height,
+            greaterThanOrEqualTo(label.textSize.height - 0.01),
+            reason: 'label "${label.text.toPlainText()}" is clipped',
+          );
+        }
+
+        // D-pad stepping still lands on the next episode.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('P31  第31集'), isTrue);
+      },
+    );
+
+    testWidgets(
       'R10: short option lists and a first-item selection still start at the top',
       (tester) async {
         final pl = FakePlPlayerController()
@@ -1416,36 +1497,66 @@ void main() {
 
         await _pumpHud(tester, plPlayerController: pl);
 
-        // Playing: Play is a no-op, Pause pauses.
+        // Play and Pause go to the idempotent play() / pause(), never to the
+        // toggle, whatever the reported status.
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 0);
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 1);
-
-        // Paused: Pause is a no-op, Play resumes.
         pl.emitPlayerStatus(PlayerStatus.paused);
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 1);
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 2);
+        expect(pl.playCount, 2);
+        expect(pl.pauseCount, 2);
+        expect(pl.doubleTapCenterCount, 0);
 
-        // Completed: Play restarts playback, Pause stays a no-op.
+        // Completed: Play restarts playback through the toggle (which seeks to
+        // the start), Pause is still a plain pause.
         pl.emitPlayerStatus(PlayerStatus.completed);
-        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
-        await tester.pump();
-        expect(pl.doubleTapCenterCount, 2);
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 3);
+        expect(pl.doubleTapCenterCount, 1);
+        expect(pl.playCount, 2);
 
         // PlayPause always toggles.
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
         await tester.pump();
-        expect(pl.doubleTapCenterCount, 4);
+        expect(pl.doubleTapCenterCount, 2);
+      },
+    );
+
+    testWidgets(
+      'R12: a second Pause before the player reports its state does not resume',
+      (tester) async {
+        // media_kit reports the new state after the command; until then
+        // playerStatus still says playing.
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing
+          ..statusFlipDelay = const Duration(milliseconds: 80);
+
+        await _pumpHud(tester, plPlayerController: pl);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(pl.playerStatus, PlayerStatus.paused);
+        expect(pl.playCount, 0);
+        expect(pl.doubleTapCenterCount, 0);
+
+        // Same for a duplicate Play while paused.
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(pl.playerStatus, PlayerStatus.playing);
+        expect(pl.pauseCount, 2);
+        expect(pl.doubleTapCenterCount, 0);
       },
     );
   });

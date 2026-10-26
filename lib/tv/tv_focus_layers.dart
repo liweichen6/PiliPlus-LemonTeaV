@@ -322,7 +322,40 @@ class _OverlayFocusLayer extends _TvFocusLayer
     return branch;
   }
 
+  static final Expando<bool> _textSelectionBranches = Expando<bool>(
+    'tvTextSelectionBranch',
+  );
+
+  /// Whether [branch] belongs to a text field's selection toolbar or context
+  /// menu. Flutter inserts those into the root overlay, which is this one, and
+  /// wraps them in a [TextFieldTapRegion]. They are not modal: the text field
+  /// must keep focus, because it disposes the toolbar as soon as it loses it.
+  static bool _isTextSelectionBranch(FocusNode branch) {
+    final bool? cached = _textSelectionBranches[branch];
+    if (cached != null) return cached;
+    final BuildContext? context = branch.context;
+    if (context == null || !context.mounted) return false;
+    final bool result =
+        context.findAncestorWidgetOfExactType<TextFieldTapRegion>() != null;
+    _textSelectionBranches[branch] = result;
+    return result;
+  }
+
+  /// The children of [anchor] that hold modal overlay content: neither the
+  /// Navigator's branch nor a text selection toolbar.
+  Iterable<FocusNode> _modalBranches(FocusNode navigatorBranch) =>
+      anchor.children.where(
+        (FocusNode branch) =>
+            !identical(branch, navigatorBranch) &&
+            !_isTextSelectionBranch(branch),
+      );
+
+  /// A focusable leaf. A focus scope is never a target: requesting focus on a
+  /// scope with no focused child leaves primary focus on the scope itself,
+  /// which the stack does not count as inside the layer, so it would promote
+  /// the same scope again on every frame.
   static bool _isFocusable(FocusNode node) =>
+      node is! FocusScopeNode &&
       node.canRequestFocus &&
       !node.skipTraversal &&
       TvFocusTraversalPolicy.isEffectivelyFocusable(node);
@@ -333,8 +366,7 @@ class _OverlayFocusLayer extends _TvFocusLayer
     if (anchor.children.length < 2) return const <_TvFocusLayer>[];
     final FocusNode? navigatorBranch = _navigatorBranch();
     if (navigatorBranch == null) return const <_TvFocusLayer>[];
-    for (final FocusNode branch in anchor.children) {
-      if (identical(branch, navigatorBranch)) continue;
+    for (final FocusNode branch in _modalBranches(navigatorBranch)) {
       if (_isFocusable(branch)) return _open;
       for (final FocusNode node in branch.descendants) {
         if (_isFocusable(node)) return _open;
@@ -346,7 +378,9 @@ class _OverlayFocusLayer extends _TvFocusLayer
   @override
   bool contains(FocusNode node) {
     final FocusNode? branch = _branchOf(node);
-    return branch != null && !identical(branch, _navigatorBranch());
+    return branch != null &&
+        !identical(branch, _navigatorBranch()) &&
+        !_isTextSelectionBranch(branch);
   }
 
   @override
@@ -357,12 +391,17 @@ class _OverlayFocusLayer extends _TvFocusLayer
     final FocusNode? navigatorBranch = _navigatorBranch();
     if (navigatorBranch == null) return null;
     final List<FocusNode> candidates = <FocusNode>[];
-    for (final FocusNode branch in anchor.children) {
-      if (identical(branch, navigatorBranch)) continue;
-      if (branch.canRequestFocus && !branch.skipTraversal) {
+    for (final FocusNode branch in _modalBranches(navigatorBranch)) {
+      if (branch is! FocusScopeNode &&
+          branch.canRequestFocus &&
+          !branch.skipTraversal) {
         candidates.add(branch);
       }
-      candidates.addAll(branch.traversalDescendants);
+      candidates.addAll(
+        branch.traversalDescendants.where(
+          (FocusNode node) => node is! FocusScopeNode,
+        ),
+      );
     }
     return policy.findFirstFocusAmong(candidates);
   }
