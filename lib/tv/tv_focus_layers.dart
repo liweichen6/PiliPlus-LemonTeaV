@@ -419,6 +419,13 @@ class _RouteFocusLayer extends _TvFocusLayer {
 
 /// Finds popup routes that are active while primary focus is stuck in the
 /// scope they cover, and keeps a layer for each until its scope goes away.
+///
+/// Only [PopupRoute]s qualify (menus, dialogs, sheets). A page route pushed
+/// over another one is in the same state until it takes focus, but a page takes
+/// focus itself and must not be held as a modal layer for as long as it is on
+/// screen: the layer would pull focus back to the page's first control whenever
+/// primary focus is parked on a scope node, which is how the inline-sheet code
+/// holds focus while a sheet is still loading.
 class _RouteFocusLayerProvider implements _TvFocusLayerProvider {
   final Map<FocusScopeNode, _RouteFocusLayer> _layers =
       <FocusScopeNode, _RouteFocusLayer>{};
@@ -441,7 +448,9 @@ class _RouteFocusLayerProvider implements _TvFocusLayerProvider {
       if (covered != null && _TvNavigationState._isScopeInactive(covered)) {
         final FocusScopeNode? popup =
             _TvNavigationState._findActiveSiblingScope(covered);
-        if (popup != null && !_layers.containsKey(popup)) {
+        if (popup != null &&
+            !_layers.containsKey(popup) &&
+            _routeOfFocusNode(popup) is PopupRoute<dynamic>) {
           _layers[popup] = _RouteFocusLayer(popup);
           changed = true;
         }

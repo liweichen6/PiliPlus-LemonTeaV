@@ -5321,6 +5321,275 @@ void main() {
         expect(pageTile.hasPrimaryFocus, isTrue);
       },
     );
+
+    // The player page is pushed over the home page and builds its controls a
+    // while later. Until they exist, its scope is active while focus is still
+    // behind it, which is what a popup that has not taken focus looks like.
+    // A page takes focus itself, so it must not be held as a layer afterwards:
+    // the sheet code parks focus on the scope while a sheet loads, and a layer
+    // would read that as "focus left" and pull it to the page's first control.
+    // Frames keep coming, as they do during playback.
+    testWidgets(
+      'a page pushed over another is not a focus layer: a sheet that is still loading holds focus instead of the page pulling it to its first control',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final homeButton = FocusNode(debugLabel: 'home_button');
+        final fullscreen = FocusNode(debugLabel: 'left_fullscreen');
+        final trigger = FocusNode(debugLabel: 'comment_trigger');
+        final follow = FocusNode(debugLabel: 'sheet_follow');
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final ready = ValueNotifier<bool>(false);
+        addTearDown(() {
+          homeButton.dispose();
+          fullscreen.dispose();
+          trigger.dispose();
+          follow.dispose();
+          ready.dispose();
+        });
+
+        bool loaded = false;
+        StateSetter? setSheetState;
+
+        void openLoadingSheet() {
+          loaded = false;
+          miniScaffoldKey.currentState!.showBottomSheet(
+            constraints: const BoxConstraints(),
+            (context) => StatefulBuilder(
+              builder: (context, setState) {
+                setSheetState = setState;
+                return ColoredBox(
+                  color: Colors.grey.shade900,
+                  child: loaded
+                      ? Column(
+                          children: [
+                            FilledButton(
+                              focusNode: follow,
+                              onPressed: () {},
+                              child: const Text('关注'),
+                            ),
+                          ],
+                        )
+                      : const Center(
+                          child: SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(value: 0.4),
+                          ),
+                        ),
+                );
+              },
+            ),
+          );
+        }
+
+        Widget videoPage() => Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: ready,
+            builder: (context, isReady, _) => !isReady
+                ? const SizedBox.expand()
+                : Row(
+                    children: [
+                      SizedBox(
+                        width: 560,
+                        height: 540,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Stands in for the video texture.
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(),
+                            ),
+                            ElevatedButton(
+                              focusNode: fullscreen,
+                              onPressed: () {},
+                              child: const Text('全屏'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 400,
+                        height: 540,
+                        child: MiniScaffold(
+                          key: miniScaffoldKey,
+                          // A comment card in the body, which the sheet covers.
+                          body: Center(
+                            child: InkWell(
+                              focusNode: trigger,
+                              onTap: openLoadingSheet,
+                              child: const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text('评论'),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        );
+
+        Future<void> pumpFrames(int count) async {
+          for (int i = 0; i < count; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+        }
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            navigatorObservers: [TvNavigationObserver()],
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  focusNode: homeButton,
+                  autofocus: true,
+                  onPressed: () => Get.to<void>(videoPage),
+                  child: const Text('打开视频页'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(homeButton.hasPrimaryFocus, isTrue);
+
+        // The page is pushed empty: nothing on it can take focus yet.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await pumpFrames(12);
+
+        // Its controls arrive; focus goes to the first one, and the user then
+        // moves on to the comment.
+        ready.value = true;
+        await pumpFrames(4);
+        expect(fullscreen.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await pumpFrames(2);
+        expect(trigger.hasPrimaryFocus, isTrue);
+
+        // The sheet opens with nothing to focus yet. Focus is held, not handed
+        // to the first control of the page.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await pumpFrames(20);
+        expect(fullscreen.hasPrimaryFocus, isFalse);
+        expect(follow.hasPrimaryFocus, isFalse);
+
+        // The content arrives and takes focus.
+        setSheetState!(() {
+          loaded = true;
+        });
+        await pumpFrames(2);
+        expect(follow.hasPrimaryFocus, isTrue);
+
+        // Back closes the sheet, then the page; each gives focus back.
+        await tester.binding.handlePopRoute();
+        await pumpFrames(12);
+        expect(trigger.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        await pumpFrames(12);
+        expect(homeButton.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'a popup menu opened on a pushed page still takes focus and hands it back to the control on that page',
+      (tester) async {
+        final homeButton = FocusNode(debugLabel: 'home_button');
+        final pageTile = FocusNode(debugLabel: 'page_tile');
+        addTearDown(() {
+          homeButton.dispose();
+          pageTile.dispose();
+        });
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            navigatorObservers: [TvNavigationObserver()],
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  focusNode: homeButton,
+                  autofocus: true,
+                  onPressed: () => Get.to<void>(
+                    () => Builder(
+                      builder: (pageContext) => Scaffold(
+                        body: ListTile(
+                          focusNode: pageTile,
+                          autofocus: true,
+                          title: const Text('页面项'),
+                          onTap: () => showMenu<int>(
+                            context: pageContext,
+                            requestFocus: false,
+                            position: const RelativeRect.fromLTRB(
+                              100,
+                              100,
+                              100,
+                              100,
+                            ),
+                            items: const [
+                              PopupMenuItem<int>(
+                                value: 1,
+                                child: Text('菜单项1'),
+                              ),
+                              PopupMenuItem<int>(
+                                value: 2,
+                                child: Text('菜单项2'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: const Text('打开页面'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pageTile.hasPrimaryFocus, isTrue);
+
+        bool onMenuItem(String label) {
+          final FocusNode? primary = FocusManager.instance.primaryFocus;
+          if (primary == null || primary is FocusScopeNode) return false;
+          return find
+              .descendant(
+                of: find.byElementPredicate((e) => e == primary.context),
+                matching: find.text(label),
+              )
+              .evaluate()
+              .isNotEmpty;
+        }
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(find.text('菜单项1'), findsOneWidget);
+        expect(onMenuItem('菜单项1'), isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.text('菜单项1'), findsNothing);
+        expect(pageTile.hasPrimaryFocus, isTrue);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(homeButton.hasPrimaryFocus, isTrue);
+      },
+    );
   });
 
   group('overlay dialogs outside the Navigator (M10, SmartDialog)', () {
