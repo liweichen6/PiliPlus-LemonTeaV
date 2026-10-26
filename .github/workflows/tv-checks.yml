@@ -63,6 +63,14 @@ jobs:
             test/tv_navigation_test.dart \
             test/tv_player_hud_test.dart
 
+      # flutter test builds native assets for the Linux host; the cnativeapi
+      # build hook needs the GTK 3, X11 and Xi development packages.
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libx11-dev libxi-dev
+
       - name: Run TV tests
         shell: bash
         run: flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
