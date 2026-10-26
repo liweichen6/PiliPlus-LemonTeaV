@@ -406,6 +406,9 @@ void main() {
     TvPlatform.setTvModeForTesting(false);
   });
 
+  // M11.3 throwaway: must turn the TV check red. Never merge.
+  test('M11.3 deliberate failure', () => expect(1, 2));
+
   group('TvPlayerHud Transport Controls & Focus Traversal (F15)', () {
     testWidgets(
       'fullscreen surface opens HUD via Select or Up key and focuses play/pause pill',
