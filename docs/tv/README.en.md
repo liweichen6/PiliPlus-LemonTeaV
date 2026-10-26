@@ -44,7 +44,17 @@ What the workflow does:
 1. Fetches `https://github.com/lemonteaau/PiliPlus.git` (`main`) and merges it into `main` (`README.md` and `README.en.md` are protected via `merge=ours` in [`.gitattributes`](../../.gitattributes)).
 2. Computes `version_code = $(git rev-list --count HEAD)` and tags `v<upstream_version>-fork.<version_code>`.
 3. Applies all 38 SDK, pub-cache, and TV patches via [`lib/scripts/patch.ps1 android`](../../lib/scripts/patch.ps1).
-4. Signs and builds split-ABI Android release APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`) and publishes a GitHub Release on `liweichen6/PiliPlus-LemonTeaV`.
+4. Signs and builds split-ABI Android release APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`).
+5. Runs the TV checks (below) on the same commit, alongside the build.
+6. Publishes a GitHub Release on `liweichen6/PiliPlus-LemonTeaV` only if both the build and the TV checks passed. A red check means no APK and no release; the version tag from step 2 may already exist and is moved by the next run.
+
+### TV Checks (`tv-checks.yml`)
+[`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) runs on every pull request into `main` and before every release:
+1. Applies all patches with `lib/scripts/patch.ps1 android` (a patch that no longer applies after a Flutter bump fails here).
+2. `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the upstream files that hook into it (`lib/main.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/utils/connectivity_utils.dart`) and the TV tests. Errors and warnings fail the check; infos don't, so an upstream lint info in a hook file cannot block a release.
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`.
+
+> **Repository setting (owner)**: in GitHub → **Settings** → **Branches**, protect `main` and require the status check **TV analyze and tests**, so a pull request cannot merge while it is red.
 
 ### Option B: Syncing Upstream Locally via CLI
 Always revert local SDK/package patches before pulling or merging so your working tree is clean:
@@ -63,12 +73,14 @@ git merge --no-edit upstream/main
 
 # 4. Re-apply patches and verify static analysis & TV automated tests
 ./tool/tv_patch.sh apply
-flutter analyze --no-pub lib/tv/ lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
+# (the same commands as tv-checks.yml)
+flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
 
 # 5. Revert patches before committing or pushing
 ./tool/tv_patch.sh revert
-git push origin main
+# Every non-Markdown push to main publishes a release: push a branch and open a pull request instead
+git push origin HEAD:sync/upstream
 ```
 
 ---
@@ -76,7 +88,7 @@ git push origin main
 ## 4. Building Release APKs Locally
 
 ### Prerequisites
-- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.47.7` stable, Dart `>=3.13.0`).
+- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.47.8` stable, Dart `>=3.13.0`).
 - **Java 17** & **Android SDK** (`compileSdk = 37`).
 - **Patch Helper**: [`./tool/tv_patch.sh`](../../tool/tv_patch.sh) (macOS/Linux bash equivalent of [`lib/scripts/patch.ps1`](../../lib/scripts/patch.ps1)).
 

@@ -1,8 +1,9 @@
 # PiliPlus TV fork: syncs lemonteaau/PiliPlus into main and builds the Android
-# TV release. Fork-only file. sync-upstream-build.yml is upstream's own sync
-# workflow (it syncs bggRGjQaUbCoE/PiliPlus and builds every platform); it is
-# kept byte-identical to upstream so merges never conflict, and it is disabled
-# in this repository's Actions settings.
+# TV release, which waits for the TV checks (tv-checks.yml). Fork-only file.
+# sync-upstream-build.yml is upstream's own sync workflow (it syncs
+# bggRGjQaUbCoE/PiliPlus and builds every platform); it is kept byte-identical
+# to upstream so merges never conflict, and it is disabled in this
+# repository's Actions settings.
 name: Sync upstream and build PiliPlus TV
 
 on:
@@ -100,6 +101,15 @@ jobs:
             git push --force origin "refs/tags/$release_tag"
           fi
 
+  # TV analyze and tests on the commit being released; the build runs alongside.
+  checks:
+    name: TV checks
+    needs: sync
+    if: needs.sync.outputs.should_build == 'true'
+    uses: ./.github/workflows/tv-checks.yml
+    with:
+      ref: ${{ needs.sync.outputs.commit_sha }}
+
   android:
     name: Build Android APKs
     needs: sync
@@ -166,8 +176,9 @@ jobs:
 
   release:
     name: Publish custom release
-    needs: [sync, android]
-    if: ${{ !cancelled() && needs.android.result == 'success' }}
+    needs: [sync, checks, android]
+    # A red TV check blocks the release even when the APKs built.
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.android.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download app artifacts
@@ -203,6 +214,7 @@ jobs:
             cat "$RUNNER_TEMP/upstream-release-notes.md"
             echo
             echo "Builds passed: $passed."
+            echo "Checks passed: TV analyze and tests."
           } > "$RUNNER_TEMP/release-notes.md"
 
           gh release create "$RELEASE_TAG" release-assets/* \
