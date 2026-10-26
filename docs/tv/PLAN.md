@@ -5,6 +5,7 @@
 > 2. After completing each task, update [`docs/tv/PROGRESS.md`](./PROGRESS.md) with what changed, verification results, and design notes.
 > 3. Create an atomic Git commit after each logical milestone/task (including the updated `docs/tv/PROGRESS.md`).
 > 4. **Privacy & Sanitization Rule**: Never include LAN IP addresses/ports, local machine absolute paths, file-scheme URLs, local usernames, or device serials in committed files or commit messages. Always use relative repository paths and generic placeholders (`<vm-tv>`, `<physical-tv>`).
+> 5. **Branches & Releases (from Phase 5)**: every push to `main` that changes more than Markdown publishes a public release, and the in-app update check prompts users to install it. Work on one branch per milestone (or task group) and land it on `main` through a pull request; never push code to `main` directly. Once M11 lands, a pull request can only merge with the TV checks green.
 
 ---
 
@@ -52,6 +53,18 @@
 | Milestone | Focus Area | Scope | Dependencies | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **M10: Unified Modal Focus Layers, Out-of-Navigator Overlay (`SmartDialog`) Focus & Code Review Remediation (`R8`–`R20`)** | Fix `设置 → 关于 → 版本 → 🎉 发现新版本` focus staying on the page behind the dialog; replace three bespoke "new layer appears, focus stays behind" fixes (M6 popup routes, M9 inline sheets, new overlay dialogs) with one `_TvFocusLayerStack` lifecycle; fix the 2026-10-26 code review findings: nested HUD pill focus breaking Hold-Select (`R8`), `uiScale` viewport mismatch (`R9`), HUD episode-dialog / Play-Pause label / media-key bugs (`R10`–`R12`), per-frame sheet bookkeeping cost (`R13`), plus smaller cleanups (`R14`–`R20` and the still-open `R2` / `R3` / `R5`) | `docs/tv/*`, `lib/tv/tv_navigation.dart` (+ optional `part` file), `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` (`M10.1`–`M10.11`) | M9 | ✅ Done |
+
+---
+
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15)
+
+| Milestone | Focus Area | Scope | Dependencies | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **M11: TV Checks in CI** | Run analyze and the TV tests (SDK patches applied) on every pull request and before every release; a failure blocks the release | Fork-only workflow files in `.github/workflows/`, `docs/tv/*` (`M11.1`–`M11.3`) | None | ⏳ Planned |
+| **M12: Playback Freeze on the Physical TV** | High-quality videos play for about a second, then freeze, sometimes with `无法加载解码器 … 可能会切换至软解`; then the app freezes and crashes. Dedicated investigation in device sessions; the fix is agreed after the root cause | Device sessions over network adb; likely `lib/tv/*`, `TvBridge.kt` and the TV default settings, exact files decided in `M12.3` (`M12.1`–`M12.5`) | Device details and network adb from the user | ⏳ Planned (top priority) |
+| **M13: Focus Engine, Staged and Parity-Gated** | Fix odd jumps, a lost or missing ring and D-pad lag; replace the rule chain with adapters, one reconcile loop and one scoring function with column memory | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, new `lib/tv/adapters/`, `test/tv_*.dart` (`M13.0`–`M13.6`) | M11; focus-bug list from the user | ⏳ Planned |
+| **M14: Player HUD, Video** | Upstream's player layout and icons at TV size with focus labels; menus open upstream's own panels; the missing functions agreed in `M14.1` | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`M14.1`–`M14.4`) | M12; button-list discussion (`M14.1`) | ⏳ Planned |
+| **M15: Player HUD, Live** | The same for the live room, where upstream's pickers are private | `lib/tv/tv_player_hud.dart` (tasks defined after M14) | M14 | ⏳ Planned (later) |
 
 ---
 
@@ -525,3 +538,89 @@
     * The TV connectivity logic moved to `TvPlatform.isOnWifiOrEthernet()`; `ConnectivityUtils.isWiFi` keeps a one-line hook (plus its import) at the top of the function. Tests mock the `connectivity_plus` channel.
 * **Ordering**: tasks run in number order. The review fixes (M10.3–M10.4) go first: they are small, don't depend on the focus-layer work, and include both High findings. M10.4 also has to land before M10.5 because both edit `evaluateNode`. `R13` / `R15` are folded into M10.9 so the sheet-tracking code changes once.
 * **Rules for every M10 task**: Tier 1 only (`lib/tv/*`, `test/tv_*.dart`, docs), zero upstream diff. No `package:flutter_smart_dialog/src/...` import in `lib/tv`. Run `./tool/tv_patch.sh apply` before analyze/test/build and `./tool/tv_patch.sh revert` before committing. `flutter analyze --no-pub` must report `0` issues and all TV tests must pass. One atomic commit per task. Follow the Privacy \& Sanitization Rule.
+
+---
+
+## Detailed Milestone Breakdown (Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD)
+
+* **Origin**: on 2026-10-26 four goals were aligned in a question-and-answer session, with the answers recorded in [`PROGRESS.md` → Phase 5 planning](./PROGRESS.md): a new focus engine, missing HUD functions with a refined layout, TV checks in CI, and the playback freeze on the physical TV.
+* **Decisions**:
+  * **Priority**: the playback freeze (M12) is the most urgent goal. M11 is small and runs first in time, while the device is being set up for M12.
+  * **Shipping**: one branch per milestone, merged into `main` by pull request; a release happens only on merge (Execution Rule 5). No pre-release APKs.
+  * **Device testing**: release builds made locally with `-Pdev` (signed with the debug key, application id suffix `.dev`, installed next to the normal app as `PiliPlus TV dev`), installed over network adb. Debug builds are never used for codec or performance measurements: they use a different hardware-decoding default (`auto-safe` instead of `mediacodec,auto-safe`, `lib/plugin/pl_player/models/hwdec_type.dart`) and run Dart code much slower.
+  * **CI**: analyze and the TV tests, on pull requests and before every release; a failure blocks the release. Scope: the TV tests and analyze of the TV code and hook files only.
+  * **Focus engine**: staged and parity-gated; returning to a column restores the last item focused there; the old rules stay one release behind a hidden switch. The problems seen on the TV (odd jumps, a lost or missing ring, D-pad lag everywhere) are in scope.
+  * **Player HUD**: upstream's layout and icons at TV size with the focused button's label shown; menus open upstream's own panels; video first, live later; the button list is agreed before implementation.
+* **Ordering**: M11 → M12 → M13 and M14 → M15. Exceptions to Execution Rule 1, each on its own branch: M11 runs while the device is prepared for M12; M14 can start once M12 is done and run alongside M13.1–M13.2, which touch different files; M14's recorded D-pad path joins M13.3's set.
+* **Rules for every Phase 5 task**: the Execution Rules above, including rule 5. Tier 1 first (`lib/tv/*`, `TvBridge.kt`, fork-only workflow files, `test/tv_*.dart`, docs); a hook in an upstream file stays one line where possible (M10.13). Run `./tool/tv_patch.sh apply` before analyze/test/build and `./tool/tv_patch.sh revert` before committing. Device IPs, ports, serials and adb addresses stay out of commits and docs (`<physical-tv>`, `<vm-tv>`).
+
+### Milestone M11: TV Checks in CI
+* **Goal**: catch a broken TV layer, patch drift on a Flutter bump, or silent upstream breakage before an APK ships. Today `tv-sync-build.yml` merges upstream, builds and releases without running analyze or any TV test.
+* **Tasks**:
+  * **Task M11.1 (`⏳ Planned`) — TV Checks Workflow (`.github/workflows/tv-checks.yml`, fork-only)**: runs on pull requests into `main` and can be called from `tv-sync-build.yml` (`workflow_call`, with the commit to check as input). Steps: check out; set up Flutter from `pubspec.yaml`; `pub get`; `lib/scripts/patch.ps1 android` (all SDK and pub-cache patches, TV patches included); `flutter analyze --no-pub` on `lib/tv`, the hook files (`lib/main.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/utils/connectivity_utils.dart`) and the two TV test files, failing on errors and warnings (`--no-fatal-infos`, so an upstream lint info in a hook file cannot block a release); `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`.
+  * **Task M11.2 (`⏳ Planned`) — Release Gate (`.github/workflows/tv-sync-build.yml`)**: run the checks on the commit the sync job produced. The Android build may run alongside; the release job needs both. A red check means no APK is published and no release is created.
+  * **Task M11.3 (`⏳ Planned`) — Verification & Docs**: a throwaway pull request with a deliberately failing TV test shows a red check and cannot merge; a normal sync run still builds and releases. Document the checks in `docs/tv/README.md` and `README.en.md`. **User action**: require the check on `main` in GitHub → Settings → Branches (repository settings cannot be changed from a coding session).
+* **Done when**: a failing TV test blocks both the merge and the release, and a green run releases as before.
+* **Size**: about 1 day.
+
+### Milestone M12: Playback Freeze on the Physical TV
+* **Goal**: high-quality videos play on the physical TV without freezing or crashing, or the app avoids streams the TV cannot play.
+* **Symptom** (reported 2026-10-26): a high-quality video plays for about a second, then freezes. Sometimes the toast `无法加载解码器, Could not open codec…，可能会切换至软解` appears (`lib/plugin/pl_player/controller.dart:1224-1225`). The UI may respond for a little while, then the whole app freezes and crashes. Lower qualities are less affected. There is no known-good baseline: the M5 device pass (2026-10-22) did not play comparable videos.
+* **Known facts**:
+  * The physical TV is `armeabi-v7a` (32-bit ARM, per the M5 notes).
+  * Android release builds ask mpv for `mediacodec,auto-safe` hardware decoding (`HwDecType.kHwdec`). When MediaCodec cannot open a stream, mpv falls back to software decoding, which is what the toast announces.
+  * The default quality is the highest available (`Pref.defaultVideoQa` defaults to `VideoQuality.super8k.code`), and the default codec order is AVC, then AV1 (`Pref.preferCodecs`).
+  * The thread-ripper loopback proxy is on by default (`Pref.threadRipperEnabled`). Impeller is already off (`EnableImpeller=false` in `AndroidManifest.xml`).
+* **Leading hypothesis** (to be confirmed or refuted by evidence, not acted on): the TV's hardware decoder cannot open some high-quality streams (4K, HEVC Main10, AV1, HDR or Dolby); mpv falls back to software decoding; a 32-bit TV CPU cannot keep up at that quality, so the UI thread starves and memory runs out until Android kills the app.
+* **Tasks**:
+  * **Task M12.1 (`⏳ Planned`) — Device Profile**: model, SoC, RAM, Android version and panel resolution; the decoders and the sizes, frame rates and profiles they report (`MediaCodecList`); network adb from the development machine.
+  * **Task M12.2 (`⏳ Planned`) — Reproduction Matrix**: on the user's freezing videos and one that plays fine, with `-Pdev` release builds: quality (4K / 1080P60 / 1080P / 720P) × codec (AVC / HEVC / AV1) × hardware decoding (`mediacodec` / `mediacodec-copy` / software) × thread ripper on and off, plus the same video and quality in upstream's own APK. For each run, capture logcat (with mpv logging raised in an uncommitted build if `error` level hides the cause), CPU and memory over time, and how the process ended (`dumpsys activity exit-info`: crash, ANR or low-memory kill; tombstones and ANR traces from a bug report).
+  * **Task M12.3 (`⏳ Planned`) — Root Cause & Fix Decision (discussion gate)**: write up the evidence and the cause, then agree on the fix and the exact "done" bar with the user before any code. Directions already on the table: pick only streams the TV's decoders report they can handle; TV defaults (a quality cap, AVC first) through `TvPlatform.defaultTvSettings`; on a decoder-open failure, step down the quality or codec instead of software decoding.
+  * **Task M12.4 (`⏳ Planned`) — Fix & Regression Tests**: as decided in M12.3, in Tier 1 where possible, with unit tests for any stream-selection or fallback logic.
+  * **Task M12.5 (`⏳ Planned`) — Device Verification & Docs**: the agreed test videos play at every quality the app offers for 10+ minutes without a freeze or crash, and the UI stays responsive during playback (exact bar from M12.3); `PROGRESS.md` and `REVIEW.md`.
+* **Inputs needed from the user before M12.1**:
+  1. TV model, SoC if known, RAM, Android version, panel resolution.
+  2. Network adb enabled on the TV.
+  3. Two or three videos (BV ids) that freeze, with the quality shown when they froze, and one that plays fine.
+  4. Whether the account has 大会员 (4K, HDR and Dolby need it, which changes the qualities offered).
+  5. Whether the 硬件解码, 解码格式 or 线程撕裂者 settings were changed.
+  6. What the crash looks like: back to the launcher, an "isn't responding" dialog, or a reboot.
+  7. Optional: whether upstream's own APK freezes on the same video and quality.
+* **Size**: two to five device sessions for M12.1–M12.3; M12.4 depends on the cause.
+
+### Milestone M13: Focus Engine (Staged, Parity-Gated)
+* **Goal**: fix the focus problems seen on the TV (odd jumps, a lost or missing ring, D-pad lag everywhere) and stop adding a special case per upstream layout, without regressing screens that work today.
+* **Today**: `tv_navigation.dart` (3,646 lines) decides focusability with an ancestor walk per node (about 550 lines), picks targets with an ordered rule chain where the first match wins (about 1,450 lines), and recovers focus from five entry points coordinated by flags (about 1,300 lines). Inline sheets and the layer stack (`tv_focus_layers.dart`) are two separate layer models. Each new upstream layout has needed new rules (M6, M7, M9, M10). The existing traversal benchmark (mean about 3.2 ms per step) was measured on a development Mac, not on the TV.
+* **Tasks**:
+  * **Task M13.0 (`⏳ Planned`) — Baseline & Bug Inventory**: on the physical TV, in a profile build: time per D-pad step (key event → focus change → next frame) and UI and raster frame times on the home grid with the sidebar, settings, comments and the video detail page, both idle and while a video plays. Turn the user's list of bad screens into reproducible steps. Fix the time budget per step (target: within one frame at the TV's refresh rate). If the lag comes from somewhere other than the engine (rendering, heavy upstream widgets, video decoding), it becomes its own item instead of being folded into this milestone.
+  * **Task M13.1 (`⏳ Planned`) — Adapters (`lib/tv/adapters/`)**: move every piece of upstream-specific knowledge behind small interfaces, one adapter per source: `MiniScaffold` / `BottomSheetLayout` sheets, comment cards and their embedded actions, `ListTile` trailing controls, popup routes and overlay dialogs, the player HUD, the login QR tab. Each adapter contributes what to hide, layers, roles (primary or secondary) and groups. No behavior change: every existing test passes unchanged.
+  * **Task M13.2 (`⏳ Planned`) — One Event-Driven Reconcile Loop**: one `reconcile(reason)` runs on key presses, focus changes, route changes, layer and sheet changes (adapters listen to sheet animation status), scroll end and app resume, always in the same order: layers → whether the focused node is still valid → recovery (with column memory once M13.4 lands) → scroll into view → ring. Per-frame work happens only while something animates. It replaces the per-frame callback, the focus-listener callbacks and the key-handler and scroll-handler recovery paths, and finishes moving inline sheets onto the layer stack (deferred in M10.9) as a non-modal layer that hides only the covered slot and restores focus as soon as it starts closing.
+  * **Task M13.3 (`⏳ Planned`) — Recorded D-Pad Paths**: widget tests that replay a key sequence and assert where focus lands at every step, for the key screens: home grid with the sidebar, video detail in split view, comments (first, second and third layer), settings with their dialogs, and the player HUD. The expected path is the *correct* behavior, including the fixes from the M13.0 inventory, so paths the old rules get wrong are marked as known failures until M13.4.
+  * **Task M13.4 (`⏳ Planned`) — Scoring Function & Column Memory (behind a flag)**: a candidate snapshot built once per decision (rects in screen and scroll order, containers, layer, role, enabled, visible); one scoring function (distance along the direction, offset across it, missing overlap, a cost for leaving the current list or group, secondary actions only inside their own card); per-group memory so returning to a column restores the last item focused there; a debug overlay that shows each candidate's score. Old and new scorers both run against the recorded paths.
+  * **Task M13.5 (`⏳ Planned`) — Switch**: the new scorer becomes the default once every recorded path passes and the per-step budget holds on the physical TV. The old rules stay for one release behind a hidden switch. Device pass on `<vm-tv>` and `<physical-tv>`; docs (`ARCHITECTURE.md`, `REVIEW.md`).
+  * **Task M13.6 (`⏳ Planned`) — Remove the Old Rules**: one release after M13.5, unless the hidden switch was needed; then delete the old rule chain.
+* **Done when**: all recorded paths pass; a D-pad step on the physical TV stays within the M13.0 budget; none of the inventoried lost-ring cases recur.
+* **Inputs needed from the user before M13.0**: the screens where focus jumps or the ring disappears, with the steps if remembered. Screen recordings help.
+* **Size**: about 3–4 weeks.
+
+### Milestone M14: Player HUD, Video
+* **Goal**: the TV player HUD gains the functions agreed in M14.1 and takes upstream's player layout at TV size, without re-implementing upstream's menus.
+* **Why the HUD is a separate UI**: upstream's `PlayerFocus` is a keyboard-shortcut handler that wraps the whole video page and consumes every arrow key. Upstream's controls have no focus nodes (34 px `ComBtn` icons with hover tooltips, shown by tap or hover, hidden by a timer, a drag-only progress bar), and making them D-pad aware would mean editing `view.dart` and `header_control.dart`, upstream's most-changed files. The TV key routing therefore stays TV-specific: in fullscreen with the bar hidden the D-pad seeks, Select plays and pauses, and holding Select gives 3x speed; with the bar shown the D-pad navigates; in split screen it navigates the page.
+* **Reuse without upstream edits**:
+  * `_TvPlayerHudState` mixes in upstream's `HeaderMixin`, which only needs a `plPlayerController` getter, for `showSetDanmaku(isLive: …)`.
+  * `videoDetailController.headerCtrKey` (a `GlobalKey` that upstream itself reads in `lib/pages/video/view.dart`) gives `HeaderControlState`: `showSetVideoQa`, `showSetAudioQa`, `showSetDecodeFormats`, `showSetSubtitle`, `showDanmakuPool`, `showSettingSheet`.
+  * These open through `PageUtils.showVideoBottomSheet` as a `PublishRoute`, a `PopupRoute` that the focus engine already handles.
+  * Menus that upstream builds inline as `PopupMenuButton`s (subtitle selection, AI translate, super-resolution, highlights, danmaku chart) become small option lists over the controllers' public APIs, shown under upstream's own conditions (`userSpecifyItemRight` in `lib/plugin/pl_player/view/view.dart`).
+* **Tasks**:
+  * **Task M14.1 (`⏳ Planned`) — Button List (discussion gate)**: a table of upstream's player buttons, each marked keep, drop, or where it goes, plus what happens to the split-screen Quick Strip; agreed with the user before any code. Bottom bar: play/pause, previous, next, time, episodes, aspect ratio, subtitles, speed, fullscreen, highlights, super-resolution, danmaku chart, quality, AI translate. Header: back, home, audio only, cast, SponsorBlock, send danmaku, danmaku on/off, danmaku settings, picture-in-picture, the settings sheet, like, coin, favourite, download, share.
+  * **Task M14.2 (`⏳ Planned`) — Menus Through Upstream's Panels**: replace the HUD's own quality and danmaku-settings dialogs with upstream's, add the agreed pickers, and hide a button when its panel isn't available (offline files, picture-in-picture, header not mounted).
+  * **Task M14.3 (`⏳ Planned`) — Layout**: upstream's structure and icons (top bar; bottom bar with the progress bar and left and right button groups); 44–48 px focus targets; the focused button's label shown; the D-pad seek bar styled like upstream's progress bar.
+  * **Task M14.4 (`⏳ Planned`) — Tests, Device Pass & Docs**: replace the label-text finders in `test/tv_player_hud_test.dart` with keys or semantics; a test per agreed button; the HUD's recorded D-pad path joins M13.3's set; device pass at 1080p with `uiScale` 1.0 and 0.8 and text scale 1.6.
+* **Done when**: every agreed button works with the D-pad; each menu opens upstream's panel with focus inside it; Hold-Select, seeking and the Quick Strip behave as agreed.
+* **Size**: about 1.5–2 weeks after M14.1.
+
+### Milestone M15: Player HUD, Live (later)
+* **Goal**: the same for the live room, after M14.
+* **Known so far**: refresh and send-danmaku already reach the HUD, danmaku settings come from `HeaderMixin`, and the HUD already has a live quality list. Upstream's live pickers are private (`_LiveHeaderControlState` and `_showLiveStreamDialog` in `lib/pages/live_room/widgets/header_control.dart`), so the stream and CDN picker and similar pieces need TV-built versions over `LiveRoomController`, or are left out.
+* **Tasks**:
+  * **Task M15.1 (`⏳ Planned`, later) — Button List & Tasks**: a button-list discussion like M14.1, after M14 is done; the remaining M15 tasks are defined from its outcome.
