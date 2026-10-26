@@ -23,6 +23,7 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -604,10 +605,8 @@ void main() {
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 40));
 
-        // Wait real elapsed wall-clock time >=450ms
-        await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 500));
-        });
+        // Let the cadence window (450 ms) pass on the binding's sampling clock.
+        await tester.pump(const Duration(milliseconds: 500));
 
         // Step 2: cadence exceeded -> consecutive steps reset to 1 and virtual target reset
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -1334,6 +1333,77 @@ void main() {
 
         await tester.pumpWidget(const SizedBox.shrink());
         expect(second.statusListeners, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'R18: reversing direction restarts the acceleration but keeps the virtual target',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..fakePlayer.playerState.position = const Duration(seconds: 30)
+          ..fakePlayer.playerState.duration = const Duration(seconds: 300)
+          ..duration.value = 300
+          ..fastForBackwardDuration = const Duration(seconds: 10);
+
+        await tester.pumpWidget(_buildTestApp(plPlayerController: pl));
+        await tester.pumpAndSettle();
+
+        // Three quick steps forward: +10, +10, then the 2x step (+20) -> 70 s.
+        for (int i = 0; i < 3; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(pl.seekTargets.last, const Duration(seconds: 70));
+
+        // Reversing inside the burst is a 1x step from the virtual target
+        // (70 - 10), not a 2x step (50) and not a jump from the decoder (20).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pl.seekTargets.last, const Duration(seconds: 60));
+
+        // The backward burst accelerates on its own: 1x, 1x, then 2x.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pl.seekTargets.last, const Duration(seconds: 50));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pl.seekTargets.last, const Duration(seconds: 30));
+
+        await tester.pump(const Duration(seconds: 2));
+      },
+    );
+
+    testWidgets(
+      'R19: the HUD clock keeps ticking while the HUD stays open',
+      (tester) async {
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final DateFormat format = DateFormat('HH:mm');
+        String clock() =>
+            format.format(WidgetsBinding.instance.samplingClock.now());
+        final Finder clockFinder = find.byWidgetPredicate(
+          (Widget w) => w.runtimeType.toString() == '_TvHudClock',
+        );
+
+        final String opened = clock();
+        final Element clockElement = tester.element(clockFinder);
+        expect(find.text(opened), findsOneWidget);
+
+        // Two minutes of D-pad activity inside the 5 s auto-hide window: the
+        // HUD never closes, so the same clock has to move on by itself.
+        for (int i = 0; i < 30; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pump(const Duration(seconds: 4));
+        }
+        expect(tester.element(clockFinder), same(clockElement));
+        expect(clock(), isNot(opened));
+        expect(find.text(clock()), findsOneWidget);
+        expect(find.text(opened), findsNothing);
       },
     );
 

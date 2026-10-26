@@ -17,11 +17,10 @@ class _TvTextInputGateControl with TextInputControl {
   }
 }
 
-/// Runtime detection, first-launch Hive preference seeding, and soft-keyboard
-/// gating for Android TV / Leanback devices.
+/// Runtime detection, Hive preference seeding (fills only keys that are not set
+/// yet), and soft-keyboard gating for Android TV / Leanback devices.
 abstract final class TvPlatform {
   static const MethodChannel _channel = MethodChannel('com.example.piliplus/tv');
-  static const String _seededMarkerKey = 'tvDefaultsSeededV1';
 
   static const bool _forceTvFromEnv =
       bool.fromEnvironment('PILI_FORCE_TV') ||
@@ -36,14 +35,13 @@ abstract final class TvPlatform {
   static bool _gateInstalled = false;
   static FocusNode? _unlockedNode;
 
-  /// Default TV-friendly settings seeded on first TV launch for keys the user
-  /// has not explicitly configured yet.
+  /// Default TV-friendly settings. Every TV launch seeds the ones whose key is
+  /// not set yet; a value the user chose is never overwritten.
   static const Map<String, Object> defaultTvSettings = <String, Object>{
     SettingBoxKey.horizontalScreen: true,
     SettingBoxKey.useSideBar: true,
     SettingBoxKey.enableVerticalExpand: false,
     SettingBoxKey.enableAutoEnter: true,
-    'defaultFullScreen': true,
     SettingBoxKey.enableAutoExit: false,
     SettingBoxKey.autoPlayEnable: true,
     SettingBoxKey.enableShowDanmaku: true,
@@ -54,6 +52,11 @@ abstract final class TvPlatform {
     SettingBoxKey.showFsLockBtn: false,
     SettingBoxKey.themeMode: 1, // ThemeType.dark.index
     SettingBoxKey.autoUpdate: false,
+    // The player HUD mounts only through the player page's key handler, which
+    // upstream builds only while this is on. Seeding it keeps the HUD available
+    // even if upstream's own default ever changes; a user who switches it off
+    // on a TV still loses the HUD.
+    SettingBoxKey.keyboardControl: true,
   };
 
   /// Returns `true` when running on an Android TV / Leanback device or when
@@ -67,7 +70,7 @@ abstract final class TvPlatform {
   /// explicitly unlocked by the user pressing `Select`/`Enter`.
   static bool get isSoftKeyboardAllowed => _unlockedNode != null;
 
-  /// Initializes TV environment detection, seeds first-launch TV defaults in
+  /// Initializes TV environment detection, fills missing TV defaults in
   /// `GStorage.setting`, and installs the soft-keyboard gate when `isTv`.
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -113,9 +116,6 @@ abstract final class TvPlatform {
         pending[key] = value;
       }
     });
-    if (!settingBox.containsKey(_seededMarkerKey)) {
-      pending[_seededMarkerKey] = true;
-    }
     if (pending.isNotEmpty) {
       await settingBox.putAll(pending);
     }

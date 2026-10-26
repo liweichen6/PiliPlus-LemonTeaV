@@ -72,8 +72,6 @@ bool _isSelectKey(LogicalKeyboardKey key) {
 }
 
 class _TvPlayerHudState extends State<TvPlayerHud> {
-  static final DateFormat _clockFormat = DateFormat('HH:mm');
-
   final FocusNode _surfaceFocusNode = FocusNode(
     debugLabel: 'TvPlayerHudSurface',
   );
@@ -95,6 +93,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   Duration? _virtualSeekTarget;
   int _consecutiveSeekSteps = 0;
   DateTime? _lastSeekKeyTime;
+  bool? _lastSeekForward;
 
   PlPlayerController get _pl => widget.plPlayerController;
 
@@ -337,15 +336,23 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   void _seekRelative({required bool forward}) {
     if (_pl.isLive || !_hasPlayer) return;
-    final now = DateTime.now();
+    // The binding's sampling clock is the real clock in release builds and the
+    // fake clock in tests, so key cadence can be driven with pump().
+    final now = WidgetsBinding.instance.samplingClock.now();
     if (_lastSeekKeyTime != null &&
         now.difference(_lastSeekKeyTime!) < const Duration(milliseconds: 450)) {
-      _consecutiveSeekSteps = math.min(_consecutiveSeekSteps + 1, 12);
+      // Reversing direction restarts the acceleration but keeps the virtual
+      // target: the next step goes back from where the last one pointed, not
+      // from the decoder position, which still lags behind it.
+      _consecutiveSeekSteps = _lastSeekForward == forward
+          ? math.min(_consecutiveSeekSteps + 1, 12)
+          : 1;
     } else {
       _consecutiveSeekSteps = 1;
       _virtualSeekTarget = null;
     }
     _lastSeekKeyTime = now;
+    _lastSeekForward = forward;
 
     final int baseSec = _pl.fastForBackwardDuration.inSeconds.clamp(5, 30);
     final int multiplier = _consecutiveSeekSteps >= 6
@@ -1097,7 +1104,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   Widget _buildFullHudOverlay({required bool isFullScreen}) {
     final title = _resolveTitle();
-    final nowStr = _clockFormat.format(DateTime.now());
     final episodes = _collectEpisodes();
     final intro = widget.introController;
     final videoCtr = _videoDetailCtr;
@@ -1168,9 +1174,8 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                             ),
                           ),
                         ),
-                      Text(
-                        nowStr,
-                        style: const TextStyle(
+                      const _TvHudClock(
+                        style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -1388,6 +1393,57 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       ),
     );
   }
+}
+
+/// `HH:mm` wall clock that refreshes itself at each minute boundary, so the HUD
+/// does not have to rebuild to keep it current while it stays open.
+class _TvHudClock extends StatefulWidget {
+  const _TvHudClock({required this.style});
+
+  final TextStyle style;
+
+  @override
+  State<_TvHudClock> createState() => _TvHudClockState();
+}
+
+class _TvHudClockState extends State<_TvHudClock> {
+  static final DateFormat _format = DateFormat('HH:mm');
+
+  Timer? _timer;
+  late DateTime _now = _clockNow();
+
+  static DateTime _clockNow() => WidgetsBinding.instance.samplingClock.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleNextTick();
+  }
+
+  void _scheduleNextTick() {
+    // Built from the sub-minute part only, so it holds for UTC and local
+    // clocks alike (the test binding's clock is UTC).
+    final DateTime now = _clockNow();
+    final Duration intoMinute = Duration(
+      seconds: now.second,
+      milliseconds: now.millisecond,
+      microseconds: now.microsecond,
+    );
+    _timer = Timer(const Duration(minutes: 1) - intoMinute, () {
+      if (!mounted) return;
+      setState(() => _now = _clockNow());
+      _scheduleNextTick();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(_format.format(_now), style: widget.style);
 }
 
 /// Focusable 10-foot seek bar that responds to Left/Right D-pad keys.

@@ -96,8 +96,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` (`eef4f1f7e`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ✅ Done | Android APK / `<vm-tv>` (`3c940cf95`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`dcf925548`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`) — **migration of M9 onto the stack deferred** | ✅ Done (`R13`, `R15`) | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ⏳ Planned | `lib/tv/*`, `test/tv_*.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`) — **migration of M9 onto the stack deferred** | ✅ Done (`R13`, `R15`) | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`3f894408b`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart`, `docs/tv/*`, `README*.md` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ⏳ Planned | `docs/tv/*`, `README*.md` |
 
 ---
@@ -746,4 +746,33 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Verification** (patches applied, then reverted):
   * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `79/79` passed (`53` navigation, up from `52`, and `26` player HUD). All M9 tests pass with unchanged assertions.
+  * Not yet run on a TV device: batched into the final live pass.
+
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.10`): Smaller Cleanups (`R14`, `R16`–`R20`, `R2`, `R3`, `R5` item 4)
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_player_hud.dart` (`R3`, `R18`, `R19`)
+  * `[MODIFY] lib/tv/tv_navigation.dart` (`R14`, `R2` doc, `R5` rename, `R20` constant)
+  * `[MODIFY] lib/tv/tv_platform.dart` (`R16`, `R17`, `R2` dead seed key)
+  * `[MODIFY] test/tv_player_hud_test.dart` (two new tests; the cadence test now drives the fake clock)
+  * `[MODIFY] test/tv_navigation_test.dart` (five new tests; one existing seeding test edited)
+  * `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/ARCHITECTURE.md` (seeding wording), `docs/tv/README.md`, `docs/tv/README.en.md`, `README.md`, `README.en.md` (TV defaults and the `keyboardControl` dependency)
+* **What changed** (details in [`PLAN.md` → M10.10](./PLAN.md)):
+  * `R3` / `R18`: seek cadence on the binding's sampling clock; a direction change restarts the acceleration but keeps the virtual target.
+  * `R19`: the HUD clock ticks at minute boundaries while the HUD stays open.
+  * `R14`: one static frame callback forwards to the mounted `TvNavigation`; `dispose` releases the sheet-tracking state.
+  * `R2` / `R5`: `onBack` documented as unused, the dead `'defaultFullScreen'` seed removed, `_TvVerticalFocusIntent` → `_TvArrowFocusIntent`.
+  * `R16` / `R17`: the unread seeding marker is gone ("fills missing keys on every launch"), `keyboardControl: true` is seeded, and the HUD's dependency on that switch is documented.
+  * `R20`: `TvNavigationObserver.loginQrTabIndex` plus a test that reads the upstream login page to pin the tab order.
+* **Test findings worth keeping**:
+  * The first `R19` test passed with the clock stopped, because the HUD auto-hid and reopened in the loop and so re-created the clock. Every new test was mutation-checked (the fix undone, the test must fail); this is the one that needed a second draft.
+  * `testWidgets` runs on a fake clock that starts at a UTC instant. Code that builds a local `DateTime` from a UTC one (`DateTime(now.year, ..., now.minute + 1)` against `now`) gets a delay that is off by the machine's UTC offset; computing the delay from the sub-minute part avoids it.
+  * The `R14` retention fix has no test of its own (see `PLAN.md`); the two lifecycle tests protect the forwarding logic around it.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `86/86` passed (`58` navigation, up from `53`, and `28` player HUD, up from `26`).
+  * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`.
   * Not yet run on a TV device: batched into the final live pass.

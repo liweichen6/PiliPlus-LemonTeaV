@@ -2126,8 +2126,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   }
 }
 
-class _TvVerticalFocusIntent extends Intent {
-  const _TvVerticalFocusIntent(this.direction);
+class _TvArrowFocusIntent extends Intent {
+  const _TvArrowFocusIntent(this.direction);
 
   final TraversalDirection direction;
 }
@@ -2147,13 +2147,13 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
   }
 }
 
-class _TvVerticalFocusAction extends Action<_TvVerticalFocusIntent> {
-  _TvVerticalFocusAction(this.policy);
+class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
+  _TvArrowFocusAction(this.policy);
 
   final FocusTraversalPolicy policy;
 
   @override
-  bool invoke(_TvVerticalFocusIntent intent) {
+  bool invoke(_TvArrowFocusIntent intent) {
     final FocusNode? primaryFocus = FocusManager.instance.primaryFocus;
     if (primaryFocus == null || primaryFocus.context == null) {
       return false;
@@ -2173,6 +2173,10 @@ class TvNavigation extends StatefulWidget {
     required this.child,
   });
 
+  /// Unused. Kept so the `onBack` argument `MyApp._builder` passes in
+  /// `lib/main.dart` still compiles: Escape is handled by that file's early key
+  /// handler, and Back by `PopScope` and the `Navigator`. Remove it together
+  /// with the argument at an upstream-sync window.
   final VoidCallback? onBack;
   final Widget child;
 
@@ -2213,11 +2217,21 @@ class _TvNavigationState extends State<TvNavigation>
     'tvRouteWillHandlePop',
   );
 
+  /// The mounted [TvNavigation]'s state. A persistent frame callback can't be
+  /// removed, so one static callback is installed per process and forwards here
+  /// instead of every state that ever existed registering (and staying
+  /// reachable through) its own.
+  static _TvNavigationState? _mounted;
+  static bool _frameCallbackInstalled = false;
+
+  static void _onPersistentFrame(Duration timeStamp) =>
+      _mounted?._syncFocusRectAfterLayout(timeStamp);
+
   final GlobalKey _key = GlobalKey();
   final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
   late final Map<Type, Action<Intent>> _actions = <Type, Action<Intent>>{
     DirectionalFocusIntent: _TvDirectionalFocusAction(_policy),
-    _TvVerticalFocusIntent: _TvVerticalFocusAction(_policy),
+    _TvArrowFocusIntent: _TvArrowFocusAction(_policy),
   };
   final ValueNotifier<Rect?> _rectNotifier = ValueNotifier<Rect?>(null);
   final FocusNode _layerAnchor = FocusNode(
@@ -2264,9 +2278,11 @@ class _TvNavigationState extends State<TvNavigation>
           FocusHighlightStrategy.alwaysTraditional;
     }
     _TvFocusLayerStack.current = _layers;
-    WidgetsBinding.instance.addPersistentFrameCallback(
-      _syncFocusRectAfterLayout,
-    );
+    _mounted = this;
+    if (!_frameCallbackInstalled) {
+      _frameCallbackInstalled = true;
+      WidgetsBinding.instance.addPersistentFrameCallback(_onPersistentFrame);
+    }
   }
 
   @override
@@ -2277,6 +2293,15 @@ class _TvNavigationState extends State<TvNavigation>
     if (identical(_TvFocusLayerStack.current, _layers)) {
       _TvFocusLayerStack.current = null;
     }
+    // A replacement state mounts (initState) before this one is disposed, so
+    // only clear the slot if it still points here.
+    if (identical(_mounted, this)) _mounted = null;
+    _trackedBottomSheetLayouts.clear();
+    _knownBottomSheetLayouts.clear();
+    _lastFocusedNode = null;
+    _pendingInvalidNode = null;
+    _lastSelectTriggerNode = null;
+    _lastTargetBox = null;
     _layerAnchor.dispose();
     _rectNotifier.dispose();
     super.dispose();
@@ -3416,19 +3441,19 @@ class _TvNavigationState extends State<TvNavigation>
         shortcuts: const <ShortcutActivator, Intent>{
           SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
           SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowUp): _TvVerticalFocusIntent(
+          SingleActivator(LogicalKeyboardKey.arrowUp): _TvArrowFocusIntent(
             TraversalDirection.up,
           ),
           SingleActivator(LogicalKeyboardKey.arrowDown):
-              _TvVerticalFocusIntent(
+              _TvArrowFocusIntent(
                 TraversalDirection.down,
               ),
           SingleActivator(LogicalKeyboardKey.arrowLeft):
-              _TvVerticalFocusIntent(
+              _TvArrowFocusIntent(
                 TraversalDirection.left,
               ),
           SingleActivator(LogicalKeyboardKey.arrowRight):
-              _TvVerticalFocusIntent(
+              _TvArrowFocusIntent(
                 TraversalDirection.right,
               ),
         },
@@ -3513,8 +3538,9 @@ class _TvFocusRingPainter extends CustomPainter {
 /// Route observer that:
 /// 1. Memorizes the last focused [FocusNode] for each [Route] before pushing a
 ///    new route or dialog and restores it when popping back.
-/// 2. Automatically switches `/loginPage` to tab index `2` (`扫码登录`) on TV
-///    via `Get.find<LoginPageController>()` without touching `lib/pages/login/`.
+/// 2. Automatically switches `/loginPage` to the `扫码登录` tab
+///    ([loginQrTabIndex]) on TV via `Get.find<LoginPageController>()` without
+///    touching `lib/pages/login/`.
 class TvNavigationObserver extends NavigatorObserver {
   static final Expando<FocusNode> _savedFocusByRoute = Expando<FocusNode>(
     'tvSavedFocusByRoute',
@@ -3531,12 +3557,18 @@ class TvNavigationObserver extends NavigatorObserver {
     }
   }
 
+  /// Index of the `扫码` tab in [LoginPageController.tabController]
+  /// (`密码` / `短信` / `扫码` / `Cookie`). The controller's own QR polling keys
+  /// on the same index; a test reads both upstream files and fails if the tab
+  /// order or that index moves.
+  static const int loginQrTabIndex = 2;
+
   static void _switchLoginPageToQrTab({int remainingRetries = 2}) {
     if (!TvPlatform.isTv) return;
     if (Get.isRegistered<LoginPageController>()) {
       final LoginPageController ctr = Get.find<LoginPageController>();
-      if (ctr.tabController.index != 2) {
-        ctr.tabController.animateTo(2);
+      if (ctr.tabController.index != loginQrTabIndex) {
+        ctr.tabController.animateTo(loginQrTabIndex);
       }
       return;
     }

@@ -42,7 +42,6 @@ void main() {
 
     test('seeds TV-optimal defaults on first run and is idempotent', () async {
       await TvPlatform.seedTvDefaultsToBox(box);
-      expect(box.get('tvDefaultsSeededV1'), isTrue);
       expect(box.get(SettingBoxKey.horizontalScreen), isTrue);
       expect(box.get(SettingBoxKey.useSideBar), isTrue);
       expect(box.get(SettingBoxKey.enableVerticalExpand), isFalse);
@@ -58,6 +57,7 @@ void main() {
       expect(box.get(SettingBoxKey.showFsScreenshotBtn), isFalse);
       expect(box.get(SettingBoxKey.showFsLockBtn), isFalse);
       expect(box.get(SettingBoxKey.themeMode), ThemeType.dark.index);
+      expect(box.get(SettingBoxKey.keyboardControl), isTrue);
 
       // Modify a key and verify second invocation does not overwrite it.
       await box.put(SettingBoxKey.useSideBar, false);
@@ -68,11 +68,37 @@ void main() {
     test('preserves pre-existing user preferences when seeding', () async {
       await box.put(SettingBoxKey.defaultTextScale, 1.35);
       await box.put(SettingBoxKey.enableShowDanmaku, false);
+      await box.put(SettingBoxKey.keyboardControl, false);
 
       await TvPlatform.seedTvDefaultsToBox(box);
       expect(box.get(SettingBoxKey.defaultTextScale), 1.35);
       expect(box.get(SettingBoxKey.enableShowDanmaku), isFalse);
+      expect(box.get(SettingBoxKey.keyboardControl), isFalse);
       expect(box.get(SettingBoxKey.useSideBar), isTrue);
+    });
+
+    test('writes only the seeded keys, and a later launch refills only missing ones', () async {
+      await TvPlatform.seedTvDefaultsToBox(box);
+      expect(box.keys.toSet(), TvPlatform.defaultTvSettings.keys.toSet());
+
+      // Seeding fills missing keys on every launch: a key that disappeared
+      // (a settings reset) comes back, the rest stays as it is.
+      await box.delete(SettingBoxKey.useSideBar);
+      await box.put(SettingBoxKey.defaultTextScale, 1.0);
+      await TvPlatform.seedTvDefaultsToBox(box);
+      expect(box.get(SettingBoxKey.useSideBar), isTrue);
+      expect(box.get(SettingBoxKey.defaultTextScale), 1.0);
+    });
+
+    test('every seeded key is a real SettingBoxKey, not a dead raw string', () {
+      final String keys = File('lib/utils/storage_key.dart').readAsStringSync();
+      for (final String key in TvPlatform.defaultTvSettings.keys) {
+        expect(
+          keys,
+          contains("'$key'"),
+          reason: '"$key" is not declared in SettingBoxKey',
+        );
+      }
     });
   });
 
@@ -5813,6 +5839,173 @@ void main() {
       },
     );
   });
+
+  group('TvNavigation lifecycle (M10, R14)', () {
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    // A focused button that moves without focus changing, so the ring can only
+    // follow it through the per-frame sync.
+    Widget movingButton(FocusNode node, ValueNotifier<double> left) =>
+        TvNavigation(
+          child: Scaffold(
+            body: ValueListenableBuilder<double>(
+              valueListenable: left,
+              builder: (BuildContext context, double x, Widget? _) => Stack(
+                children: [
+                  Positioned(
+                    left: x,
+                    top: 100,
+                    width: 200,
+                    height: 80,
+                    child: ElevatedButton(
+                      focusNode: node,
+                      autofocus: true,
+                      onPressed: () {},
+                      child: const Text('moving'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+    testWidgets(
+      'a TvNavigation mounted after another was disposed still tracks its focused node',
+      (tester) async {
+        final first = FocusNode(debugLabel: 'first');
+        final second = FocusNode(debugLabel: 'second');
+        final left = ValueNotifier<double>(100);
+        addTearDown(() {
+          first.dispose();
+          second.dispose();
+          left.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(home: movingButton(first, left)),
+        );
+        await tester.pumpAndSettle();
+        expect(first.hasPrimaryFocus, isTrue);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+
+        await tester.pumpWidget(
+          MaterialApp(home: movingButton(second, left)),
+        );
+        await tester.pumpAndSettle();
+        expect(second.hasPrimaryFocus, isTrue);
+        _expectRingOn(tester, second);
+
+        left.value = 400;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        _expectRingOn(tester, second);
+      },
+    );
+
+    testWidgets(
+      'a TvNavigation replaced in a single frame hands the frame callback to the new one',
+      (tester) async {
+        final first = FocusNode(debugLabel: 'first');
+        final second = FocusNode(debugLabel: 'second');
+        final left = ValueNotifier<double>(100);
+        addTearDown(() {
+          first.dispose();
+          second.dispose();
+          left.dispose();
+        });
+
+        // The new state's initState runs before the old one is disposed, so the
+        // old state must not clear the slot the new one just took.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: KeyedSubtree(
+              key: const ValueKey<int>(1),
+              child: movingButton(first, left),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(first.hasPrimaryFocus, isTrue);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: KeyedSubtree(
+              key: const ValueKey<int>(2),
+              child: movingButton(second, left),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(second.hasPrimaryFocus, isTrue);
+        _expectRingOn(tester, second);
+
+        left.value = 400;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        _expectRingOn(tester, second);
+      },
+    );
+  });
+
+  group('login page QR tab (M10, R20)', () {
+    test(
+      '扫码 sits at TvNavigationObserver.loginQrTabIndex in both tab bars, and the controller polls the same index',
+      () {
+        final String view = File('lib/pages/login/view.dart').readAsStringSync();
+        final String controller = File(
+          'lib/pages/login/controller.dart',
+        ).readAsStringSync();
+
+        // One block per tab bar: the landscape app-bar one, then the portrait
+        // one. Each lists the labels in tab order.
+        final List<RegExpMatch> bars = RegExp(
+          r'tabs:\s*const\s*\[(.*?)\n\s*\],',
+          dotAll: true,
+        ).allMatches(view).toList();
+        expect(bars, hasLength(2), reason: 'login tab bars were restructured');
+        for (final RegExpMatch bar in bars) {
+          final List<String> labels = RegExp(
+            r"(?:text:\s*|Text\(\s*)'\s*([^']+?)\s*'",
+          ).allMatches(bar.group(1)!).map((RegExpMatch m) => m.group(1)!).toList();
+          expect(labels, ['密码', '短信', '扫码', 'Cookie']);
+          expect(labels[TvNavigationObserver.loginQrTabIndex], '扫码');
+        }
+
+        expect(controller, contains('TabController(length: 4'));
+        expect(
+          controller,
+          contains('tabController.index != ${TvNavigationObserver.loginQrTabIndex}'),
+        );
+      },
+    );
+  });
+}
+
+// The ring is the last CustomPaint under TvNavigation; its painter exposes the
+// rect it draws.
+void _expectRingOn(WidgetTester tester, FocusNode node) {
+  final Finder ring = find
+      .descendant(
+        of: find.byType(TvNavigation),
+        matching: find.byType(CustomPaint),
+      )
+      .last;
+  final Rect? rect =
+      (tester.widget<CustomPaint>(ring).painter! as dynamic).rect as Rect?;
+  expect(rect, isNotNull, reason: 'no focus ring is shown');
+  expect(rect!.left, closeTo(node.rect.left, 0.5));
+  expect(rect.top, closeTo(node.rect.top, 0.5));
+  expect(rect.right, closeTo(node.rect.right, 0.5));
+  expect(rect.bottom, closeTo(node.rect.bottom, 0.5));
 }
 
 class _KeepAliveTestPage extends StatefulWidget {

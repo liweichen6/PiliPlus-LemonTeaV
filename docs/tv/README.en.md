@@ -14,6 +14,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 4. **Universal APK & Side-by-Side Coexistence**:
    - **Application ID**: `com.lemontea.piliplus.tv` (Launcher label: **`PiliPlus TV`**) — coexists side-by-side with official PiliPlus (`com.example.piliplus`) and LemonTea PiliPlus (`com.lemontea.piliplus`).
    - **Adaptive Runtime**: Automatically activates the TV control layer on Android TV / Leanback devices (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `--dart-define=PILI_FORCE_TV=true`) while behaving identically to upstream touch PiliPlus on phones and tablets.
+   - **TV Defaults**: On every TV launch `TvPlatform` fills in TV-friendly preferences for keys that are **not set yet** (landscape layout, side rail, dark theme, `1.2x` text scale, ...) and never overwrites a value you chose. This includes **启用键盘控制** (`keyboardControl`): the player HUD and the split-screen Quick Strip hang off the player page's key handler, which upstream builds only while that switch is on, so turning it off on a TV removes the HUD and the Quick Strip. Keep it on.
 
 ---
 

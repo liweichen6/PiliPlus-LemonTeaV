@@ -14,6 +14,7 @@
 4. **通用安装包与多版本并存（Universal APK & Side-by-Side Coexistence）**：
    - **独立包名**：`com.lemontea.piliplus.tv`（桌面名称：**`PiliPlus TV`**），可与原版 PiliPlus（`com.example.piliplus`）及海外加速版（`com.lemontea.piliplus`）在同一台设备上并存安装。
    - **自适应运行**：在 Android TV / Leanback 设备（系统上报 `UI_MODE_TYPE_TELEVISION` 或 `FEATURE_LEANBACK`，或编译注入 `--dart-define=PILI_FORCE_TV=true`）上自动开启 TV 控制层；在安卓手机与平板上自动保持原版触控体验。
+   - **电视端默认设置**：每次在电视端启动，`TvPlatform` 只为**尚未设置**的项补写电视友好默认值（横屏、侧边栏、深色模式、字体 `1.2x` 等），不会覆盖你已修改的值。其中包括「启用键盘控制」（`keyboardControl`）：播放器 HUD 与分屏快捷控制条挂在播放页的按键处理上，而上游仅在该开关开启时才构建它，因此在电视端手动关闭它会让 HUD 与 Quick Strip 一并消失，请保持开启。
 
 ---
 

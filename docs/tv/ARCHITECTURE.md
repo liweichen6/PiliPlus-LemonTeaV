@@ -9,7 +9,7 @@ Earlier TV porting attempts scattered inline TV modifications across **50+ upstr
 ```mermaid
 flowchart TD
     subgraph Tier1["Tier 1: Self-Contained TV Module (lib/tv/* & TvBridge.kt) — 0 Upstream Conflicts"]
-        T1A["lib/tv/tv_platform.dart<br/>• Leanback & TV UI mode detection via TvBridge<br/>• First-launch Hive TV default seeding<br/>• TextField soft-keyboard gate (open only on OK/Enter)"]
+        T1A["lib/tv/tv_platform.dart<br/>• Leanback & TV UI mode detection via TvBridge<br/>• Hive TV default seeding (fills missing keys at each launch)<br/>• TextField soft-keyboard gate (open only on OK/Enter)"]
         T1B["lib/tv/tv_navigation.dart<br/>• TvFocusTraversalPolicy (2D spatial scoring, half-plane & offscreen PageView culling)<br/>• MediaQuery inner-wrapper unwrapping & showMenu sibling focus promotion<br/>• Zero-allocation O(D) stationary cache & ValueListenable focus ring<br/>• TvNavigationObserver (route focus memory + Login QR auto-tab)"]
         T1C["lib/tv/tv_player_hud.dart<br/>• 10-foot OSD overlay & D-pad transport controls<br/>• GetX controller auto-discovery (VideoDetail / PGC / Live)<br/>• Virtual seek accumulator (1x->2x->3x) & Hold-Select 3.0x speed<br/>• PopScope Android back key route interception"]
         T1D["android/app/.../TvBridge.kt<br/>• WeakReference<Activity> memory safety<br/>• Leanback & touch capability queries<br/>• Soft keyboard show/hide via InputMethodManager"]
