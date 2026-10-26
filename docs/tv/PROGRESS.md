@@ -95,8 +95,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart` (`eef4f1f7e`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` (`eef4f1f7e`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ✅ Done | Android APK / `<vm-tv>` (`3c940cf95`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Adapt M9 Inline Sheets → `_InlineSheetFocusLayer` + Per-Frame Sheet Cost (`R13`, `R15`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`dcf925548`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`) — **migration of M9 onto the stack deferred** | ✅ Done (`R13`, `R15`) | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ⏳ Planned | `lib/tv/*`, `test/tv_*.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ⏳ Planned | `docs/tv/*`, `README*.md` |
 
@@ -729,3 +729,21 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `78/78` passed (`52` navigation, up from `51`, and `26` player HUD).
   * Not yet run on a TV device: batched into the final live pass after `M10.9`.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.9`): Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`)
+* **Status**: ✅ Completed for `R13` / `R15`. The migration of the M9 sheet bookkeeping onto the focus-layer stack, which `M10.9` also listed, is deferred (below).
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] test/tv_navigation_test.dart` (one new test, `_VisitCounter` helpers; no existing test touched)
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **`R13`, measured**: with a frame scheduled on every pump, a zero-focusable sheet's subtree was walked `60` times in `60` frames before and `4` after. The M10.2 review's static claim holds; it only reproduces when frames are actually produced, as they are during playback.
+* **Changes** (details in [`PLAN.md` → M10.9](./PLAN.md)): empty-probe guard (12 frames or a focus-tree size change); per-frame sheet inspection gated on sheet state; route poll from a per-scope cached route with no dependency on the focused widget (also used by `TvNavigationObserver.rememberFocusedNode`); `FocusScope.of` replaced by a no-dependency `_scopeOf` in the sheet code; typed `StandardBottomSheet` read (`R15`).
+* **Test finding worth keeping**: `tester.pump` only runs a frame when one is scheduled, so tests of per-frame cost need something that keeps frames coming (a running progress indicator), otherwise they pass for the wrong reason.
+* **Deferred, with reasons** (`PLAN.md` → M10.9): the `_InlineSheetFocusLayer` migration. Sheet occlusion is per slot, focus handling is non-modal (`userMovedFocus`), restoration happens when a sheet starts closing, and discovery is event-driven, so it needs `isClosing`, a `userMovedFocus` flag and slot-scoped occlusion on the layer interface and would rewrite the most timing-sensitive code for a structural gain only.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `79/79` passed (`53` navigation, up from `52`, and `26` player HUD). All M9 tests pass with unchanged assertions.
+  * Not yet run on a TV device: batched into the final live pass.

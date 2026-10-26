@@ -30,6 +30,33 @@ import 'package:material_ui/material_ui.dart';
 
 part 'tv_focus_layers.dart';
 
+/// Focus scope of [context] without registering an inherited dependency.
+/// `FocusScope.of` would rebuild [context]'s element on every focus change in
+/// that scope.
+FocusScopeNode? _scopeOf(BuildContext context) =>
+    Focus.maybeOf(context, scopeOk: true, createDependency: false)?.nearestScope;
+
+final Expando<ModalRoute<dynamic>> _routeOfScope = Expando<ModalRoute<dynamic>>(
+  'tvRouteOfScope',
+);
+
+/// The route that owns [node]'s focus scope, looked up once per scope.
+/// `ModalRoute.of(node.context)` registers an inherited dependency on the
+/// focused widget itself, so that widget rebuilt whenever its route's modal
+/// state changed. Asking the scope's own context once puts the dependency on
+/// the scope, which holds the same child and rebuilds nothing below it.
+ModalRoute<dynamic>? _routeOfFocusNode(FocusNode node) {
+  final FocusScopeNode? scope = node.nearestScope;
+  if (scope == null) return null;
+  final ModalRoute<dynamic>? cached = _routeOfScope[scope];
+  if (cached != null) return cached;
+  final BuildContext? context = scope.context;
+  if (context == null || !context.mounted) return null;
+  final ModalRoute<dynamic>? route = ModalRoute.of(context);
+  if (route != null) _routeOfScope[scope] = route;
+  return route;
+}
+
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
 ///    chain so collapsed (`AnimatedHeight`) or offscreen (`AppBarAni`) widgets
@@ -87,17 +114,11 @@ class _TvTraversalCache {
   final Map<ScrollableState, Rect?> _scrollableRects =
       <ScrollableState, Rect?>{};
 
-  static AnimationController? _bottomSheetAnimationController(Widget? sheet) {
-    if (sheet == null) return null;
-    try {
-      final dynamic candidate = sheet;
-      final dynamic controller = candidate.animationController;
-      if (controller is AnimationController) {
-        return controller;
-      }
-    } catch (_) {}
-    return null;
-  }
+  /// Every sheet `MiniScaffold` puts in a `BottomSheetLayout` is a
+  /// [StandardBottomSheet]. A typed read means an upstream rename fails to
+  /// compile, instead of every sheet silently counting as open.
+  static AnimationController? _bottomSheetAnimationController(Widget? sheet) =>
+      sheet is StandardBottomSheet ? sheet.animationController : null;
 
   static bool _isBottomSheetClosing(Widget? sheet) {
     if (sheet == null) return true;
@@ -2169,11 +2190,23 @@ class _MiniScaffoldSheetRecord {
   FocusNode? savedFocusNode;
   bool promoted = false;
   bool userMovedFocus = false;
+
+  /// Focus-tree size at the last probe that found nothing to promote into, and
+  /// how many frames that result may still be trusted. Probing walks the whole
+  /// sheet subtree, so a sheet with nothing focusable (an image preview) is
+  /// not re-walked every frame: it is re-probed when focus nodes attach or
+  /// detach, and otherwise now and then.
+  int? emptyProbeTreeSize;
+  int emptyProbeFramesLeft = 0;
 }
 
 class _TvNavigationState extends State<TvNavigation>
     with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
+
+  /// Frames a probe that found nothing to promote into stays trusted while the
+  /// focus tree does not change (about 200 ms at 60 Hz).
+  static const int _kEmptySheetProbeFrames = 12;
   static final Expando<_MiniScaffoldSheetRecord> _bottomSheetRecords =
       Expando<_MiniScaffoldSheetRecord>('tvBottomSheetRecords');
   static final Expando<bool> _routeWillHandlePop = Expando<bool>(
@@ -2322,6 +2355,38 @@ class _TvNavigationState extends State<TvNavigation>
     }
   }
 
+  /// Notes when the route of [primary] starts handling pops itself, which is
+  /// what a sheet does by registering a local history entry, and schedules a
+  /// scan for the sheet. A cached route and a boolean: cheap enough for every
+  /// frame.
+  void _pollRouteWillHandlePop(FocusNode? primary) {
+    if (primary == null) return;
+    final ModalRoute<dynamic>? route = _routeOfFocusNode(primary);
+    if (route == null) return;
+    final bool prevWillPop = _routeWillHandlePop[route] ?? false;
+    final bool currWillPop = route.willHandlePopInternally;
+    _routeWillHandlePop[route] = currWillPop;
+    if (!prevWillPop && currWillPop && _pendingSelectSheetCheckFrames <= 0) {
+      _pendingSelectSheetCheckFrames = 1;
+    }
+  }
+
+  /// Whether a known `BottomSheetLayout` has an open sheet that has not been
+  /// registered yet.
+  bool _hasUnregisteredOpenSheet() {
+    for (int i = 0; i < _knownBottomSheetLayouts.length; i++) {
+      final Element el = _knownBottomSheetLayouts[i];
+      if (!el.mounted || el.widget is! BottomSheetLayout) continue;
+      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
+      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+        continue;
+      }
+      final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      if (rec == null || !identical(rec.sheetWidget, sheet)) return true;
+    }
+    return false;
+  }
+
   void _captureBottomSheetTransitions(
     FocusNode? primary,
     _BottomSheetNodeStatus status,
@@ -2368,22 +2433,6 @@ class _TvNavigationState extends State<TvNavigation>
         ? primary
         : primary?.nearestScope;
     final BuildContext? scopeCtx = scope?.context;
-    final BuildContext? routeLookupCtx =
-        (primary != null && primary is! FocusScopeNode
-            ? primary.context
-            : null) ??
-        scopeCtx;
-    if (routeLookupCtx != null && routeLookupCtx.mounted) {
-      final ModalRoute<dynamic>? route = ModalRoute.of(routeLookupCtx);
-      if (route != null) {
-        final bool prevWillPop = _routeWillHandlePop[route] ?? false;
-        final bool currWillPop = route.willHandlePopInternally;
-        _routeWillHandlePop[route] = currWillPop;
-        if (!prevWillPop && currWillPop && _pendingSelectSheetCheckFrames <= 0) {
-          _pendingSelectSheetCheckFrames = 1;
-        }
-      }
-    }
 
     if (_pendingSelectSheetCheckFrames > 0) {
       _pendingSelectSheetCheckFrames--;
@@ -2471,8 +2520,10 @@ class _TvNavigationState extends State<TvNavigation>
     if (!layoutEl.mounted || layoutEl.widget is! BottomSheetLayout) {
       return false;
     }
-    final FocusScopeNode sheetScope = FocusScope.of(layoutEl);
-    if (_isScopeInactive(sheetScope) || !sheetScope.canRequestFocus) {
+    final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
+    if (sheetScope == null ||
+        _isScopeInactive(sheetScope) ||
+        !sheetScope.canRequestFocus) {
       return false;
     }
     final Element? sheetSlot =
@@ -2501,7 +2552,7 @@ class _TvNavigationState extends State<TvNavigation>
           (rec.promoted || rec.userMovedFocus)) {
         continue;
       }
-      if (FocusScope.of(el) == scope) {
+      if (_scopeOf(el) == scope) {
         return true;
       }
     }
@@ -2522,10 +2573,17 @@ class _TvNavigationState extends State<TvNavigation>
         return true;
       }
       if (!rec.promoted && !rec.userMovedFocus) {
-        if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet) ||
-            _canPromoteSheet(el)) {
-          return true;
+        if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet)) return true;
+        final int treeSize = _scopeOf(el)?.descendants.length ?? -1;
+        if (rec.emptyProbeTreeSize == treeSize &&
+            rec.emptyProbeFramesLeft > 0) {
+          rec.emptyProbeFramesLeft--;
+          continue;
         }
+        if (_canPromoteSheet(el)) return true;
+        rec
+          ..emptyProbeTreeSize = treeSize
+          ..emptyProbeFramesLeft = _kEmptySheetProbeFrames;
       }
     }
     return false;
@@ -2552,6 +2610,7 @@ class _TvNavigationState extends State<TvNavigation>
   bool _reconcileBottomSheets() {
     if (!mounted || !TvPlatform.isTv) return false;
     final FocusNode? primary = FocusManager.instance.primaryFocus;
+    _pollRouteWillHandlePop(primary);
     final _BottomSheetNodeStatus status =
         _TvTraversalCache._inspectBottomSheetNode(primary);
     _captureBottomSheetTransitions(primary, status);
@@ -2601,8 +2660,10 @@ class _TvNavigationState extends State<TvNavigation>
           _updateRect(_computeFocusedRect(savedNode));
           return true;
         }
-        final FocusScopeNode sheetScope = FocusScope.of(layoutEl);
-        if (!_isScopeInactive(sheetScope) && sheetScope.canRequestFocus) {
+        final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
+        if (sheetScope != null &&
+            !_isScopeInactive(sheetScope) &&
+            sheetScope.canRequestFocus) {
           final Element? bodySlot =
               TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
                 layoutEl,
@@ -2643,8 +2704,10 @@ class _TvNavigationState extends State<TvNavigation>
       }
 
       if (!activeRecord.promoted && !activeRecord.userMovedFocus) {
-        final FocusScopeNode sheetScope = FocusScope.of(layoutEl);
-        if (_isScopeInactive(sheetScope) || !sheetScope.canRequestFocus) {
+        final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
+        if (sheetScope == null ||
+            _isScopeInactive(sheetScope) ||
+            !sheetScope.canRequestFocus) {
           continue;
         }
         final Element? sheetSlot =
@@ -2909,10 +2972,19 @@ class _TvNavigationState extends State<TvNavigation>
       _lastTargetBox = null;
     }
 
-    final _BottomSheetNodeStatus sheetStatus =
-        _TvTraversalCache._inspectBottomSheetNode(node);
-    _captureBottomSheetTransitions(node, sheetStatus);
-    if (_hasPendingBottomSheetWork(sheetStatus)) {
+    // Inline-sheet bookkeeping walks the focused node's ancestors, so it runs
+    // only when there is a sheet to track, a Select may have opened one, or the
+    // route just began handling pops itself (a sheet registered with it).
+    _pollRouteWillHandlePop(node);
+    final bool sheetsInPlay =
+        _trackedBottomSheetLayouts.isNotEmpty ||
+        _pendingSelectSheetCheckFrames > 0 ||
+        _hasUnregisteredOpenSheet();
+    final _BottomSheetNodeStatus sheetStatus = sheetsInPlay
+        ? _TvTraversalCache._inspectBottomSheetNode(node)
+        : const _BottomSheetNodeStatus();
+    if (sheetsInPlay) _captureBottomSheetTransitions(node, sheetStatus);
+    if (sheetsInPlay && _hasPendingBottomSheetWork(sheetStatus)) {
       _lastFocusedNode = null;
       _lastTargetBox = null;
       if (!_focusSyncScheduled) {
@@ -3453,7 +3525,7 @@ class TvNavigationObserver extends NavigatorObserver {
     if (node is FocusScopeNode) return;
     final BuildContext? context = node.context;
     if (context == null || !context.mounted) return;
-    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    final ModalRoute<dynamic>? route = _routeOfFocusNode(node);
     if (route != null) {
       _savedFocusByRoute[route] = node;
     }

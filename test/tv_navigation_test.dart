@@ -5083,6 +5083,122 @@ void main() {
     );
   });
 
+  group('inline sheet bookkeeping cost (M10, R13)', () {
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    testWidgets(
+      'a sheet with nothing focusable is not re-walked every frame while it stays open',
+      (tester) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final miniScaffoldKey = GlobalKey<MiniScaffoldState>();
+        final leftNode = FocusNode(debugLabel: 'left');
+        final counter = _VisitCounter();
+        addTearDown(leftNode.dispose);
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: 560,
+                    height: 540,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          focusNode: leftNode,
+                          onPressed: () {},
+                          child: const Text('全屏'),
+                        ),
+                        // Stands in for the video texture and danmaku: keeps a
+                        // frame scheduled, as in a playing player.
+                        const SizedBox(
+                          width: 200,
+                          child: LinearProgressIndicator(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: miniScaffoldKey,
+                      body: Center(
+                        child: GestureDetector(
+                          onTap: () {
+                            miniScaffoldKey.currentState!.showBottomSheet(
+                              enableDrag: false,
+                              constraints: const BoxConstraints(),
+                              (context) => _VisitCountingWidget(
+                                counter: counter,
+                                child: const ColoredBox(
+                                  color: Colors.black,
+                                  child: Center(child: Text('Zero Focusables')),
+                                ),
+                              ),
+                            );
+                          },
+                          child: const SizedBox(
+                            width: 180,
+                            height: 60,
+                            child: Center(child: Text('Image Thumbnail')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump();
+        expect(find.text('Zero Focusables'), findsOneWidget);
+
+        // Sixty idle frames with the sheet open. Probing the sheet walks its
+        // whole subtree, so the walks are counted through the sheet's content.
+        counter.visits = 0;
+        for (int i = 0; i < 60; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(
+          counter.visits,
+          lessThan(10),
+          reason: 'the sheet subtree was walked ${counter.visits} times in 60 frames',
+        );
+        expect(leftNode.hasPrimaryFocus, isFalse);
+
+        // Back still closes the sheet.
+        await tester.binding.handlePopRoute();
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.text('Zero Focusables'), findsNothing);
+      },
+    );
+  });
+
   group('route focus layers (M10: popup routes in the shared stack)', () {
     setUp(() {
       TvPlatform.setTvModeForTesting(true);
@@ -5743,5 +5859,33 @@ class _CallCountingWidget extends SingleChildRenderObjectWidget {
     final box = _CallCountingRenderBox();
     onRenderBoxCreated(box);
     return box;
+  }
+}
+
+/// Counts how often something walks the element tree through it.
+class _VisitCounter {
+  int visits = 0;
+}
+
+class _VisitCountingWidget extends StatelessWidget {
+  const _VisitCountingWidget({required this.counter, required this.child});
+
+  final _VisitCounter counter;
+  final Widget child;
+
+  @override
+  StatelessElement createElement() => _VisitCountingElement(this);
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+class _VisitCountingElement extends StatelessElement {
+  _VisitCountingElement(_VisitCountingWidget super.widget);
+
+  @override
+  void visitChildren(ElementVisitor visitor) {
+    (widget as _VisitCountingWidget).counter.visits++;
+    super.visitChildren(visitor);
   }
 }
