@@ -11,6 +11,7 @@ import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
@@ -186,10 +187,18 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return null;
   }
 
+  /// `PlPlayerController.playerStatus` is a plain field that media_kit's
+  /// `playing` stream updates after a toggle was requested, so the Play/Pause
+  /// label can only be refreshed from this callback.
+  void _onPlayerStatusChanged(PlayerStatus status) {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _bindFullScreenListener();
+    _pl.addStatusLister(_onPlayerStatusChanged);
     // Suppress upstream touch controls when fullscreen or TV HUD is active
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -205,12 +214,15 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
       _cancelSelectHold();
       _fullScreenSub?.cancel();
       _bindFullScreenListener();
+      oldWidget.plPlayerController.removeStatusLister(_onPlayerStatusChanged);
+      _pl.addStatusLister(_onPlayerStatusChanged);
     }
   }
 
   @override
   void dispose() {
     _cancelSelectHold();
+    _pl.removeStatusLister(_onPlayerStatusChanged);
     _fullScreenSub?.cancel();
     _autoHideTimer?.cancel();
     _seekPreviewTimer?.cancel();
@@ -316,8 +328,9 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     _virtualSeekTarget = null;
     if (_pl.isLive || (widget.canPlay?.call() ?? true)) {
       if (_hasPlayer) {
+        // No setState here: the player reports its new state later and
+        // _onPlayerStatusChanged rebuilds the label then.
         _pl.onDoubleTapCenter();
-        if (mounted) setState(() {});
       }
     }
   }
@@ -379,10 +392,18 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
     // Media transport keys work anywhere on the player page
     if (event is KeyDownEvent) {
-      if (key == LogicalKeyboardKey.mediaPlayPause ||
-          key == LogicalKeyboardKey.mediaPlay ||
-          key == LogicalKeyboardKey.mediaPause) {
+      // Remotes and HDMI-CEC may send dedicated Play / Pause keys: those must
+      // be idempotent, only PlayPause toggles.
+      if (key == LogicalKeyboardKey.mediaPlayPause) {
         _togglePlayPause();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.mediaPlay) {
+        if (!_pl.playerStatus.isPlaying) _togglePlayPause();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.mediaPause) {
+        if (_pl.playerStatus.isPlaying) _togglePlayPause();
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.mediaFastForward) {
@@ -1490,6 +1511,7 @@ class _TvHudPillButton extends StatefulWidget {
     this.autofocus = false,
     this.compact = false,
     this.active = false,
+    this.alignment,
     this.icon,
     this.onKeyEvent,
     this.onFocusLost,
@@ -1501,6 +1523,10 @@ class _TvHudPillButton extends StatefulWidget {
   final bool autofocus;
   final bool compact;
   final bool active;
+
+  /// Aligns the label inside a pill that is laid out with tight constraints,
+  /// such as the fixed-height rows of the option list dialog.
+  final AlignmentGeometry? alignment;
   final IconData? icon;
   final FocusOnKeyEventCallback? onKeyEvent;
   final VoidCallback? onFocusLost;
@@ -1536,50 +1562,58 @@ class _TvHudPillButtonState extends State<_TvHudPillButton> {
         }
         return KeyEventResult.ignored;
       },
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.compact ? 12 : 16,
-            vertical: widget.compact ? 7 : 10,
-          ),
-          decoration: BoxDecoration(
-            color: _focused
-                ? primary
-                : widget.active
-                ? primary.withValues(alpha: 0.35)
-                : const Color(0x33FFFFFF),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: _focused
-                  ? Colors.white
-                  : widget.active
-                  ? primary
-                  : Colors.white24,
-              width: _focused ? 2.2 : 1.2,
+      // Pointer taps only. In directional mode the patched GestureDetector adds
+      // a Focus of its own that D-pad traversal prefers over the Focus above
+      // and whose key-down handler runs first, which would fire onTap on key
+      // down and starve the Hold-Select handler (R8).
+      child: ExcludeFocus(
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            alignment: widget.alignment,
+            padding: EdgeInsets.symmetric(
+              horizontal: widget.compact ? 12 : 16,
+              vertical: widget.compact ? 7 : 10,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 6,
-            children: [
-              if (widget.icon != null)
-                Icon(
-                  widget.icon,
-                  size: widget.compact ? 16 : 18,
-                  color: Colors.white,
-                ),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: widget.compact ? 13 : 14,
-                  fontWeight:
-                      _focused || widget.active ? FontWeight.w700 : FontWeight.w500,
-                ),
+            decoration: BoxDecoration(
+              color: _focused
+                  ? primary
+                  : widget.active
+                  ? primary.withValues(alpha: 0.35)
+                  : const Color(0x33FFFFFF),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: _focused
+                    ? Colors.white
+                    : widget.active
+                    ? primary
+                    : Colors.white24,
+                width: _focused ? 2.2 : 1.2,
               ),
-            ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 6,
+              children: [
+                if (widget.icon != null)
+                  Icon(
+                    widget.icon,
+                    size: widget.compact ? 16 : 18,
+                    color: Colors.white,
+                  ),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: widget.compact ? 13 : 14,
+                    fontWeight: _focused || widget.active
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1721,7 +1755,7 @@ class _TvDialogOptionItem {
   final VoidCallback onSelect;
 }
 
-class _TvOptionListDialog extends StatelessWidget {
+class _TvOptionListDialog extends StatefulWidget {
   const _TvOptionListDialog({
     required this.title,
     required this.items,
@@ -1731,14 +1765,56 @@ class _TvOptionListDialog extends StatelessWidget {
   final List<_TvDialogOptionItem> items;
 
   @override
+  State<_TvOptionListDialog> createState() => _TvOptionListDialogState();
+}
+
+class _TvOptionListDialogState extends State<_TvOptionListDialog> {
+  /// Fixed row height (pill plus a 6 px gap). A lazy list only builds the rows
+  /// near its viewport, so the current option's `autofocus` can only fire if
+  /// the list starts scrolled to it, which needs known row positions.
+  static const double _kItemExtent = 52.0;
+  static const double _kMaxListHeight = 420.0;
+
+  late final double _listHeight = math.min(
+    widget.items.length * _kItemExtent,
+    _kMaxListHeight,
+  );
+
+  late final ScrollController _scrollController = ScrollController(
+    initialScrollOffset: _initialScrollOffset(),
+  );
+
+  int get _autofocusIndex {
+    final int selectedIndex = widget.items.indexWhere((e) => e.selected);
+    return selectedIndex >= 0 ? selectedIndex : 0;
+  }
+
+  /// Puts the autofocus row in the middle of the viewport, clamped to the list.
+  double _initialScrollOffset() {
+    final double maxOffset = math.max(
+      0.0,
+      widget.items.length * _kItemExtent - _listHeight,
+    );
+    final double centered =
+        _autofocusIndex * _kItemExtent - (_listHeight - _kItemExtent) / 2;
+    return centered.clamp(0.0, maxOffset);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final int selectedIndex = items.indexWhere((e) => e.selected);
-    final int autofocusIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    final items = widget.items;
+    final int autofocusIndex = _autofocusIndex;
 
     return AlertDialog(
       backgroundColor: const Color(0xF21A1C1E),
       title: Text(
-        title,
+        widget.title,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 18,
@@ -1747,22 +1823,27 @@ class _TvOptionListDialog extends StatelessWidget {
       ),
       content: SizedBox(
         width: 480,
-        height: math.min(items.length * 56.0 + 16.0, 420.0),
-        child: ListView.separated(
+        height: _listHeight,
+        child: ListView.builder(
+          controller: _scrollController,
+          itemExtent: _kItemExtent,
           itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 6),
           itemBuilder: (context, index) {
             final item = items[index];
-            return _TvHudPillButton(
-              autofocus: index == autofocusIndex,
-              active: item.selected,
-              icon: item.selected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_off_rounded,
-              label: item.subtitle != null && item.subtitle!.isNotEmpty
-                  ? '${item.title}  (${item.subtitle})'
-                  : item.title,
-              onPressed: item.onSelect,
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: _TvHudPillButton(
+                autofocus: index == autofocusIndex,
+                active: item.selected,
+                alignment: Alignment.centerLeft,
+                icon: item.selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                label: item.subtitle != null && item.subtitle!.isNotEmpty
+                    ? '${item.title}  (${item.subtitle})'
+                    : item.title,
+                onPressed: item.onSelect,
+              ),
             );
           },
         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:PiliPlus/models/common/video/base_quality.dart';
@@ -104,10 +105,42 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   @override
   int? cid = 1001;
 
+  final Set<ValueChanged<PlayerStatus>> statusListeners = {};
+
+  @override
+  void addStatusLister(ValueChanged<PlayerStatus> listener) {
+    statusListeners.add(listener);
+  }
+
+  @override
+  void removeStatusLister(ValueChanged<PlayerStatus> listener) {
+    statusListeners.remove(listener);
+  }
+
+  /// Same order as `PlPlayerController`'s `playing` stream handler: the
+  /// `playerStatus` field changes first, then the status listeners run.
+  void emitPlayerStatus(PlayerStatus status) {
+    playerStatus = status;
+    for (final listener in statusListeners.toList()) {
+      listener(status);
+    }
+  }
+
+  /// When set, [onDoubleTapCenter] flips [playerStatus] after this delay, like
+  /// media_kit reporting the new `playing` state asynchronously. The default
+  /// (`null`) keeps the status untouched so counters stay the only side effect.
+  Duration? statusFlipDelay;
+
   int doubleTapCenterCount = 0;
   @override
   Future<void> onDoubleTapCenter() async {
     doubleTapCenterCount++;
+    if (statusFlipDelay case final delay?) {
+      final next = playerStatus.isPlaying
+          ? PlayerStatus.paused
+          : PlayerStatus.playing;
+      Timer(delay, () => emitPlayerStatus(next));
+    }
   }
 
   final List<Duration> seekTargets = [];
@@ -1045,5 +1078,328 @@ void main() {
       },
     );
   });
+
+  group('TvPlayerHud code review fixes (M10: R8, R10, R11, R12)', () {
+    testWidgets(
+      'R8: HUD 暂停 pill keeps Hold-Select 3x speed after D-pad moves away and back',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(find.text('暂停'), findsOneWidget);
+
+        // Leave the pill and come back by D-pad: traversal, not autofocus,
+        // now decides which node owns primary focus.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('弹幕: 开'), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('暂停'), isTrue);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.doubleTapCenterCount, 0);
+
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.doubleTapCenterCount, 0);
+
+        // A short press still toggles play/pause, once, on key up.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+      },
+    );
+
+    testWidgets(
+      'R8: Quick Strip 全屏 and 播/暂 keep Hold-Select 3x speed after D-pad moves away and back',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = false
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        expect(_pillHasPrimaryFocus('全屏'), isTrue);
+
+        // 全屏 -> 播/暂: hold Select on 播/暂.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('播/暂'), isTrue);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.doubleTapCenterCount, 0);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.doubleTapCenterCount, 0);
+
+        // 播/暂 -> 全屏: hold Select on 全屏 without entering fullscreen.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('全屏'), isTrue);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(pl.longPressStatus.value, isTrue);
+        expect(pl.isFullScreen.value, isFalse);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.longPressStatus.value, isFalse);
+        expect(pl.isFullScreen.value, isFalse);
+
+        // A short press on 全屏 still enters fullscreen.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pl.isFullScreen.value, isTrue);
+      },
+    );
+
+    testWidgets(
+      'R8: touch taps on a pill still run its action',
+      (tester) async {
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('暂停'));
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+      },
+    );
+
+    testWidgets(
+      'R10: episode dialog opens on the current episode even deep in a long list',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..cid = 1045;
+        final videoDetailCtr = FakeVideoDetailController(
+          plPlayerController: pl,
+        )..cid.value = 1045;
+        final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr)
+          ..videoDetail.value = VideoDetailData(
+            title: '长剧集',
+            pages: [
+              for (var i = 1; i <= 60; i++)
+                Part(cid: 1000 + i, page: i, part: '第$i集'),
+            ],
+          );
+
+        await _pumpHud(
+          tester,
+          plPlayerController: pl,
+          introController: introCtr,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('选集 (60)'));
+        await tester.pumpAndSettle();
+
+        // The list is lazy: item 0 is far outside the viewport, so the current
+        // episode is only built (and its autofocus only fires) if the list
+        // starts scrolled to it.
+        expect(find.text('P1  第1集'), findsNothing);
+        expect(find.text('P45  第45集'), findsOneWidget);
+        expect(_pillHasPrimaryFocus('P45  第45集'), isTrue);
+        final Rect viewport = tester.getRect(find.byType(ListView));
+        expect(
+          viewport.contains(tester.getRect(find.text('P45  第45集')).center),
+          isTrue,
+        );
+
+        // D-pad stepping continues from the current episode, not from item 0.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(_pillHasPrimaryFocus('P46  第46集'), isTrue);
+      },
+    );
+
+    testWidgets(
+      'R10: short option lists and a first-item selection still start at the top',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playbackSpeed = 0.5
+          ..speedList = const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('倍速: 0.5x'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('选择播放倍速'), findsOneWidget);
+        expect(_pillHasPrimaryFocus('0.5x'), isTrue);
+        expect(find.text('2.0x'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'R11: HUD Play/Pause label follows the player status event, not the key press',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing
+          ..statusFlipDelay = const Duration(milliseconds: 80);
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(find.text('暂停'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+        // The player has not reported the new state yet, so the label must not
+        // claim it has.
+        expect(find.text('暂停'), findsOneWidget);
+
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('播放'), findsOneWidget);
+        expect(find.text('暂停'), findsNothing);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pl.doubleTapCenterCount, 2);
+        expect(find.text('暂停'), findsOneWidget);
+        expect(find.text('播放'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'R11: status changes that do not come from the HUD also update the label',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(find.text('暂停'), findsOneWidget);
+
+        pl.emitPlayerStatus(PlayerStatus.paused);
+        await tester.pump();
+        expect(find.text('播放'), findsOneWidget);
+
+        pl.emitPlayerStatus(PlayerStatus.completed);
+        await tester.pump();
+        expect(find.text('播放'), findsOneWidget);
+
+        pl.emitPlayerStatus(PlayerStatus.playing);
+        await tester.pump();
+        expect(find.text('暂停'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'R11: status listener is registered once, moves with the controller, and is removed on dispose',
+      (tester) async {
+        final first = FakePlPlayerController()..isFullScreen.value = true;
+        final second = FakePlPlayerController()..isFullScreen.value = true;
+
+        Widget app(FakePlPlayerController pl) => MaterialApp(
+          builder: FlutterSmartDialog.init(),
+          home: Scaffold(
+            body: TvNavigation(
+              child: TvPlayerHud(
+                plPlayerController: pl,
+                onSendDanmaku: () {},
+                child: Container(color: Colors.black),
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(app(first));
+        await tester.pumpAndSettle();
+        expect(first.statusListeners, hasLength(1));
+
+        await tester.pumpWidget(app(second));
+        await tester.pumpAndSettle();
+        expect(first.statusListeners, isEmpty);
+        expect(second.statusListeners, hasLength(1));
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(second.statusListeners, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'R12: Play and Pause media keys are idempotent while PlayPause toggles',
+      (tester) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..playerStatus = PlayerStatus.playing;
+
+        await _pumpHud(tester, plPlayerController: pl);
+
+        // Playing: Play is a no-op, Pause pauses.
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 0);
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+
+        // Paused: Pause is a no-op, Play resumes.
+        pl.emitPlayerStatus(PlayerStatus.paused);
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 2);
+
+        // Completed: Play restarts playback, Pause stays a no-op.
+        pl.emitPlayerStatus(PlayerStatus.completed);
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPause);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 2);
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlay);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 3);
+
+        // PlayPause always toggles.
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
+        await tester.pump();
+        expect(pl.doubleTapCenterCount, 4);
+      },
+    );
+  });
+}
+
+/// The private `_TvHudPillButton` that owns the [label] text.
+Finder _pill(String label) => find.ancestor(
+  of: find.text(label),
+  matching: find.byWidgetPredicate(
+    (w) => w.runtimeType.toString() == '_TvHudPillButton',
+  ),
+);
+
+/// Whether the primary focus node lives inside the pill labelled [label].
+bool _pillHasPrimaryFocus(String label) {
+  final BuildContext? focusContext = FocusManager.instance.primaryFocus?.context;
+  if (focusContext == null) return false;
+  return find
+      .descendant(
+        of: _pill(label),
+        matching: find.byElementPredicate((e) => identical(e, focusContext)),
+        matchRoot: true,
+      )
+      .evaluate()
+      .isNotEmpty;
 }
 

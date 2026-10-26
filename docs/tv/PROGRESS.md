@@ -88,9 +88,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.1` | Root-Cause Analysis (`🎉 发现新版本` `SmartDialog` outside `Navigator`) & Unified `_TvFocusLayerStack` Design | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ⏳ Planned | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.1` | Root-Cause Analysis (`🎉 发现新版本` `SmartDialog` outside `Navigator`) & Unified `_TvFocusLayerStack` Design | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ✅ Done | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -607,3 +607,33 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 * **Checked and fine**: `TvBridge` `WeakReference` handling and null fallbacks; the soft-keyboard gate; `MediaQuery` unwrapping; the repeat throttle ordering (`didScrollInLastFocus` is set before `_onFocus` runs); route focus memory; media keys reach the HUD from anywhere on the player page (`PlayerFocus` wraps the whole page body); both `tv_ink_well.patch` copies have identical hunks; no seeded setting key is deleted upstream.
 * **Decision**: fold the fixes into Milestone M10 instead of a separate Milestone M11, so all remaining TV focus work is one sequence. The review fixes go first (`M10.3` HUD, `M10.4` `uiScale`): they are small, don't depend on the focus-layer work, and include both High findings; `M10.4` must also land before the layer core (`M10.5`) because both edit `evaluateNode`. `R13` / `R15` join the inline-sheet migration (`M10.9`) so that code changes once, and `M10.5` must keep the no-layer path O(1). Live verification and the docs sync are each one combined task (`M10.7`, `M10.11`). Old → new task IDs: `M10.2`→`M10.5`, `M10.3`→`M10.6`, `M10.4`→`M10.7`, `M10.5`→`M10.8`, `M10.6`→`M10.9`, `M10.7`→`M10.11`; `M11.1`→`M10.2`, `M11.2` + `M11.4`→`M10.3`, `M11.3`→`M10.4`, `M11.5`→`M10.9`, `M11.6`→`M10.10` (except `R15`→`M10.9`), `M11.7`→`M10.7` (live checks) + `M10.11` (docs).
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.3`): Player HUD Fixes `R8`, `R10`–`R12`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_player_hud.dart`
+  * `[MODIFY] test/tv_player_hud_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Method**: tests first. The 9 new tests were written and run against the unfixed code on a patched SDK: 7 failed and 2 passed (the 2 are guards for behavior that must not change). The M10.2 review was static reading only, so this is the first runtime confirmation of these four findings.
+* **Changes**:
+
+  | ID | Fix | Test (`test/tv_player_hud_test.dart`) |
+  | :--- | :--- | :--- |
+  | `R8` | `_TvHudPillButton` wraps its `GestureDetector` in `ExcludeFocus`. The pill's own `Focus` is now its only focusable node, so Select key-down no longer reaches the patched `GestureDetector`'s `onTap` first. Pointer taps still work. It is the only `GestureDetector` in `lib/tv`. | HUD `暂停` pill and Quick Strip `全屏` / `播/暂`: Right, Left, then hold Select ≥ 250 ms starts 3x speed, release restores it, a short press still acts once. Plus a touch-tap guard. |
+  | `R10` | `_TvOptionListDialog` is stateful: `ListView.builder` with a fixed 52 px row extent (46 px pill + 3 px padding above and below, 6 px gap as before), a `ScrollController` whose initial offset centers the selected row, and the list box height computed from the same extent. `_TvHudPillButton` gained an optional `alignment` to keep the label vertically centered in the taller row. | 60 episodes, episode 45 current: the dialog opens on it, it is focused and inside the viewport, episode 1 is not built, Down steps to episode 46. Guard: a short list with the first item selected still starts at the top. |
+  | `R11` | `_TvPlayerHudState` registers `_onPlayerStatusChanged` with `PlPlayerController.addStatusLister` and rebuilds from it. Registration is re-bound in `didUpdateWidget` and removed in `dispose`. The eager `setState` after `onDoubleTapCenter()` was removed. | Label flips only after the player's status event (80 ms later in the fake); external `paused` / `completed` / `playing` changes update it; the listener is registered once, follows a controller swap and is removed on dispose. |
+  | `R12` | `mediaPlayPause` toggles; `mediaPlay` toggles only when not playing (so a `completed` player restarts); `mediaPause` toggles only when playing. | Each key in the playing, paused and completed states. |
+
+* **Test harness**: `FakePlPlayerController` now implements `addStatusLister` / `removeStatusLister`, `emitPlayerStatus` (sets `playerStatus` first, then notifies, like the real `playing` stream handler) and an optional `statusFlipDelay` that makes `onDoubleTapCenter` report the new state asynchronously. The default leaves `playerStatus` untouched, so the existing tests are unchanged.
+* **Design notes**:
+  * `R11`: `addStatusLister` silently ignores registrations while the controller's internal player count is `0`. `PlPlayerController.getInstance()` raises it before a page builds the HUD, and `lib/pages/video/view.dart` and `lib/pages/live_room/view.dart` register status listeners the same way.
+  * `R12` reads `_pl.playerStatus`, like the existing `_canTriggerLongPressSpeed`. A second Play or Pause key arriving before the player reports the first change can still toggle twice; the window is the player's event latency.
+  * `R10`: the pill is 46 px tall in option lists (it was content-sized at about 40 px). Short lists no longer reserve the old `56 px × n + 16 px` box.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`. A whole-repo `flutter analyze --no-pub` reports 43 `info` items, all in upstream files this task does not touch.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `62/62` passed (`36` navigation + `26` player HUD, up from `17`).
+  * `./tool/tv_patch.sh status`: `[NOT APPLIED]` for all 38 patches after the revert.
+  * Not run on a TV device: live verification of the review fixes is part of `M10.7`.
