@@ -104,6 +104,33 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15) — Planned
+
+| Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.1` | TV Checks Workflow (`tv-checks.yml`: Patches, TV Analyze, TV Tests) | ⏳ Planned | `.github/workflows/tv-checks.yml` |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ⏳ Planned | `.github/workflows/tv-sync-build.yml` |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ⏳ Planned | `docs/tv/*`; branch protection on `main` (user) |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ⏳ Planned | `<physical-tv>` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ⏳ Planned | `<physical-tv>` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ⏳ Planned | Decided in `M12.3` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
+| **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
+| **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
+
+---
+
 ## Detailed Task Log (Phase 2 Optimization)
 
 ### [2026-10-22] Milestone M1: Spatial Navigation Traversal & Idle Frame Callback Optimization
@@ -850,3 +877,45 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `[MODIFY] test/tv_navigation_test.dart`: Ethernet / Wi-Fi / mobile / none cases on TV.
   * `[MODIFY] docs/tv/README.md`, `README.en.md`, `REVIEW.md`, `ARCHITECTURE.md`, `PLAN.md`, `PROGRESS.md`.
 * **Not avoidable by this change**: other fork hooks in upstream files (`lib/main.dart`, `player_focus.dart`) can still conflict when upstream rewrites the same lines.
+
+---
+
+## Detailed Task Log (Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD)
+
+### [2026-10-26] Phase 5 Planning: Objectives Alignment for M11–M15
+* **Status**: ✅ Completed (planning only; no code changed)
+* **Branch**: `docs/tv-plan-m11-m15`, the first change made under Execution Rule 5.
+* **Files Changed**:
+  * `[MODIFY] docs/tv/PLAN.md` (Execution Rule 5, Phase 5 roadmap, Milestones M11–M15)
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Inputs**: a review of the TV architecture and the player HUD (summarized below), then a question-and-answer session on four goals: a new focus engine, missing HUD functions with a refined layout, TV checks in CI, and the playback freeze on the physical TV.
+* **Architecture review summary**:
+  1. The three-tier isolation works (fewer than 30 lines across 5 upstream files under `lib/`), but the focus engine guesses intent from widget types and size ratios, picks targets with a first-match rule chain, and recovers focus from five entry points coordinated by flags. Each new upstream layout has needed new special cases (M6, M7, M9, M10).
+  2. CI never ran analyze or the TV tests before releasing.
+  3. The player HUD is a separate UI because upstream's player is built for a pointer and a keyboard-shortcut handler. It re-implements several upstream menus (its quality picker has already drifted from upstream's) and lacks subtitles, audio quality, decode format, super-resolution, AI translate, highlights, the danmaku chart and the settings sheet. Upstream's menus are reachable without upstream edits (`HeaderMixin`, `headerCtrKey`).
+* **Answers**:
+
+  | Topic | Answer |
+  | :--- | :--- |
+  | Upstream's own APK on the same TV | Not tried yet |
+  | When the freeze started | Unknown: the M5 pass did not play the same videos |
+  | Which videos freeze | Some, quality-related |
+  | Debugging on the TV | Network adb from the development machine |
+  | Most urgent goal | The playback freeze (M12) |
+  | Shipping work in progress | Branches, release on merge; no pre-release APKs |
+  | A failing CI check | Blocks the release; the checks also run on pull requests |
+  | CI scope | TV tests and TV analyze |
+  | Focus engine approach | Staged and parity-gated |
+  | Returning to a column | Restore the last item focused there |
+  | Focus problems seen on the TV | Odd jumps; a lost or missing ring; a laggy D-pad |
+  | Where the D-pad lags | Everywhere |
+  | HUD look | Upstream's layout and icons at TV size, with the focused button's label shown |
+  | HUD menus | Upstream's own panels |
+  | Live room | Video first, live later (M15) |
+  | Old focus rules after the switch | Kept one release behind a hidden switch |
+
+* **Consequences recorded in the plan**:
+  * Device tests use local `-Pdev` release builds over network adb. Debug builds are not used for codec or performance work: they use a different hardware-decoding default and run Dart code much slower.
+  * The recorded D-pad paths (M13.3) encode correct behavior, not today's, and M13 starts with an on-device baseline (M13.0) because the existing traversal benchmark was measured on a development Mac.
+  * Ordering: M11 → M12 → M13 and M14 → M15. M11 runs while the device is prepared for M12; M14 can run alongside M13.1–M13.2.
+* **Open inputs** (owner: user): the M12 device details and test videos; the list of screens with focus problems for M13.0; branch protection on `main` for M11.3; the M14.1 button-list discussion.
