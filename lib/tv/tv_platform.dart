@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -154,6 +155,17 @@ abstract final class TvPlatform {
         hideSoftKeyboard().ignore();
       }
     }
+  }
+
+  /// Whether the TV is on an unmetered connection for quality defaults: Wi-Fi
+  /// or wired Ethernet, which most TV boxes use. `ConnectivityUtils.isWiFi`
+  /// calls this on TV through a one-line hook, so upstream can keep editing
+  /// that function without touching TV logic.
+  static Future<bool> isOnWifiOrEthernet() async {
+    final List<ConnectivityResult> results = await Connectivity()
+        .checkConnectivity();
+    return results.contains(ConnectivityResult.wifi) ||
+        results.contains(ConnectivityResult.ethernet);
   }
 
   /// Locates the [EditableTextState] associated with [node] (or the current

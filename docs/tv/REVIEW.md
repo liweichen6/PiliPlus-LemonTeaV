@@ -87,10 +87,10 @@
   4. **Reversible Developer Ergonomics**: `./tool/tv_patch.sh {apply|revert|status}` mirrors `lib/scripts/patch.ps1` across all 38 patches (28 Flutter SDK + 1 pub-cache + 9 local `material_ui`) so developers never accidentally commit dirty state.
 
 ### 2.5 Tier 3 Hooks, Package Identity & CI/CD Pipeline
-* **Files**: [`lib/main.dart`](../../lib/main.dart), [`lib/pages/video/widgets/player_focus.dart`](../../lib/pages/video/widgets/player_focus.dart), [`lib/utils/connectivity_utils.dart`](../../lib/utils/connectivity_utils.dart), [`lib/common/constants.dart`](../../lib/common/constants.dart), [`lib/http/api.dart`](../../lib/http/api.dart), [`android/app/build.gradle.kts`](../../android/app/build.gradle.kts), [`android/app/src/main/AndroidManifest.xml`](../../android/app/src/main/AndroidManifest.xml), [`.github/workflows/sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml)
+* **Files**: [`lib/main.dart`](../../lib/main.dart), [`lib/pages/video/widgets/player_focus.dart`](../../lib/pages/video/widgets/player_focus.dart), [`lib/utils/connectivity_utils.dart`](../../lib/utils/connectivity_utils.dart), [`lib/common/constants.dart`](../../lib/common/constants.dart), [`lib/http/api.dart`](../../lib/http/api.dart), [`android/app/build.gradle.kts`](../../android/app/build.gradle.kts), [`android/app/src/main/AndroidManifest.xml`](../../android/app/src/main/AndroidManifest.xml), [`.github/workflows/tv-sync-build.yml`](../../.github/workflows/tv-sync-build.yml)
 * **Strengths**:
   - `AndroidManifest.xml` declares `android.software.leanback` (`required="false"`), `android.hardware.touchscreen` (`required="false"`), `LEANBACK_LAUNCHER`, and `@drawable/tv_banner`, enabling universal installation across TVs and phones from one APK.
-  - `sync-upstream-build.yml` runs weekly (`16:16 UTC` Saturday), merges `lemonteaau/PiliPlus` (`README.md` / `README.en.md` protected via `.gitattributes` `merge=ours`), validates all 4 signing secrets before building, tags releases idempotently (`v<version>-fork.<count>`), and publishes split-ABI APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`).
+  - `tv-sync-build.yml` (the fork's workflow; upstream's `sync-upstream-build.yml` is kept identical to upstream and disabled in Actions) runs weekly (`16:16 UTC` Saturday), merges `lemonteaau/PiliPlus` (`README.md` / `README.en.md` protected via `.gitattributes` `merge=ours`), validates all 4 signing secrets before building, tags releases idempotently (`v<version>-fork.<count>`), and publishes split-ABI APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`).
 
 ---
 

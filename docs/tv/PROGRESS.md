@@ -100,6 +100,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart`, `docs/tv/*`, `README*.md` (`bad5fddc4`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ✅ Done (one `M10.8` regression found on the device and fixed) | `docs/tv/*`, `README*.md`, `lib/tv/tv_focus_layers.dart`, `test/tv_navigation_test.dart` (`9bb027680`, `75edded59`, `3a169e16a`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.12` | Post-Implementation Review Fixes (`R21`–`R24`) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.13` | Fewer Upstream Merge Conflicts (Fork-Only `tv-sync-build.yml`, One-Line Connectivity Hook) | ✅ Done | `.github/workflows/`, `lib/utils/connectivity_utils.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `docs/tv/*` |
 
 ---
 
@@ -835,3 +836,17 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `92/92` passed.
   * With only the `lib/tv` changes reverted, all four new tests fail: `R21` on a clipped label (`23.6` px of `32` px), `R23` on a second toggle, `R24` on focus not reaching the button, and `R22` on the field's selection overlay already being gone (the selection handles share the toolbar's root overlay and `TextFieldTapRegion`).
   * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`. Not verified on a device.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.13`): Fewer Upstream Merge Conflicts
+* **Status**: ✅ Completed
+* **Why**: the sync job's merge of `lemonteaau/PiliPlus` `774871080` conflicted in `.github/workflows/sync-upstream-build.yml` and `lib/utils/connectivity_utils.dart`. It was resolved by hand in `26e8781c8` (merge verified on Flutter `3.47.8`: all 38 patches apply, no analyzer errors in `lib`, TV tests `92/92`).
+* **Files Changed**:
+  * `[NEW] .github/workflows/tv-sync-build.yml`: the fork's workflow, unchanged except for its header comment, `name` (`Sync upstream and build PiliPlus TV`) and concurrency group (`tv-sync-build`).
+  * `[MODIFY] .github/workflows/sync-upstream-build.yml`: restored to upstream's exact content and disabled in Actions (it syncs `bggRGjQaUbCoE/PiliPlus` and builds every platform).
+  * `[MODIFY] lib/tv/tv_platform.dart`: `TvPlatform.isOnWifiOrEthernet()`.
+  * `[MODIFY] lib/utils/connectivity_utils.dart`: one-line hook plus import; otherwise identical to upstream.
+  * `[MODIFY] test/tv_navigation_test.dart`: Ethernet / Wi-Fi / mobile / none cases on TV.
+  * `[MODIFY] docs/tv/README.md`, `README.en.md`, `REVIEW.md`, `ARCHITECTURE.md`, `PLAN.md`, `PROGRESS.md`.
+* **Not avoidable by this change**: other fork hooks in upstream files (`lib/main.dart`, `player_focus.dart`) can still conflict when upstream rewrites the same lines.

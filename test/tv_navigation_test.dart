@@ -10,6 +10,7 @@ import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
+import 'package:PiliPlus/utils/connectivity_utils.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,46 @@ import 'package:material_ui/material_ui.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('TV connectivity hook (ConnectivityUtils.isWiFi)', () {
+    const MethodChannel channel = MethodChannel(
+      'dev.fluttercommunity.plus/connectivity',
+    );
+    List<String> reported = const <String>[];
+
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            if (call.method == 'check') return reported;
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    test('wired Ethernet counts as Wi-Fi on TV', () async {
+      reported = const <String>['ethernet'];
+      expect(await TvPlatform.isOnWifiOrEthernet(), isTrue);
+      expect(await ConnectivityUtils.isWiFi, isTrue);
+    });
+
+    test('Wi-Fi counts as Wi-Fi on TV', () async {
+      reported = const <String>['wifi'];
+      expect(await ConnectivityUtils.isWiFi, isTrue);
+    });
+
+    test('a mobile or missing connection is not Wi-Fi on TV', () async {
+      reported = const <String>['mobile'];
+      expect(await ConnectivityUtils.isWiFi, isFalse);
+      reported = const <String>['none'];
+      expect(await ConnectivityUtils.isWiFi, isFalse);
+    });
+  });
 
   group('TvPlatform Hive default seeding', () {
     late Directory tempDir;

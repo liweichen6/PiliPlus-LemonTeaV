@@ -33,10 +33,12 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 ## 3. Upstream Sync Guide (`lemonteaau/PiliPlus`)
 
 ### Option A: Automated Weekly / Manual Sync on GitHub Actions
-The workflow [`.github/workflows/sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml) runs:
+The workflow [`.github/workflows/tv-sync-build.yml`](../../.github/workflows/tv-sync-build.yml) runs:
 - **Automatically** every week on **Saturday at `16:16 UTC` (`GMT+0`)** (`cron: "16 16 * * 6"`),
 - **On every code push** to `main` (ignoring `**.md` documentation-only changes), or
-- **Manually** via GitHub → **Actions** → **Sync upstream and build custom apps** → **Run workflow**.
+- **Manually** via GitHub → **Actions** → **Sync upstream and build PiliPlus TV** → **Run workflow**.
+
+> `sync-upstream-build.yml` is upstream's own sync workflow (it syncs `bggRGjQaUbCoE/PiliPlus` and builds every platform). It is kept identical to upstream so upstream merges never conflict on it, and it must stay **disabled** in this repository's Actions settings.
 
 What the workflow does:
 1. Fetches `https://github.com/lemonteaau/PiliPlus.git` (`main`) and merges it into `main` (`README.md` and `README.en.md` are protected via `merge=ours` in [`.gitattributes`](../../.gitattributes)).
@@ -132,7 +134,7 @@ To allow in-place app updates (`Update.checkUpdate`) without signature conflicts
 | `KEY_ALIAS` | Key alias inside the keystore |
 | `KEY_PASSWORD` | Password for the key alias |
 
-[`sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml) validates that all 4 secrets are non-empty before building so a release is never accidentally published with a temporary debug signature.
+[`tv-sync-build.yml`](../../.github/workflows/tv-sync-build.yml) validates that all 4 secrets are non-empty before building so a release is never accidentally published with a temporary debug signature.
 
 ### Local Signing (`android/key.properties`)
 - If `android/key.properties` and `android/app/key.jks` exist locally (both are git-ignored via [`android/.gitignore`](../../android/.gitignore)), Gradle signs release APKs with your release key:

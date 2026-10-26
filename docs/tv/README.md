@@ -33,10 +33,12 @@
 ## 3. 上游同步指南（`lemonteaau/PiliPlus`）
 
 ### 方式 A：通过 GitHub Actions 每周自动同步 / 手动触发同步
-工作流 [`.github/workflows/sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml) 会在以下时机运行：
+工作流 [`.github/workflows/tv-sync-build.yml`](../../.github/workflows/tv-sync-build.yml) 会在以下时机运行：
 - **每周定时运行**：每周六 `16:16 UTC`（`GMT+0`，北京时间周日 `00:16`）自动运行（`cron: "16 16 * * 6"`）；
 - **代码推送触发**：向 `main` 分支推送代码时自动触发（忽略纯文档 `**.md` 改动）；
-- **手动触发**：在 GitHub 仓库页面点击 **Actions** → **Sync upstream and build custom apps** → **Run workflow**。
+- **手动触发**：在 GitHub 仓库页面点击 **Actions** → **Sync upstream and build PiliPlus TV** → **Run workflow**。
+
+> `sync-upstream-build.yml` 是上游自己的同步工作流（同步 `bggRGjQaUbCoE/PiliPlus` 并构建全部平台）。本仓库保持该文件与上游完全一致，合并上游时不会再产生冲突；它必须在本仓库的 Actions 设置中保持**禁用**状态。
 
 工作流执行步骤：
 1. 拉取 `https://github.com/lemonteaau/PiliPlus.git`（`main` 分支）并合并入本仓库 `main`（通过 [`.gitattributes`](../../.gitattributes) 中的 `merge=ours` 策略自动保留本仓库的 `README.md` 与 `README.en.md`）。
@@ -132,7 +134,7 @@ flutter build apk --release --split-per-abi \
 | `KEY_ALIAS` | 密钥别名（keyAlias） |
 | `KEY_PASSWORD` | 密钥密码（keyPassword） |
 
-[`sync-upstream-build.yml`](../../.github/workflows/sync-upstream-build.yml) 在构建前会校验这 4 个 Secret 是否非空，防止因未配置密钥而意外发布临时 debug 签名的 Release 安装包。
+[`tv-sync-build.yml`](../../.github/workflows/tv-sync-build.yml) 在构建前会校验这 4 个 Secret 是否非空，防止因未配置密钥而意外发布临时 debug 签名的 Release 安装包。
 
 ### 本地签名配置（`android/key.properties`）
 - 若本地存在 `android/key.properties` 与 `android/app/key.jks`（均已加入 [`android/.gitignore`](../../android/.gitignore)，不会被提交），Gradle 会自动使用正式签名构建：

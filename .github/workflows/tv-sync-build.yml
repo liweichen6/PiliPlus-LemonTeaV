@@ -1,0 +1,213 @@
+# PiliPlus TV fork: syncs lemonteaau/PiliPlus into main and builds the Android
+# TV release. Fork-only file. sync-upstream-build.yml is upstream's own sync
+# workflow (it syncs bggRGjQaUbCoE/PiliPlus and builds every platform); it is
+# kept byte-identical to upstream so merges never conflict, and it is disabled
+# in this repository's Actions settings.
+name: Sync upstream and build PiliPlus TV
+
+on:
+  push:
+    branches:
+      - main
+    # Docs-only pushes need no new build; the sync job also skips them on schedule.
+    paths-ignore:
+      - "**.md"
+  schedule:
+    # Once a week on Saturday at 16:16 UTC (GMT+0).
+    - cron: "16 16 * * 6"
+  workflow_dispatch:
+
+concurrency:
+  group: tv-sync-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync upstream main
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.sync.outputs.should_build }}
+      commit_sha: ${{ steps.sync.outputs.commit_sha }}
+      release_tag: ${{ steps.sync.outputs.release_tag }}
+      release_version: ${{ steps.sync.outputs.release_version }}
+      upstream_release_tag: ${{ steps.sync.outputs.upstream_release_tag }}
+      upstream_commit: ${{ steps.sync.outputs.upstream_commit }}
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Merge upstream updates
+        id: sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/lemonteaau/PiliPlus.git
+          git fetch upstream main
+
+          upstream_release_tag="$(gh api repos/lemonteaau/PiliPlus/releases/latest --jq .tag_name 2>/dev/null || gh api repos/bggRGjQaUbCoE/PiliPlus/releases/latest --jq .tag_name)"
+          upstream_version="${upstream_release_tag#v}"
+          upstream_base_version="${upstream_version%%-*}"
+          before="$(git rev-parse HEAD)"
+          # The fork keeps its own README (.gitattributes: merge=ours).
+          git config merge.ours.driver true
+          git merge --no-edit upstream/main
+          after="$(git rev-parse HEAD)"
+          upstream_commit="$(git rev-parse upstream/main)"
+
+          # The fork build number is the commit count, the same number the app
+          # shows after "+" (lib/scripts/build.ps1 versionCode).
+          version_code="$(git rev-list --count "$after")"
+          release_version="${upstream_base_version}-fork.${version_code}"
+          release_tag="v${release_version}"
+
+          echo "commit_sha=$after" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "upstream_release_tag=$upstream_release_tag" >> "$GITHUB_OUTPUT"
+          echo "upstream_commit=$upstream_commit" >> "$GITHUB_OUTPUT"
+
+          if [ "$before" != "$after" ]; then
+            git push origin HEAD:main
+          fi
+
+          latest_release="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false)][0] // {} | [.tag_name // "", .target_commitish // ""] | @tsv')"
+          read -r existing_tag existing_commit <<< "$latest_release"
+          # Skip when nothing but Markdown changed since the latest release of this upstream version.
+          changed=""
+          if [ -n "$existing_commit" ] && git cat-file -e "${existing_commit}^{commit}" 2>/dev/null; then
+            changed="$(git diff --name-only "$existing_commit" "$after" | grep -v '\.md$' || true)"
+          else
+            changed="unknown"
+          fi
+          if [[ -z "$changed" && "$existing_tag" == "v${upstream_base_version}-fork."* ]]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            # Tag now, while this commit is still the head of main. GITHUB_TOKEN may
+            # not tag a commit whose workflow files differ from main's, so tagging at
+            # publish time fails when a workflow edit lands on main during the build.
+            git tag -f "$release_tag" "$after"
+            git push --force origin "refs/tags/$release_tag"
+          fi
+
+  android:
+    name: Build Android APKs
+    needs: sync
+    if: needs.sync.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the commit being released
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Apply project Flutter & TV patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Prepare build metadata
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Restore signing key from secrets
+        shell: bash
+        env:
+          SIGN_KEYSTORE_BASE64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGN_KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Signing secrets are missing. Building without them produces a random signature and every update conflicts with the installed app."
+            exit 1
+          fi
+          printf '%s' "$SIGN_KEYSTORE_BASE64" | base64 --decode > android/app/key.jks
+          printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+
+      - name: Build release APKs
+        shell: bash
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: PiliPlus-custom-Android-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish custom release
+    needs: [sync, android]
+    if: ${{ !cancelled() && needs.android.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download app artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish fork release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.sync.outputs.commit_sha }}
+          RELEASE_TAG: ${{ needs.sync.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.sync.outputs.release_version }}
+          UPSTREAM_RELEASE_TAG: ${{ needs.sync.outputs.upstream_release_tag }}
+          UPSTREAM_COMMIT: ${{ needs.sync.outputs.upstream_commit }}
+        run: |
+          passed="Android APK (arm64-v8a, armeabi-v7a, x86_64)"
+
+          gh api "repos/lemonteaau/PiliPlus/releases/tags/$UPSTREAM_RELEASE_TAG" --jq '.body // ""' > "$RUNNER_TEMP/upstream-release-notes.md" 2>/dev/null || \
+            gh api "repos/bggRGjQaUbCoE/PiliPlus/releases/tags/$UPSTREAM_RELEASE_TAG" --jq '.body // ""' > "$RUNNER_TEMP/upstream-release-notes.md" 2>/dev/null || \
+            true
+          {
+            echo "PiliPlus-LemonTeaV Android & Android TV build $RELEASE_VERSION, synced from upstream release $UPSTREAM_RELEASE_TAG."
+            echo
+            echo "Upstream: https://github.com/lemonteaau/PiliPlus/commit/$UPSTREAM_COMMIT"
+            echo "Upstream release: https://github.com/lemonteaau/PiliPlus/releases/tag/$UPSTREAM_RELEASE_TAG"
+            echo "Source: https://github.com/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
+            echo
+            echo "Upstream release notes ($UPSTREAM_RELEASE_TAG):"
+            echo
+            cat "$RUNNER_TEMP/upstream-release-notes.md"
+            echo
+            echo "Builds passed: $passed."
+          } > "$RUNNER_TEMP/release-notes.md"
+
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --target "$COMMIT_SHA" \
+            --title "PiliPlus $RELEASE_VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

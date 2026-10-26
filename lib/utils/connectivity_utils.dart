@@ -8,6 +8,7 @@ import 'package:nm/nm.dart';
 abstract final class ConnectivityUtils {
   static Future<bool> get isWiFi async {
     try {
+      if (TvPlatform.isTv) return await TvPlatform.isOnWifiOrEthernet();
       if (Platform.isLinux) {
         final client = NetworkManagerClient();
         try {
@@ -21,10 +22,10 @@ abstract final class ConnectivityUtils {
           await client.close();
         }
       }
-      if (!PlatformUtils.isMobile && !TvPlatform.isTv) return false;
-      final results = await Connectivity().checkConnectivity();
-      return results.contains(ConnectivityResult.wifi) ||
-          (TvPlatform.isTv && results.contains(ConnectivityResult.ethernet));
+      return PlatformUtils.isMobile &&
+          (await Connectivity().checkConnectivity()).contains(
+            ConnectivityResult.wifi,
+          );
     } catch (_) {
       return true;
     }
