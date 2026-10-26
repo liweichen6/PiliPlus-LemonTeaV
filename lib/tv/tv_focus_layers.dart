@@ -20,6 +20,17 @@ abstract class _TvFocusLayer {
   /// Where focus goes when the layer opens, or `null` while it has nothing
   /// focusable yet.
   FocusNode? firstFocus(TvFocusTraversalPolicy policy);
+
+  /// Called once when the stack starts tracking the layer, with the page
+  /// control that had focus (`null` when there was none worth returning to).
+  void opened(FocusNode? trigger) {}
+
+  /// Moves focus to [target], which [firstFocus] returned.
+  void promote(FocusNode target) {
+    target
+      ..requestFocus()
+      ..consumeKeyboardToken();
+  }
 }
 
 abstract class _TvFocusLayerProvider {
@@ -161,7 +172,10 @@ class _TvFocusLayerStack {
     if (closed != null) {
       final FocusNode? restored = _restoreTarget(closed);
       if (restored != null) {
-        _focus(restored);
+        restored
+          ..requestFocus()
+          ..consumeKeyboardToken();
+        showRing(restored);
         owner = restored;
         acted = true;
       }
@@ -179,7 +193,8 @@ class _TvFocusLayerStack {
           top
             ..promoted = true
             ..settleUntil = now + _kSettleWindow;
-          _focus(first);
+          top.layer.promote(first);
+          showRing(first);
         }
         // Without a target the layer is still loading: wait, don't leak focus
         // onto the page behind it.
@@ -205,8 +220,10 @@ class _TvFocusLayerStack {
         !(primary.context?.mounted ?? false) ||
         layer.contains(primary) ||
         !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
+      layer.opened(null);
       return _TvFocusLayerRecord(layer);
     }
+    layer.opened(primary);
     return _TvFocusLayerRecord(
       layer,
       savedFocusNode: primary,
@@ -239,13 +256,6 @@ class _TvFocusLayerStack {
         ? recovered
         : null;
   }
-
-  void _focus(FocusNode node) {
-    node
-      ..requestFocus()
-      ..consumeKeyboardToken();
-    showRing(node);
-  }
 }
 
 /// Focusable content that lives outside the root `Navigator`, such as the
@@ -262,7 +272,8 @@ class _TvFocusLayerStack {
 /// Non-interactive overlay content (toasts, loading, notifications) has no
 /// focusable node and never forms a layer. Several overlay dialogs open at
 /// once are one layer: focus starts at the first node in reading order.
-class _OverlayFocusLayer implements _TvFocusLayer, _TvFocusLayerProvider {
+class _OverlayFocusLayer extends _TvFocusLayer
+    implements _TvFocusLayerProvider {
   _OverlayFocusLayer(this.anchor);
 
   final FocusNode anchor;
@@ -354,5 +365,93 @@ class _OverlayFocusLayer implements _TvFocusLayer, _TvFocusLayerProvider {
       candidates.addAll(branch.traversalDescendants);
     }
     return policy.findFirstFocusAmong(candidates);
+  }
+}
+
+/// A route whose own focus scope is active but never received focus, such as
+/// a `showMenu(requestFocus: false)` popup (`PopupListTile`).
+///
+/// The covered page's scope turns inactive (`skipTraversal` is set while its
+/// route is not current) yet primary focus stays on the control that opened
+/// the popup, so nothing in the popup is reachable by D-pad. Unlike an overlay
+/// layer there is nothing to occlude: traversal only looks inside the scope of
+/// the focused node, and the covered scope is inactive.
+class _RouteFocusLayer extends _TvFocusLayer {
+  _RouteFocusLayer(this.scope);
+
+  /// The popup route's focus scope.
+  final FocusScopeNode scope;
+
+  /// Still mounted and still the active route scope.
+  bool get isOpen =>
+      (scope.context?.mounted ?? false) &&
+      !_TvNavigationState._isScopeInactive(scope);
+
+  @override
+  bool contains(FocusNode node) {
+    FocusScopeNode? current = node.nearestScope;
+    while (current != null) {
+      if (identical(current, scope)) return true;
+      current = current.enclosingScope;
+    }
+    return false;
+  }
+
+  @override
+  bool occludes(FocusNode node) => false;
+
+  @override
+  FocusNode? firstFocus(TvFocusTraversalPolicy policy) =>
+      scope.canRequestFocus ? policy.findFirstFocus(scope) : null;
+
+  @override
+  void opened(FocusNode? trigger) {
+    // The Navigator observer restores this node when the popup route pops.
+    if (trigger != null) TvNavigationObserver.rememberFocusedNode(trigger);
+  }
+
+  @override
+  void promote(FocusNode target) {
+    scope.enclosingScope?.setFirstFocus(scope);
+    super.promote(target);
+  }
+}
+
+/// Finds popup routes that are active while primary focus is stuck in the
+/// scope they cover, and keeps a layer for each until its scope goes away.
+class _RouteFocusLayerProvider implements _TvFocusLayerProvider {
+  final Map<FocusScopeNode, _RouteFocusLayer> _layers =
+      <FocusScopeNode, _RouteFocusLayer>{};
+
+  /// What [discover] returns, rebuilt only when the set of layers changes: the
+  /// stack asks every frame.
+  List<_TvFocusLayer> _open = const <_TvFocusLayer>[];
+
+  @override
+  List<_TvFocusLayer> discover() {
+    bool changed = false;
+    if (_layers.isNotEmpty) {
+      final int before = _layers.length;
+      _layers.removeWhere((_, _RouteFocusLayer layer) => !layer.isOpen);
+      changed = _layers.length != before;
+    }
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary != null && primary is! FocusScopeNode) {
+      final FocusScopeNode? covered = primary.nearestScope;
+      if (covered != null && _TvNavigationState._isScopeInactive(covered)) {
+        final FocusScopeNode? popup =
+            _TvNavigationState._findActiveSiblingScope(covered);
+        if (popup != null && !_layers.containsKey(popup)) {
+          _layers[popup] = _RouteFocusLayer(popup);
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      _open = _layers.isEmpty
+          ? const <_TvFocusLayer>[]
+          : _layers.values.toList(growable: false);
+    }
+    return _open;
   }
 }

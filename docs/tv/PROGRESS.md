@@ -94,8 +94,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`ffae2ef3f`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart` (`eef4f1f7e`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` (`eef4f1f7e`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ✅ Done | Android APK / `<vm-tv>` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ⏳ Planned | `lib/tv/tv_navigation.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ✅ Done | Android APK / `<vm-tv>` (`3c940cf95`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Adapt M9 Inline Sheets → `_InlineSheetFocusLayer` + Per-Frame Sheet Cost (`R13`, `R15`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ⏳ Planned | `lib/tv/*`, `test/tv_*.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ⏳ Planned | `docs/tv/*`, `README*.md` |
@@ -711,3 +711,21 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 * **Not run**: `更新` activation (downloads an APK and starts the installer, so it needs the user's go-ahead), Quick Strip Hold-Select on the device, the M6 popup menu on the device, toast / loading on the device, and a real remote or HDMI-CEC sending separate Play and Pause keys.
 * **Method notes for future live checks**: hold a key with `input keycombination -t <ms> KEYCODE_DPAD_CENTER KEYCODE_SHIFT_LEFT`; the emulator console `event send` did not deliver key events, and `input keyevent --longpress` is instantaneous. The HUD auto-hides after 5 s, so send each HUD key sequence in a single command. One mis-counted key press toggled a setting in the test install (the theme mode and a switch); both were cycled back to their original values and the test install is separate from the user's data.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.8`): Consolidation I — M6 Popup-Route Promotion on the Shared Focus-Layer Stack
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_focus_layers.dart` (`_TvFocusLayer` becomes an abstract base class with `opened` / `promote` hooks; new `_RouteFocusLayer` and `_RouteFocusLayerProvider`)
+  * `[MODIFY] lib/tv/tv_navigation.dart` (the two `showMenu(requestFocus: false)` promotion branches removed; provider registered below the overlay layer)
+  * `[MODIFY] test/tv_navigation_test.dart` (one new test; no existing test touched)
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Result**: `tv_navigation.dart` is `47` lines smaller (`54` removed, `7` added) and the popup-menu promotion is no longer a second copy of the lifecycle the overlay layer uses. Behavior is the same by construction and by test.
+* **Gate** (from the plan: all existing M6 tests with unchanged assertions): met. The M6 popup test and every other existing test pass untouched. A mutation check (provider removed from the stack) makes the M6 test fail, so the migrated code is what the test exercises.
+* **New test**: a `requestFocus: false` popup inside a dialog restores focus in LIFO order (menu → dialog control → page control). It fails without the provider.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `78/78` passed (`52` navigation, up from `51`, and `26` player HUD).
+  * Not yet run on a TV device: batched into the final live pass after `M10.9`.

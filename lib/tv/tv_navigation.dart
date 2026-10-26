@@ -2193,7 +2193,11 @@ class _TvNavigationState extends State<TvNavigation>
     skipTraversal: true,
   );
   late final _TvFocusLayerStack _layers = _TvFocusLayerStack(
-    providers: <_TvFocusLayerProvider>[_OverlayFocusLayer(_layerAnchor)],
+    // Bottom first: popup routes sit below overlay content.
+    providers: <_TvFocusLayerProvider>[
+      _RouteFocusLayerProvider(),
+      _OverlayFocusLayer(_layerAnchor),
+    ],
     policy: _policy,
     showRing: (FocusNode node) => _updateRect(_computeFocusedRect(node)),
     currentRing: () => _rectNotifier.value,
@@ -3027,38 +3031,9 @@ class _TvNavigationState extends State<TvNavigation>
       return;
     }
 
+    // A popup route that is active but never took focus (showMenu with
+    // requestFocus: false) is handled by _RouteFocusLayer in the layer stack.
     final FocusScopeNode? currentScope = node.nearestScope;
-    if (currentScope != null &&
-        _isScopeInactive(currentScope) &&
-        !_focusSyncScheduled) {
-      final FocusScopeNode? targetScope = _findActiveSiblingScope(currentScope);
-      if (targetScope != null) {
-        final FocusNode? first = _policy.findFirstFocus(targetScope);
-        if (first != null) {
-          TvNavigationObserver.rememberFocusedNode(node);
-          _focusSyncScheduled = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _focusSyncScheduled = false;
-            if (!mounted) return;
-            final FocusNode resolvedFirst =
-                _policy.findFirstFocus(targetScope) ?? first;
-            if (FocusManager.instance.primaryFocus == node &&
-                !_isScopeInactive(targetScope) &&
-                targetScope.canRequestFocus &&
-                resolvedFirst.canRequestFocus &&
-                (resolvedFirst.context?.mounted ?? false)) {
-              targetScope.enclosingScope?.setFirstFocus(targetScope);
-              resolvedFirst
-                ..requestFocus()
-                ..consumeKeyboardToken();
-              _updateRect(_computeFocusedRect(resolvedFirst));
-            }
-          });
-          WidgetsBinding.instance.ensureVisualUpdate();
-          return;
-        }
-      }
-    }
 
     final BuildContext? context = node.context;
     final RenderObject? ro = (context != null && context.mounted)
@@ -3239,28 +3214,6 @@ class _TvNavigationState extends State<TvNavigation>
         return;
       }
       final FocusScopeNode? currentScope = node?.nearestScope;
-      if (node != null &&
-          currentScope != null &&
-          _isScopeInactive(currentScope)) {
-        final FocusScopeNode? targetScope = _findActiveSiblingScope(
-          currentScope,
-        );
-        if (targetScope != null) {
-          final FocusNode? first = _policy.findFirstFocus(targetScope);
-          if (first != null &&
-              targetScope.canRequestFocus &&
-              first.canRequestFocus &&
-              (first.context?.mounted ?? false)) {
-            TvNavigationObserver.rememberFocusedNode(node);
-            targetScope.enclosingScope?.setFirstFocus(targetScope);
-            first
-              ..requestFocus()
-              ..consumeKeyboardToken();
-            _updateRect(_computeFocusedRect(first));
-            return;
-          }
-        }
-      }
       if (node != null &&
           currentScope != null &&
           !_isScopeInactive(currentScope)) {

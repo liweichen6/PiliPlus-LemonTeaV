@@ -5083,6 +5083,104 @@ void main() {
     );
   });
 
+  group('route focus layers (M10: popup routes in the shared stack)', () {
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    testWidgets(
+      'a popup menu opened inside a dialog hands focus back to the dialog control, then to the page control',
+      (tester) async {
+        final pageTile = FocusNode(debugLabel: 'pageTile');
+        final dialogTile = FocusNode(debugLabel: 'dialogTile');
+        addTearDown(() {
+          pageTile.dispose();
+          dialogTile.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Builder(
+              builder: (pageContext) => Scaffold(
+                body: ListTile(
+                  focusNode: pageTile,
+                  autofocus: true,
+                  title: const Text('页面项'),
+                  onTap: () => showDialog<void>(
+                    context: pageContext,
+                    builder: (dialogContext) => AlertDialog(
+                      content: ListTile(
+                        focusNode: dialogTile,
+                        title: const Text('对话框项'),
+                        onTap: () => showMenu<int>(
+                          context: dialogContext,
+                          requestFocus: false,
+                          position: const RelativeRect.fromLTRB(100, 100, 100, 100),
+                          items: const [
+                            PopupMenuItem<int>(value: 1, child: Text('菜单项1')),
+                            PopupMenuItem<int>(value: 2, child: Text('菜单项2')),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(pageTile.hasPrimaryFocus, isTrue);
+
+        bool onMenuItem(String label) {
+          final FocusNode? primary = FocusManager.instance.primaryFocus;
+          if (primary == null || primary is FocusScopeNode) return false;
+          return find
+              .descendant(
+                of: find.byElementPredicate((e) => e == primary.context),
+                matching: find.text(label),
+              )
+              .evaluate()
+              .isNotEmpty;
+        }
+
+        // Page control -> dialog (its scope takes focus on its own).
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(find.text('对话框项'), findsOneWidget);
+        expect(dialogTile.hasPrimaryFocus, isTrue);
+
+        // Dialog control -> popup menu that never asks for focus.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(find.text('菜单项1'), findsOneWidget);
+        expect(onMenuItem('菜单项1'), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(onMenuItem('菜单项2'), isTrue);
+
+        // Closing the menu returns to the dialog control, not the page.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.text('菜单项1'), findsNothing);
+        expect(find.text('对话框项'), findsOneWidget);
+        expect(dialogTile.hasPrimaryFocus, isTrue);
+        expect(pageTile.hasPrimaryFocus, isFalse);
+
+        // Closing the dialog returns to the page control.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.text('对话框项'), findsNothing);
+        expect(pageTile.hasPrimaryFocus, isTrue);
+      },
+    );
+  });
+
   group('overlay dialogs outside the Navigator (M10, SmartDialog)', () {
     late FocusNode versionNode;
     late FocusNode otherNode;
