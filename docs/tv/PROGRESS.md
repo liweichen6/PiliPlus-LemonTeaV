@@ -92,9 +92,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ✅ Done | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`d3faa0f0c`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`ffae2ef3f`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ⏳ Planned | Android APK / `<vm-tv>` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart` (`eef4f1f7e`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ✅ Done | `test/tv_navigation_test.dart` (`eef4f1f7e`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ✅ Done | Android APK / `<vm-tv>` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Adapt M9 Inline Sheets → `_InlineSheetFocusLayer` + Per-Frame Sheet Cost (`R13`, `R15`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ⏳ Planned | `lib/tv/*`, `test/tv_*.dart` |
@@ -685,3 +685,29 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Whole-repo `flutter test --no-pub`: `127` passed, `2` failed. Both failures are in `test/utils/accounts/deleted_account_test.dart` (upstream account / Hive `buvid` serialization) and fail identically against the unchanged `lib/` code at `HEAD`, so they predate this change and are not touched here.
   * Not run on a TV device: the live check of `设置 → 关于 → 版本` is `M10.7`.
 * **Known limitations** (documented, not addressed): several overlay dialogs open at once are one layer, so a second dialog opened over the first does not take focus from it; an overlay with `usePenetrate: true` that contains focusable widgets would still be modal (the app has none).
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.7`): Live `<vm-tv>` Verification
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+  * No source change: the verification found nothing to fix.
+* **Device and build**: Android TV image (`arm64-v8a`, API 34, `1920×1080`) on the `<vm-tv>` emulator. Release-mode side-by-side build (`com.lemontea.piliplus.tv.dev`) from the `M10.5`–`M10.6` tree with the TV patches applied during the build and reverted straight after; the user's existing `com.lemontea.piliplus.tv` and `.debug` installs were not modified.
+* **Verified live** (details and method in [`PLAN.md` → M10.7](./PLAN.md)):
+
+  | Check | Result |
+  | :--- | :--- |
+  | `设置 → 关于 → 当前版本` opens the real `🎉 发现新版本` dialog | Focus and ring move to `取消`; page behind is dimmed and ringless; Right / Left move between `取消` and `更新`; Up does not escape to the page |
+  | Dialog dismissal | Back (page not popped) and Select on `取消` both return focus and ring to `当前版本` |
+  | `R8` Hold-Select after D-pad moves | `3.0倍速中`, 3x playback, no play/pause toggle |
+  | `R9` at `uiScale 0.80` | Seek bar (bottom band) reachable with Up from the pills |
+  | `R10` 29-part video | `选集` opens on the current episode with the ring on it |
+  | `R11` / `R12` media keys | Pause and Play are idempotent, PlayPause toggles, label always follows the player |
+  | `M9` comment sheet | Opens with the ring on `关闭`; Back restores the exact comment |
+  | App resume, `界面缩放` slider dialog, soft-keyboard gate | Unchanged and working |
+  | `adb logcat` | `0` `FlutterError` / `FATAL EXCEPTION` / `ANR` / `E/flutter`; app stayed alive |
+
+* **Not run**: `更新` activation (downloads an APK and starts the installer, so it needs the user's go-ahead), Quick Strip Hold-Select on the device, the M6 popup menu on the device, toast / loading on the device, and a real remote or HDMI-CEC sending separate Play and Pause keys.
+* **Method notes for future live checks**: hold a key with `input keycombination -t <ms> KEYCODE_DPAD_CENTER KEYCODE_SHIFT_LEFT`; the emulator console `event send` did not deliver key events, and `input keyevent --longpress` is instantaneous. The HUD auto-hides after 5 s, so send each HUD key sequence in a single command. One mis-counted key press toggled a setting in the test install (the theme mode and a switch); both were cycled back to their original values and the test install is separate from the user's data.
