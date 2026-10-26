@@ -4894,6 +4894,193 @@ void main() {
       },
     );
   });
+
+  group('viewport follows the scaled root view (M10, R9)', () {
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    // ScaledWidgetsFlutterBinding lays the tree out in
+    // `physicalSize / (devicePixelRatio * uiScale)`, while View.physicalSize and
+    // View.devicePixelRatio stay the platform values. The tests model that by
+    // giving the root RenderView a layout size that differs from
+    // `physicalSize / devicePixelRatio` (1920x1080 here).
+    Future<void> pumpScaledRoot(
+      WidgetTester tester, {
+      required Size layoutSize,
+      required Map<FocusNode, Offset> buttons,
+      required FocusNode autofocusNode,
+    }) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.binding.setSurfaceSize(layoutSize);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TvNavigation(
+            child: Scaffold(
+              body: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final MapEntry<FocusNode, Offset> entry
+                      in buttons.entries)
+                    Positioned(
+                      left: entry.value.dx,
+                      top: entry.value.dy,
+                      width: 200,
+                      height: 80,
+                      child: ElevatedButton(
+                        focusNode: entry.key,
+                        autofocus: entry.key == autofocusNode,
+                        onPressed: () {},
+                        child: Text(entry.key.debugLabel ?? ''),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'uiScale < 1: controls in the right and bottom band beyond physicalSize / devicePixelRatio stay reachable',
+      (tester) async {
+        final top = FocusNode(debugLabel: 'top');
+        final right = FocusNode(debugLabel: 'right');
+        final bottom = FocusNode(debugLabel: 'bottom');
+        addTearDown(() {
+          top.dispose();
+          right.dispose();
+          bottom.dispose();
+        });
+
+        // uiScale 0.8: 1920x1080 / 0.8 = 2400x1350 of layout space.
+        await pumpScaledRoot(
+          tester,
+          layoutSize: const Size(2400, 1350),
+          buttons: {
+            top: const Offset(100, 100),
+            right: const Offset(2100, 100),
+            bottom: const Offset(100, 1200),
+          },
+          autofocusNode: top,
+        );
+        expect(top.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(right.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(top.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(bottom.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(top.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'uiScale < 1: focus on a control in the outer band is kept, not recovered away',
+      (tester) async {
+        final top = FocusNode(debugLabel: 'top');
+        final right = FocusNode(debugLabel: 'right');
+        addTearDown(() {
+          top.dispose();
+          right.dispose();
+        });
+
+        await pumpScaledRoot(
+          tester,
+          layoutSize: const Size(2400, 1350),
+          buttons: {
+            top: const Offset(100, 100),
+            right: const Offset(2100, 100),
+          },
+          autofocusNode: right,
+        );
+
+        // The first frames after autofocus run focus recovery for unfocusable
+        // nodes: focus must still be where it was put.
+        expect(right.hasPrimaryFocus, isTrue);
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(right.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'uiScale > 1: controls beyond the layout space but inside physicalSize / devicePixelRatio are not reachable',
+      (tester) async {
+        final top = FocusNode(debugLabel: 'top');
+        final offscreen = FocusNode(debugLabel: 'offscreen');
+        addTearDown(() {
+          top.dispose();
+          offscreen.dispose();
+        });
+
+        // uiScale 1.25: 1920x1080 / 1.25 = 1536x864 of layout space, so a
+        // control at x = 1700 is off screen even though 1700 < 1920.
+        await pumpScaledRoot(
+          tester,
+          layoutSize: const Size(1536, 864),
+          buttons: {
+            top: const Offset(100, 100),
+            offscreen: const Offset(1700, 100),
+          },
+          autofocusNode: top,
+        );
+        expect(top.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(offscreen.hasPrimaryFocus, isFalse);
+        expect(top.hasPrimaryFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'uiScale == 1: controls beyond the right edge stay unreachable',
+      (tester) async {
+        final top = FocusNode(debugLabel: 'top');
+        final offscreen = FocusNode(debugLabel: 'offscreen');
+        addTearDown(() {
+          top.dispose();
+          offscreen.dispose();
+        });
+
+        await pumpScaledRoot(
+          tester,
+          layoutSize: const Size(1920, 1080),
+          buttons: {
+            top: const Offset(100, 100),
+            offscreen: const Offset(2000, 100),
+          },
+          autofocusNode: top,
+        );
+        expect(top.hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(offscreen.hasPrimaryFocus, isFalse);
+        expect(top.hasPrimaryFocus, isTrue);
+      },
+    );
+  });
 }
 
 class _KeepAliveTestPage extends StatefulWidget {

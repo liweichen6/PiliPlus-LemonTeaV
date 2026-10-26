@@ -19,6 +19,7 @@ import 'package:flutter/rendering.dart'
         RenderSliverPersistentHeader,
         RenderSliverSingleBoxAdapter,
         RenderSliverToBoxAdapter,
+        RenderView,
         RenderViewportBase,
         SliverLogicalParentData,
         SliverMultiBoxAdaptorParentData;
@@ -198,6 +199,30 @@ class _TvTraversalCache {
     box,
     () => box.localToGlobal(Offset.zero) & box.size,
   );
+
+  RenderView? _viewportRoot;
+  Rect? _viewportRect;
+
+  /// Layout-space bounds of the view [box] is attached to, or `null` when they
+  /// are unknown.
+  ///
+  /// [boxRect] is in the root [RenderView]'s logical space, which
+  /// `ScaledWidgetsFlutterBinding` lays out in
+  /// `physicalSize / (devicePixelRatio * uiScale)`. `View.physicalSize /
+  /// View.devicePixelRatio` leaves `uiScale` out and so is the wrong size to
+  /// compare against whenever `uiScale != 1.0`.
+  Rect? viewportRectOf(RenderBox box) {
+    final RenderObject? root = box.owner?.rootNode;
+    if (root is! RenderView) return null;
+    if (!identical(root, _viewportRoot)) {
+      _viewportRoot = root;
+      final Size size = root.size;
+      _viewportRect = size.width > 1.0 && size.height > 1.0
+          ? Offset.zero & size
+          : null;
+    }
+    return _viewportRect;
+  }
 
   Rect? scrollableRect(ScrollableState? scrollable) {
     if (scrollable == null) return null;
@@ -552,16 +577,14 @@ class _TvTraversalCache {
       return true;
     });
 
-    if (focusable && (!insideScrollable || hasNonZeroTranslation)) {
-      final view = View.maybeOf(context);
-      if (view != null && view.devicePixelRatio > 0) {
-        final Size logicalSize = view.physicalSize / view.devicePixelRatio;
-        if (logicalSize.width > 1.0 && logicalSize.height > 1.0) {
-          final Rect viewport = Offset.zero & logicalSize;
-          visible = visible.intersect(viewport);
-          if (visible.width <= 1.0 || visible.height <= 1.0) {
-            focusable = false;
-          }
+    if (focusable &&
+        (!insideScrollable || hasNonZeroTranslation) &&
+        renderObject is RenderBox) {
+      final Rect? viewport = viewportRectOf(renderObject);
+      if (viewport != null) {
+        visible = visible.intersect(viewport);
+        if (visible.width <= 1.0 || visible.height <= 1.0) {
+          focusable = false;
         }
       }
     }

@@ -90,8 +90,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.1` | Root-Cause Analysis (`🎉 发现新版本` `SmartDialog` outside `Navigator`) & Unified `_TvFocusLayerStack` Design | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`d12e992e0`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ✅ Done | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ✅ Done | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`d3faa0f0c`) |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ⏳ Planned | Android APK / `<vm-tv>` |
@@ -637,3 +637,26 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `62/62` passed (`36` navigation + `26` player HUD, up from `17`).
   * `./tool/tv_patch.sh status`: `[NOT APPLIED]` for all 38 patches after the revert.
   * Not run on a TV device: live verification of the review fixes is part of `M10.7`.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.4`): `uiScale` Viewport Fix `R9`
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] lib/tv/tv_navigation.dart`
+  * `[MODIFY] test/tv_navigation_test.dart`
+  * `[MODIFY] docs/tv/PLAN.md`
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Method**: tests first. The 4 new tests ran against the unfixed code on a patched SDK: 3 failed (the three `uiScale ≠ 1.0` cases, on the predicted assertions) and 1 passed (the `uiScale == 1.0` guard). This is the first runtime confirmation of `R9`; the M10.2 review was static reading only.
+* **Root cause**: `_TvTraversalCache.evaluateNode` clipped nodes outside user-scrollables to `View.physicalSize / View.devicePixelRatio`. `ScaledWidgetsFlutterBinding` lays the tree out in `physicalSize / (devicePixelRatio × uiScale)`, and `localToGlobal` reports in that space, so the viewport and the node rects were in different spaces whenever `uiScale ≠ 1.0`. At `0.8`, focusables outside scrollables in the right and bottom ~20% (the fullscreen HUD seek bar, non-scrolling right-column tabs, app-bar actions) were unfocusable, and focus recovery could move focus off them. At `1.25`, off-screen nodes outside scrollables counted as visible.
+* **Fix**: `_TvTraversalCache.viewportRectOf(RenderBox)` returns `Offset.zero & RenderView.size` of the box's pipeline owner root, memoized per cache and per root. `evaluateNode` uses it in place of the `View` lookup. No `BuildContext` lookup, no inherited dependency, no per-node cost beyond an identity comparison. `_computeFocusedRect` already used the `TvNavigation` root box size, so the focus ring needed no change.
+* **Tests** (`test/tv_navigation_test.dart`, group `viewport follows the scaled root view (M10, R9)`): the harness keeps `View.physicalSize` at `1920×1080` and `devicePixelRatio` at `1.0` while `tester.binding.setSurfaceSize` sets the root layout size.
+  * `uiScale 0.8` (`2400×1350`): a control in the right band and one in the bottom band are reachable by D-pad in both directions.
+  * `uiScale 0.8`: autofocus on a right-band control is kept through the first frames (no recovery away from it).
+  * `uiScale 1.25` (`1536×864`): a control at `x = 1700` (beyond the layout width, inside `1920`) is not reachable.
+  * `uiScale 1.0` guard: a control beyond the right edge stays unreachable.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `66/66` passed (`40` navigation, up from `36`, and `26` player HUD).
+  * `./tool/tv_patch.sh status`: `[NOT APPLIED]` for all 38 patches after the revert.
+  * Not run on a TV device: the live check at `uiScale 1.0` and `0.8` is part of `M10.7`.
