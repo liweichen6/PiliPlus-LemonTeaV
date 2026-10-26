@@ -84,7 +84,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 4: Unified Modal Focus Layer Model & Code Review Remediation (Milestone M10) — In Progress
+### Phase 4: Unified Modal Focus Layer Model & Code Review Remediation (Milestone M10) — Completed
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -98,7 +98,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ✅ Done | `lib/tv/tv_focus_layers.dart`, `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`dcf925548`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Per-Frame Sheet Cost (`R13`) and Typed Sheet Check (`R15`) — **migration of M9 onto the stack deferred** | ✅ Done (`R13`, `R15`) | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` (`3f894408b`) |
 | **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart`, `docs/tv/*`, `README*.md` (`bad5fddc4`) |
-| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | 🚧 In Progress (`ARCHITECTURE.md` done; `REVIEW.md`, READMEs, final device pass remain) | `docs/tv/*`, `README*.md` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ✅ Done (one `M10.8` regression found on the device and fixed) | `docs/tv/*`, `README*.md`, `lib/tv/tv_focus_layers.dart`, `test/tv_navigation_test.dart` (`9bb027680`, `75edded59`, `3a169e16a`) |
 
 ---
 
@@ -776,3 +776,41 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `86/86` passed (`58` navigation, up from `53`, and `28` player HUD, up from `26`).
   * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`.
   * Not yet run on a TV device: batched into the final live pass.
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.11`): Documentation Sync, Final Device Pass & One Regression Fix
+* **Status**: ✅ Completed. Milestone M10 is done.
+* **Commits**: `9bb027680` (`ARCHITECTURE.md`), `75edded59` (`REVIEW.md`, READMEs), `3a169e16a` (regression fix, tests, `ARCHITECTURE.md` note), and the commit that carries this entry.
+* **Files Changed**:
+  * `[MODIFY] docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `README.md`, `README.en.md`
+  * `[MODIFY] lib/tv/tv_focus_layers.dart` (route layers only for `PopupRoute`s)
+  * `[MODIFY] test/tv_navigation_test.dart` (two new tests)
+  * `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`
+* **Device and build**: Android TV image (`arm64-v8a`, API 34, `1920×1080`) on the `<vm-tv>` emulator. Release-mode side-by-side builds (`com.lemontea.piliplus.tv.dev`) of the final tree, TV patches applied during each build and reverted straight after. The test install was uninstalled at the end; the existing installs were not modified.
+* **The finding the pass was for**: the comment sheet on the video page regressed with `M10.8` (the ring went to the Quick Strip's `全屏` instead of into the sheet). Cause, fix and tests are in [`PLAN.md` → M10.11](./PLAN.md). In short: a page pushed over another page was recorded as a popup-style route layer for its whole lifetime, and the stack pulled focus to the page's first control whenever the sheet code parked focus on the scope node.
+* **Verified live** (the checks marked "after the fix" ran on the fixed build; the others ran on the build before it and do not touch the changed code):
+
+  | Check | Result |
+  | :--- | :--- |
+  | `设置 → 关于 → 当前版本` update dialog (before and after the fix) | Ring on `取消`; Right moves to `更新`; Up stays in the dialog; Back closes it and the ring returns to `当前版本` with the About page still open |
+  | Settings popup menu `动态展示` (before and after the fix) | Opens with the ring on `全部`; Down moves to `投稿`; Back closes it, the ring returns to `动态展示` and the value is unchanged |
+  | Comment sheet `评论详情` | **Before the fix: ring on `全屏` (regression), also on a second open.** After the fix: ring on `关闭`; Back restores the ring to the exact comment |
+  | Fullscreen HUD | Opens on `暂停`; the media Pause key flips the label to `播放` and pauses (`R11` / `R12`) |
+  | HUD clock (`R19`) | Stayed open for about 30 s across a minute boundary (D-pad activity every 3.5 s): `12:13` → `12:14` |
+  | HUD `选集` dialog, after the fix | Opens with the ring on the current episode (4th of 25), `R10`; Back closes it |
+  | App start, home, sidebar, `我的`, settings, route focus memory | Working; Back from settings put the ring on the gear again |
+  | `adb logcat` over the fixed-build runs | `0` `FATAL EXCEPTION` / `E/flutter` / `FlutterError` / ANR |
+
+* **Not run**: `更新` activation (it downloads an APK and starts the installer, so it needs the user's go-ahead); Quick Strip Hold-Select and the `R18` direction change on the device (covered by the unit tests); a real remote or HDMI-CEC sending separate Play and Pause keys; toast and loading overlays on the device.
+* **Method notes for future live checks**:
+  * The HUD auto-hides after 5 s without a key, so send every HUD key sequence in one command. From a hidden HUD, `退出全屏` is Up, Up, Up, Select.
+  * `adb shell input keyevent` sends key down and key up together.
+  * To trace a focus path on the device, add temporary `print` lines to a throwaway release build and read them with `adb logcat`; revert the sources afterwards. One log line per `requestFocus` call site (a private `FocusNode` extension used inside the cascades) found the culprit in two rebuilds.
+  * Unit tests of focus handoff must keep frames coming (a spinner stands in for the video texture) and must put the trigger inside the covered body; `pumpAndSettle` hides this class of bug.
+  * Do not run `dart format` on `tv_navigation.dart` or `test/tv_navigation_test.dart`: it rewrites unrelated lines.
+* **Verification** (patches applied, then reverted):
+  * `flutter analyze --no-pub lib/tv/ test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `No issues found!`.
+  * `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`: `88/88` passed (`60` navigation, up from `58`, and `28` player HUD).
+  * `./tool/tv_patch.sh status`: all patches `[NOT APPLIED]`. Privacy scan of the added lines: clean.
+  * The rest of the suite (`test/utils`, `video_utils`, `thread_ripper`) has `2` failures, both in `test/utils/accounts/deleted_account_test.dart`, an upstream account-deletion test that imports nothing from the TV layer. `M10` changed no file under `lib/` outside `lib/tv/`.

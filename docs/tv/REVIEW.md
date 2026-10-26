@@ -4,7 +4,7 @@
 > - **Baseline Commit**: `c663e8ff8` (`v2.1.6.2-fork.5754`)
 > - **Pinned Toolchain**: Flutter `3.47.7` stable / Dart `>=3.13.0` (`compileSdk = 37`)
 > - **Fork Footprint vs. `lemonteaau/PiliPlus`**: 33 files touched, with **only 5 upstream Dart files in `lib/` modified (`< 30` net lines)**
-> - **Verification Status**: `flutter analyze --no-pub` reports **0 issues** across all TV modules, hooks, and tests; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes **86 / 86 tests** (~3s); all 38 SDK/pub-cache patches apply and revert cleanly via `./tool/tv_patch.sh`.
+> - **Verification Status**: `flutter analyze --no-pub` reports **0 issues** across all TV modules, hooks, and tests; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes **88 / 88 tests** (~3s); all 38 SDK/pub-cache patches apply and revert cleanly via `./tool/tv_patch.sh`.
 > - **Follow-up Review (2026-10-26, Milestone M10)**: findings `R8`–`R20` and the still-open `R2` / `R3` / `R5` items were added after M9.5 and are resolved in M10 (the task is in the severity column of §3). `R1`–`R7` keep their original numbering. The `SmartDialog` update-dialog focus bug that started M10 is not an `R` item: see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.13 and invariant `C23`.
 
 ---
@@ -25,7 +25,7 @@
 | **10-Foot Player HUD (`TvPlayerHud`)** | **A** | Full transport/episode/quality/speed/fit/danmaku OSD, hardware-decoupled virtual seek accumulator (`1x → 2x → 3x`), Hold-Select 3.0x temporary speed boost, remote hold-to-triple-like, and `PopScope` Back dismissal. |
 | **Native Bridge & Platform Layer** | **A-** | `WeakReference<Activity>` prevents Activity leaks; `_TvTextInputGateControl` reliably blocks unwanted soft-keyboard popups during D-pad traversal; minor doc/predicate nuance around non-Leanback HDMI boxes (see **R1**). |
 | **SDK & Package Patch Pipeline** | **A** | Minimal, surgical patches guarded by `NavigationMode.directional` (zero overhead in touch mode); includes an important fix for stock Flutter's `_InkResponseState._canRequestFocus` directional bug. |
-| **Test Suite & Release Hygiene** | **A** | 86 targeted TV tests (58 navigation/geometry/benchmark/inline-sheet/overlay + 28 HUD/modal/3x-speed), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
+| **Test Suite & Release Hygiene** | **A** | 88 targeted TV tests (60 navigation/geometry/benchmark/inline-sheet/overlay + 28 HUD/modal/3x-speed), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
 
 ---
 
@@ -127,7 +127,7 @@ The original review found no Critical, High, or Medium functional defects; `R1`�
 
 | Touchpoint / Layer | Upstream Churn Exposure | Failure Signal if Upstream Changes | Maintenance Effort |
 | :--- | :---: | :--- | :--- |
-| **`lib/tv/*` & `TvBridge.kt` (Tier 1)** | **Very Low** (only imports `BottomSheetLayout` / `BottomSheetType`, `PlPlayerController`, `VideoDetailController`, `PgcIntroController`, `LiveRoomController`, `SettingBoxKey`, `VideoFitType`, `BaseQuality` / `VideoDecodeFormatType`) | Compile-time error in `flutter analyze --no-pub` or failure in the 86 TV unit/widget tests (e.g. `1acd76929` 2-line import update after upstream quality refactor). | Minimal (self-contained inside `lib/tv/`). |
+| **`lib/tv/*` & `TvBridge.kt` (Tier 1)** | **Very Low** (only imports `BottomSheetLayout` / `BottomSheetType`, `PlPlayerController`, `VideoDetailController`, `PgcIntroController`, `LiveRoomController`, `SettingBoxKey`, `VideoFitType`, `BaseQuality` / `VideoDecodeFormatType`) | Compile-time error in `flutter analyze --no-pub` or failure in the 88 TV unit/widget tests (e.g. `1acd76929` 2-line import update after upstream quality refactor). | Minimal (self-contained inside `lib/tv/`). |
 | **`lib/scripts/tv_*.patch` (Tier 2)** | **Low** (only changes when upstream bumps the pinned Flutter SDK version in `pubspec.yaml` or edits `lib/common/widgets/material/ink_well.dart`) | `./tool/tv_patch.sh apply` / `patch.ps1` exits immediately with `git apply` failure before build starts. | Re-diff the affected 20–100 line patch against the new Flutter SDK commit. |
 | **`lib/main.dart` & `player_focus.dart` (Tier 3)** | **Low** (10 lines in `main.dart`, 13 lines in `player_focus.dart`) | Standard git merge conflict localized to `MyApp._builder` or `PlayerFocus.build`, plus M6/M7 regression tests in `test/tv_navigation_test.dart`. | Trivial re-wrap of `TvNavigation` or `TvPlayerHud`. |
 | **Upstream source read by tests** (`lib/pages/login/view.dart` and `controller.dart`, `lib/utils/storage_key.dart`) | **Low** | The `login page QR tab` test fails if upstream reorders the login tabs or changes the index its controller polls; the seeding test fails if a seeded key is no longer declared in `SettingBoxKey`. | Update `TvNavigationObserver.loginQrTabIndex` or the seeded key. |
