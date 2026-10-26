@@ -84,6 +84,24 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
+### Phase 4: Unified Modal Focus Layer Model & Code Review Remediation (Milestone M10) — In Progress
+
+| Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.1` | Root-Cause Analysis (`🎉 发现新版本` `SmartDialog` outside `Navigator`) & Unified `_TvFocusLayerStack` Design | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.1 | `M10.2` | TV Layer Code Review & Findings Triage (`R8`–`R20`) | ✅ Done | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.3` | Player HUD Fixes: Nested Pill Focus, Long Episode List Autofocus, Stale Play/Pause Label, Separate Play/Pause Keys (`R8`, `R10`–`R12`) | ⏳ Planned | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.2 | `M10.4` | Use the Scaled Root View Size in the Viewport Check (`R9`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.5` | Focus-Layer Core + Generic `_OverlayFocusLayer` Provider (Promotion, Occlusion, Restoration; O(1) No-Layer Path) | ⏳ Planned | `lib/tv/tv_navigation.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.6` | `SmartDialog` Regression Tests with Real `FlutterSmartDialog` Harness | ⏳ Planned | `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.3 | `M10.7` | Live `<vm-tv>` Verification (`设置 → 关于 → 版本`, Review Fixes at `uiScale` `1.0` / `0.8`) | ⏳ Planned | Android APK / `<vm-tv>` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.8` | Consolidation I: Migrate M6 Popup-Route Promotion → `_RouteFocusLayer` | ⏳ Planned | `lib/tv/tv_navigation.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.4 | `M10.9` | Consolidation II: Adapt M9 Inline Sheets → `_InlineSheetFocusLayer` + Per-Frame Sheet Cost (`R13`, `R15`) | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.10` | Smaller Cleanups (`R14`, `R16`–`R20`, open `R2` / `R3` / `R5` item 4) | ⏳ Planned | `lib/tv/*`, `test/tv_*.dart` |
+| **M10: Focus Layers, `SmartDialog` & Review Fixes** | Epic M10.5 | `M10.11` | Documentation Sync (`C23`, `R8`–`R20`, `ARCHITECTURE.md` Corrections) & Release Hygiene | ⏳ Planned | `docs/tv/*`, `README*.md` |
+
+---
+
 ## Detailed Task Log (Phase 2 Optimization)
 
 ### [2026-10-22] Milestone M1: Spatial Navigation Traversal & Idle Frame Callback Optimization
@@ -541,3 +559,51 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
      * Verified all 53 automated widget tests pass cleanly (`36/36` navigation tests in `test/tv_navigation_test.dart` and `17/17` player HUD tests in `test/tv_player_hud_test.dart`).
      * `flutter analyze` reports 0 issues.
      * Synchronized documentation suite across `docs/tv/REVIEW.md`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, and `docs/tv/PROGRESS.md`.
+
+---
+
+## Detailed Task Log (Phase 4: Unified Modal Focus Layer Model & Code Review Remediation)
+
+### [2026-10-25] Milestone M10 (Task `M10.1`): Root-Cause Analysis for `🎉 发现新版本` (`SmartDialog`) Focus \& Unified Focus-Layer Design
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] docs/tv/PLAN.md` (Phase 4 roadmap + Milestone M10 breakdown)
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Findings**:
+  1. `Update.checkUpdate` (`lib/utils/update.dart:85`) opens the update dialog with `SmartDialog.show` (`useSystem: false`). `flutter_smart_dialog` inserts a `SmartOverlayEntry` into its own `Overlay`, *next to* the root `Navigator` (`FlutterSmartDialog.init(builder: _builder)`). It never pushes a route, builds a `FocusScope`, or requests focus.
+  2. The dialog's `FocusNode`s therefore attach as siblings of the root Navigator's focus branch under `TvNavigation`'s `FocusTraversalGroup`. The `/about` route scope stays active, so `TvNavigationObserver` (C11), M6 inactive-scope promotion (C18), and M9 inline-sheet promotion (C22) never fire. Focus and the ring stay on `版本` behind the mask, and D-pad and Select act on the hidden page.
+  3. The same bug affects every interactive `SmartDialog` (storage-permission `去授权` in `lib/utils/image_utils.dart:59`, plus any added later). Toasts, loading, and notifications have no focusable nodes and must keep their current behavior.
+  4. Cross-milestone pattern: M6 (`showMenu(requestFocus: false)`), M9 (`MiniScaffold` inline sheets), and this bug are all "a new layer appears but focus stays behind". Each was fixed with its own detect/save/promote/occlude/restore code inside `_syncFocusRectAfterLayout` / `_onFocus`.
+* **Decision**: add one `_TvFocusLayer` interface (`discover` / `contains` / `occludes` / `firstFocus` / `isClosing`) and one shared `_TvFocusLayerStack` lifecycle. Ship the generic `_OverlayFocusLayer` provider first (M10.5–M10.7, the user-facing fix), then move M6 and M9 onto the same stack behind strict "existing assertions unchanged" gates (M10.8–M10.9). Task IDs in this entry follow the 2026-10-26 renumbering (see the `M10.2` entry). See [`PLAN.md` → Milestone M10](./PLAN.md).
+
+---
+
+### [2026-10-26] Milestone M10 (Task `M10.2`): TV Layer Code Review & Findings Triage (`R8`–`R20`) and M10/M11 Consolidation
+* **Status**: ✅ Completed
+* **Files Changed**:
+  * `[MODIFY] docs/tv/PLAN.md` (review findings added to the Milestone M10 breakdown; the separate Milestone M11 was folded into M10 and the planned tasks renumbered)
+  * `[MODIFY] docs/tv/PROGRESS.md`
+* **Scope**: `lib/tv/tv_platform.dart`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_player_hud.dart`, `TvBridge.kt`, `lib/scripts/tv_*.patch` (including `material/tv_ink_well.patch`), `tool/tv_patch.sh`, and the Tier 3 hooks (`lib/main.dart`, `player_focus.dart`, `connectivity_utils.dart`). Each finding was cross-checked against the upstream code the TV layer depends on (`PlPlayerController`, `MiniScaffold` / `BottomSheetLayout`, `ScaledWidgetsFlutterBinding`, `LoginPage`, setting deletes) and the Flutter SDK source (`RenderObject.getTransformTo`, `ModalRoute.of`).
+* **Verification**: not run. The local Flutter SDK does not have the TV patches applied, and the review did not patch it, so `flutter analyze` / `flutter test` were not run and no finding was reproduced at runtime. Findings are confirmed by reading both sides of each code path.
+* **Findings** (details, failure scenarios and planned fixes in [`PLAN.md` → Milestone M10, Task M10.2](./PLAN.md)):
+
+  | ID | Severity | Location | Finding | Task |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `R8` | High | `tv_player_hud.dart:1520-1539`, `tv_gesture_detector.patch` | The patched `GestureDetector` adds a second `Focus` inside `_TvHudPillButton`. D-pad traversal lands on it, so Select fires on key-down and Hold-Select 3x speed never starts on `暂停/播放`, `全屏`, `播/暂` after any D-pad move. Tests only hold Select on the autofocused node. | `M10.3` |
+  | `R9` | High (`uiScale ≠ 1.0`) | `tv_navigation.dart:555-567` | The viewport check uses `view.physicalSize / devicePixelRatio`, but `ScaledWidgetsFlutterBinding` lays out in `physicalSize / (dpr × uiScale)`. Below `1.0`, focusables outside scrollables in the right/bottom `(1 − uiScale)` of the screen are unreachable (e.g. the fullscreen seek bar at `0.8`); above `1.0`, off-screen nodes count as visible. | `M10.4` |
+  | `R10` | Medium | `tv_player_hud.dart:1735-1767` | Lazy `ListView.separated` in the 420 px option dialog never builds items past ~#14, so the current episode's `autofocus` never fires and focus lands on item 0. | `M10.3` |
+  | `R11` | Medium | `tv_player_hud.dart:315-323, 1202-1205` | `playerStatus` updates asynchronously from the `playing` stream, but `_togglePlayPause` rebuilds immediately, so the HUD Play/Pause label shows the old state. | `M10.3` |
+  | `R12` | Medium-Low | `tv_player_hud.dart:382-387` | `mediaPlay` and `mediaPause` both toggle, so separate Play/Pause remote and HDMI-CEC keys do the opposite when already in that state. | `M10.3` |
+  | `R13` | Medium (perf) | `tv_navigation.dart:2806-2812, 2444-2465` | Ancestor walk + `ModalRoute.of` run every frame before the stationary check; an open zero-focusable sheet gets a full subtree walk every frame; `ModalRoute.of` registers rebuild dependencies on focused elements. The "~0.001 ms" stationary claim in `ARCHITECTURE.md` doesn't hold. | `M10.9` |
+  | `R14` | Low | `tv_navigation.dart:2171-2183` | Persistent frame callback can't be removed and `dispose` doesn't clear tracked `Element` lists, so a remounted `TvNavigation` would keep the old state reachable. | `M10.10` |
+  | `R2` | Low (still open) | `tv_navigation.dart:2104-2108` | `TvNavigation.onBack` is still unused. | `M10.10` |
+  | `R15` | Low | `tv_navigation.dart:87-97` | `animationController` read through `dynamic` + `try/catch`; a typed `StandardBottomSheet` check is cheaper and fails at compile time on an upstream rename. | `M10.9` |
+  | `R16` | Low | `tv_platform.dart:24, 116-118` | `tvDefaultsSeededV1` is written but never read; seeding runs on every launch (harmless), while docs say first launch. | `M10.10` |
+  | `R17` | Low | `video/view.dart:1281`, `live_room/view.dart:252` | The TV HUD only mounts when upstream `keyboardControl` is on; turning it off on TV silently removes the HUD and Quick Strip. | `M10.10` |
+  | `R18` | Info | `tv_player_hud.dart:327-345` | Seek acceleration multiplier carries over a direction change (`R3`, `DateTime.now()`, still open in the same function). | `M10.10` |
+  | `R19` | Info | `tv_player_hud.dart:1079` | HUD clock is set at build time and doesn't tick. | `M10.10` |
+  | `R20` | Info | `tv_navigation.dart:3405-3406` | Login QR tab index `2` is hard-coded; correct today, but an upstream reorder would open the wrong tab (`R4` fixed only the retry). | `M10.10` |
+  | `R5` (4) | Info (still open) | `tv_navigation.dart:2061` | `_TvVerticalFocusIntent` handles all four arrows; rename to `_TvArrowFocusIntent`. | `M10.10` |
+
+* **Checked and fine**: `TvBridge` `WeakReference` handling and null fallbacks; the soft-keyboard gate; `MediaQuery` unwrapping; the repeat throttle ordering (`didScrollInLastFocus` is set before `_onFocus` runs); route focus memory; media keys reach the HUD from anywhere on the player page (`PlayerFocus` wraps the whole page body); both `tv_ink_well.patch` copies have identical hunks; no seeded setting key is deleted upstream.
+* **Decision**: fold the fixes into Milestone M10 instead of a separate Milestone M11, so all remaining TV focus work is one sequence. The review fixes go first (`M10.3` HUD, `M10.4` `uiScale`): they are small, don't depend on the focus-layer work, and include both High findings; `M10.4` must also land before the layer core (`M10.5`) because both edit `evaluateNode`. `R13` / `R15` join the inline-sheet migration (`M10.9`) so that code changes once, and `M10.5` must keep the no-layer path O(1). Live verification and the docs sync are each one combined task (`M10.7`, `M10.11`). Old → new task IDs: `M10.2`→`M10.5`, `M10.3`→`M10.6`, `M10.4`→`M10.7`, `M10.5`→`M10.8`, `M10.6`→`M10.9`, `M10.7`→`M10.11`; `M11.1`→`M10.2`, `M11.2` + `M11.4`→`M10.3`, `M11.3`→`M10.4`, `M11.5`→`M10.9`, `M11.6`→`M10.10` (except `R15`→`M10.9`), `M11.7`→`M10.7` (live checks) + `M10.11` (docs).
