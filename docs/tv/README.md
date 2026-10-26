@@ -44,7 +44,17 @@
 1. 拉取 `https://github.com/lemonteaau/PiliPlus.git`（`main` 分支）并合并入本仓库 `main`（通过 [`.gitattributes`](../../.gitattributes) 中的 `merge=ours` 策略自动保留本仓库的 `README.md` 与 `README.en.md`）。
 2. 计算提交计数 `version_code = $(git rev-list --count HEAD)`，生成版本标签 `v<upstream_version>-fork.<version_code>`。
 3. 执行 [`lib/scripts/patch.ps1 android`](../../lib/scripts/patch.ps1) 应用全部 38 个 Flutter SDK、pub-cache 及 TV 框架补丁。
-4. 使用签名密钥构建分架构 Release APK（`arm64-v8a`、`armeabi-v7a`、`x86_64`）并自动发布至本仓库 GitHub Releases。
+4. 使用签名密钥构建分架构 Release APK（`arm64-v8a`、`armeabi-v7a`、`x86_64`）。
+5. 与构建并行，对同一提交运行 TV 检查（见下文）。
+6. 仅当构建与 TV 检查都通过时，才发布至本仓库 GitHub Releases。检查失败时不会发布 APK，也不会创建 Release；第 2 步的版本标签可能已经存在，下一次运行会移动它。
+
+### TV 检查（`tv-checks.yml`）
+[`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) 会在每个合并到 `main` 的 Pull Request 上以及每次发布前运行：
+1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
+2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`。
+
+> **仓库设置（仓库所有者操作）**：在 GitHub → **Settings** → **Branches** 中保护 `main` 分支，并将状态检查 **TV analyze and tests** 设为必需，使检查未通过的 Pull Request 无法合并。
 
 ### 方式 B：在本地通过命令行同步上游
 在拉取或合并上游前，**请务必先还原本地 SDK 与依赖包补丁**，保持工作区干净：
@@ -63,12 +73,14 @@ git merge --no-edit upstream/main
 
 # 4. 重新应用补丁，执行静态分析与 TV 自动化测试验证兼容性
 ./tool/tv_patch.sh apply
-flutter analyze --no-pub lib/tv/ lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
+# （与 tv-checks.yml 中的命令相同）
+flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
 
 # 5. 提交或推送前还原补丁，确保 SDK 与工作区干净
 ./tool/tv_patch.sh revert
-git push origin main
+# 每次向 main 推送非 Markdown 改动都会发布新版本：请推送到分支并发起 Pull Request
+git push origin HEAD:sync/upstream
 ```
 
 ---
@@ -76,7 +88,7 @@ git push origin main
 ## 4. 本地构建 Release APK 指南
 
 ### 环境要求
-- **Flutter SDK**：需与 [`pubspec.yaml`](../../pubspec.yaml) 中锁定的版本一致（`3.47.7` stable，Dart `>=3.13.0`）。
+- **Flutter SDK**：需与 [`pubspec.yaml`](../../pubspec.yaml) 中锁定的版本一致（`3.47.8` stable，Dart `>=3.13.0`）。
 - **Java 17** 与 **Android SDK**（`compileSdk = 37`）。
 - **补丁脚本**：[`./tool/tv_patch.sh`](../../tool/tv_patch.sh)（适用于 macOS/Linux 的 Bash 脚本，与 CI 使用的 [`lib/scripts/patch.ps1`](../../lib/scripts/patch.ps1) 完全等价）。
 

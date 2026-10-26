@@ -1,0 +1,68 @@
+# PiliPlus TV fork: analyze and test the TV layer. Fork-only file.
+# Runs on every pull request into main (require "TV analyze and tests" in the
+# branch protection of main) and is called by tv-sync-build.yml before every
+# release, where a failure means no APK is published and no release is created.
+name: TV checks
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to check
+        required: true
+        type: string
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to the same pull request cancels the older run; release runs
+  # are never cancelled.
+  group: tv-checks-${{ github.event_name }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  tv-checks:
+    name: TV analyze and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the commit being checked
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      # Also runs `flutter pub get`. A patch that no longer applies (for example
+      # after a Flutter bump) fails this step.
+      - name: Apply project Flutter & TV patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      # The TV layer, the upstream files that hook into it, and the TV tests.
+      # Infos are not fatal, so an upstream lint info in a hook file cannot
+      # block a release; errors and warnings are.
+      - name: Analyze TV code
+        shell: bash
+        run: |
+          flutter analyze --no-pub --no-fatal-infos \
+            lib/tv \
+            lib/main.dart \
+            lib/pages/video/widgets/player_focus.dart \
+            lib/utils/connectivity_utils.dart \
+            test/tv_navigation_test.dart \
+            test/tv_player_hud_test.dart
+
+      - name: Run TV tests
+        shell: bash
+        run: flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
