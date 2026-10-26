@@ -27,6 +27,7 @@
 - **Thoughtful TV Platform Adaptations**:
   - **Automatic QR Code Login Tab**: Automatically switches `LoginPage` to the QR-code tab on TV so you can sign in with your phone without typing on a remote.
   - **On-Demand Soft Keyboard Gate**: Traversing across `TextField`s with D-pad arrows never pops up the system IME until you explicitly press `OK`/`Enter`.
+  - **Dialog Focus Handoff**: Dialogs shown above the app, such as the 🎉 update dialog opened from Settings → About → Version, take D-pad focus and the focus ring when they open, keep the page behind them unreachable, and hand focus back to the control that opened them when closed.
   - **Wired Ethernet Broadband Recognition**: Treats `ConnectivityResult.ethernet` as high-speed broadband on TV so 1080P+/4K streams are selected by default.
   - **TV Defaults**: On TV launches, fills in TV-optimal preferences that are not set yet (landscape layout, side navigation rail, dark theme, `1.2x` text scale, and `300dp` card width) without overwriting anything you changed. The player HUD depends on the **启用键盘控制** (Keyboard Control) switch, so keep it on.
 - **Universal APK (Adaptive TV + Mobile Runtime)**:
