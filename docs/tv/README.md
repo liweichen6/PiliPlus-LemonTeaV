@@ -132,6 +132,9 @@ flutter build apk --release --split-per-abi \
 > **提示（在触控手机/模拟器上强制开启 TV 模式）**：
 > 在 `flutter run` 或 `flutter build apk` 时添加 `--dart-define=PILI_FORCE_TV=true`，即可在带触摸屏的设备上强制开启 TV 焦点框与播控 HUD。
 
+> **提示（查看电视支持的解码器）**：
+> `./tool/tv_codecs.sh` 通过 adb 打印设备上 `MediaCodecList` 报告的全部视频解码器（应用实际能看到的列表）：各解码器声明的分辨率、帧率、性能点与 profile/level。无需安装应用或 root；加 `all` 参数同时列出音频解码器，用 `ANDROID_SERIAL` 指定设备。
+
 ---
 
 ## 5. APK 签名与 GitHub Actions 密钥配置

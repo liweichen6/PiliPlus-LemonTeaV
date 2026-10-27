@@ -132,6 +132,9 @@ Built APKs are written to `build/app/outputs/flutter-apk/`:
 > **Tip (Forcing TV Mode on a Touchscreen Device / Emulator)**:
 > Pass `--dart-define=PILI_FORCE_TV=true` during `flutter run` or `flutter build apk` to force the TV control layer on a device that reports a touchscreen.
 
+> **Tip (Listing a TV's Decoders)**:
+> `./tool/tv_codecs.sh` prints, over adb, every video decoder that `MediaCodecList` reports on the device (the list the app actually sees): the sizes, frame rates, performance points and profile/level pairs each one claims. No app install or root is needed; pass `all` to include audio decoders, and set `ANDROID_SERIAL` to pick the device.
+
 ---
 
 ## 5. APK Signing & GitHub Actions Secrets
