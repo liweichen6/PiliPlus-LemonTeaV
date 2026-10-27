@@ -104,13 +104,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15) — Planned
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15) — In Progress
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.1` | TV Checks Workflow (`tv-checks.yml`: Patches, TV Analyze, TV Tests) | ⏳ Planned | `.github/workflows/tv-checks.yml` |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ⏳ Planned | `.github/workflows/tv-sync-build.yml` |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ⏳ Planned | `docs/tv/*`; branch protection on `main` (user) |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.1` | TV Checks Workflow (`tv-checks.yml`: Patches, TV Analyze, TV Tests) | ✅ Done | `.github/workflows/tv-checks.yml` (`169a7434a`, `5b1168331`) |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ✅ Done | `.github/workflows/tv-sync-build.yml` (`169a7434a`) |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ⏳ Planned | `<physical-tv>` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ⏳ Planned | `<physical-tv>` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
