@@ -112,8 +112,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ✅ Done | `.github/workflows/tv-sync-build.yml` (`169a7434a`) |
 | **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ✅ Done | `<physical-tv>`, `tool/tv_codecs.sh` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | 🔄 In Progress (session 2: deadlock traced; `vo=mediacodec_embed` avoids it but crashes the TV at 4K60) | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | 🔄 Proposal written, awaiting the user's decision | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ⏳ Planned | Decided in `M12.3` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
@@ -1032,3 +1032,15 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Candidate fix: `vo=mediacodec_embed` for TV playback (`VideoControllerConfiguration(vo: 'mediacodec_embed', hwdec: 'mediacodec')`). It removes the deadlock at every 4K codec tested and is also smoother at 1080P60. Costs to check: mpv's GLSL shaders (super-resolution, `超分辨率`) can't run; subtitles should be unaffected because PiliPlus draws them in Flutter (`SubtitleView`), to be verified; screenshots and the `video-rotate` option need checking; but 4K60 on this path panicked the TV's kernel three times (AV1 twice, AVC once) within minutes, so it is not a fix for 4K on this TV.
   * Other options to weigh: a 1080P60 quality cap as the TV default (safe, loses 4K); a stall watchdog that reloads at a lower quality when `time-pos` stops moving while playing; preferring AVC at 4K (fewest drops).
 * **Next**: the `M12.3` write-up and decision. 4K is not playable on this TV with either mpv output path: `vo=gpu` deadlocks within seconds, `vo=mediacodec_embed` crashes the TV within minutes. 1080P60 played cleanly on both paths in short runs, so a 1080P60 cap on TV is the leading candidate; a long 1080P60 run on the chosen path belongs in `M12.5`.
+
+---
+
+### [2026-10-27] Milestone M12 (Task `M12.3`): Root-Cause Summary and Fix Options (Proposal)
+* **Status**: 🔄 Proposal written; the fix and the "done" bar wait for the user's decision (discussion gate). No code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Task M12.3: root cause, options A–E, recommendation, proposed "done" bar), `docs/tv/PROGRESS.md`.
+* **`M12.2` closed**: the matrix ran quality (4K60, 4K30, 1080P60, 1080p30) × codec (AVC, HEVC, AV1) × output (`vo=gpu`, `vo=mediacodec_embed`) × hardware decoding (`mediacodec`, `mediacodec-copy`), plus upstream's APK (from the user and the ANR reports). Not run: thread ripper off and software decoding. The stall happens with data already buffered (the demuxer keeps reading), so the download path doesn't matter; and software decoding at 4K would be slower than `mediacodec-copy`, which already manages only a few frames per minute.
+* **Summary**: two faults, both only at 4K and above on this MediaTek TV. (1) The reported freeze is a buffer deadlock between MediaTek's tiled 4K decoder output and media_kit's default `vo=gpu` path; the ANR follows when Dart waits on mpv's stuck core. (2) The alternative `vo=mediacodec_embed` path avoids the deadlock but triggers a firmware kernel panic within minutes at 4K60. So 4K can't play on this TV either way, while 1080P60 plays on both paths.
+* **Recommendation**: option B in `PLAN.md`: a 1080P60 TV default, plus a hard cap at 1080P60 on MediaTek TV SoCs (detected through `TvBridge`), applied before the stream is picked and in the HUD's quality dialog; other TVs keep 4K. Keep `vo=gpu`.
+* **Housekeeping**: the instrumentation stays uncommitted (saved as a patch outside the repository for the `M12.5` runs); the working tree is clean. The `PiliPlus TV dev` app is still installed on `<physical-tv>` and signed in through the app's login import; it should be uninstalled when M12 is done.
+
