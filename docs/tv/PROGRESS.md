@@ -923,7 +923,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 ---
 
 ### [2026-10-26] Milestone M11 (Tasks `M11.1`–`M11.3`): TV Checks in CI
-* **Status**: 🔄 In Progress (`M11.1`–`M11.2` done; `M11.3`: pull-request runs verified, the post-merge release run and branch protection are pending)
+* **Status**: ✅ Completed (branch protection on `main` is a user action, below)
 * **Branch**: `ci/tv-checks-m11`
 * **Files Changed**:
   * `[NEW] .github/workflows/tv-checks.yml`: job `TV analyze and tests`. Triggers: `pull_request` into `main`, `workflow_call` (input `ref`, the commit to check) and `workflow_dispatch`. Steps: checkout, Flutter from `pubspec.yaml`, `lib/scripts/patch.ps1 android` (which also runs `flutter pub get`), `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the three hook files and the two TV tests, then `flutter test --no-pub` on the TV tests. Read-only permissions; a newer push to a pull request cancels its older run, release runs are never cancelled. Before the tests it installs `libgtk-3-dev`, `libx11-dev` and `libxi-dev`: `flutter test` builds native assets for the Linux host, and the `cnativeapi` build hook runs `pkg-config` for `gtk+-3.0`, `x11` and `xi` (the first run on GitHub failed there, before any test ran; analyze had passed).
@@ -942,7 +942,6 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * This branch's pull request: **TV analyze and tests** green (analyze `No issues found!`, `95 tests passed`).
   * A throwaway draft pull request on top of this branch, adding `test('M11.3 deliberate failure', () => expect(1, 2))` to `test/tv_player_hud_test.dart`: the check went red (`95 tests passed, 1 failed`), naming the deliberate test. Closed unmerged and its branch deleted. Without branch protection GitHub still reported it mergeable (`UNSTABLE`), which is why the protection setting below is needed.
   * `./tool/tv_patch.sh status`: all 38 patches `[NOT APPLIED]`.
-* **Remaining for `M11.3`**:
-  1. After merging, the release run on `main` must show `TV checks` alongside the build and still release.
-  2. **User action**: GitHub → Settings → Branches → protect `main` and require `TV analyze and tests`; a failing pull request then shows as blocked instead of `UNSTABLE`.
+  * Release run after merging pull request #2 (merge commit `97d87d90b`): `Build Android APKs` and `TV checks / TV analyze and tests` started together; analyze `No issues found!`, `95 tests passed`. The checks took about 11 minutes against the build's 7.5 (cold caches plus the `apt-get` step), and `Publish custom release` started only after both finished. Release `v2.1.6.2-fork.5799` was published with the three APKs, and its notes say `Checks passed: TV analyze and tests.`
+* **Remaining (user action)**: GitHub → Settings → Branches → protect `main` and require `TV analyze and tests`; a failing pull request then shows as blocked instead of `UNSTABLE`.
 
