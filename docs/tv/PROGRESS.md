@@ -1055,3 +1055,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Findings from the code**: the app already requests HDR, Dolby Vision, 4K and 8K streams (`fnval` 4048 in `lib/http/video.dart`), and the panel reports Dolby Vision, HDR10, HLG and HDR10+ (M12.1). Today mpv renders into a texture that Flutter composites in SDR, so HDR reaches the panel at best tone-mapped. Only a `SurfaceView`, which gets its own hardware layer, can carry HDR to the panel; ExoPlayer through a Flutter `Texture` would still be SDR and is in effect the `vo=mediacodec_embed` path that panicked the kernel. The player is tied to media_kit in `lib/plugin/pl_player/controller.dart` (player creation, the `edl://` merge of video and audio, mpv options) and about 15 other files use media_kit or the player directly; mpv-only features are the GLSL shaders (`超分辨率`), audio normalization (`lavfi-complex`), `video-rotate` and screenshots.
 * **Proposal**: F1, a 1–2 day spike on `<physical-tv>` (go/no-go on the kernel panic, HDR and Dolby Vision), then F2, an opt-in ExoPlayer for videos on TV only (about 9–13 days). Independent of B: B can ship first, and F2 would lift B's cap whenever ExoPlayer plays the video.
 * **Open input** (owner: user): the five-minute check with another app on the TV (for example 云视听小电视) at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-29] Milestone M12 (Task `M12.3`): Option F, Prior Work in PiliPlus Forks
+* **Status**: 🔄 Still awaiting the user's decision. Research only; no code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (option F: prior work, F1 and F2 based on it, costs), `docs/tv/PROGRESS.md`.
+* **Method**: read upstream PR 2145 (`gh pr view`, `gh pr diff`); fetched the Android build file of each of the 660 upstream forks pushed to since they were made and looked for Media3 or ExoPlayer (five hits); searched repositories and code for PiliPlus derivatives with HDR, ExoPlayer or TV work; read each hit's player code.
+* **Findings** (details in `PLAN.md`, option F):
+  * Upstream PR 2145 (an HDR-only Media3 player: `PlayerView` in a platform view, `MergingMediaSource`, `COLOR_MODE_HDR`) was closed unmerged on 2026-07-02 without a comment. Upstream's HDR issues were closed as not fixable.
+  * `kkren/PiliPlus` has a Media3 option for every video on the same approach, the same thread-ripper proxy as this fork, and armeabi-v7a APKs: the closest base for F. `AvalonUltra/PiliPlus` keeps PR 2145's Kotlin merged with upstream.
+  * `yifgu/PiliPlus` plays Dolby Vision Profile 5 only through a real Dolby Vision decoder; its codec check suggests Bilibili's 杜比视界 is Profile 5, which mpv can't show correctly.
+  * `loneshu7/PiliPlusPlus` and `ws2bhhh/PiliPlus-mod` draw Media3 through a Flutter texture (no real HDR); loneshu7's has Media3 versions of audio normalization and super-resolution.
+  * `chenx-dust/PiliPlus` keeps mpv and draws `vo=mediacodec_embed` into a `SurfaceView` platform view: HDR10, not Dolby Vision Profile 5.
+  * None of them was tested on a TV, and all HDR-capable ones use Hybrid Composition for the `SurfaceView`.
+* **Consequences for option F**: F1 adapts kkren's and PR 2145's Kotlin plus yifgu's Dolby Vision decoder rule instead of starting from scratch, and also measures frame times under Hybrid Composition with danmaku on; F2 probably shrinks by 3–4 days, and the transparent-Flutter-view approach becomes the fallback if Hybrid Composition is too slow.
+* **Open input** (owner: user): unchanged, the five-minute check with another app on the TV at 4K60 and 杜比视界.
