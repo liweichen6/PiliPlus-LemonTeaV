@@ -1044,3 +1044,14 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Recommendation**: option B in `PLAN.md`: a 1080P60 TV default, plus a hard cap at 1080P60 on MediaTek TV SoCs (detected through `TvBridge`), applied before the stream is picked and in the HUD's quality dialog; other TVs keep 4K. Keep `vo=gpu`.
 * **Housekeeping**: the instrumentation stays uncommitted (saved as a patch outside the repository for the `M12.5` runs); the working tree is clean. The `PiliPlus TV dev` app is still installed on `<physical-tv>` and signed in through the app's login import; it should be uninstalled when M12 is done.
 
+
+---
+
+### [2026-10-29] Milestone M12 (Task `M12.3`): Option F Added, ExoPlayer for HDR and Dolby Vision
+* **Status**: 🔄 Still awaiting the user's decision; option F added at the user's request. No code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Task M12.3: option F), `docs/tv/PROGRESS.md`.
+* **Question**: the user asked how much work a second player, ExoPlayer, would take so that HDR and Dolby Vision can play.
+* **Findings from the code**: the app already requests HDR, Dolby Vision, 4K and 8K streams (`fnval` 4048 in `lib/http/video.dart`), and the panel reports Dolby Vision, HDR10, HLG and HDR10+ (M12.1). Today mpv renders into a texture that Flutter composites in SDR, so HDR reaches the panel at best tone-mapped. Only a `SurfaceView`, which gets its own hardware layer, can carry HDR to the panel; ExoPlayer through a Flutter `Texture` would still be SDR and is in effect the `vo=mediacodec_embed` path that panicked the kernel. The player is tied to media_kit in `lib/plugin/pl_player/controller.dart` (player creation, the `edl://` merge of video and audio, mpv options) and about 15 other files use media_kit or the player directly; mpv-only features are the GLSL shaders (`超分辨率`), audio normalization (`lavfi-complex`), `video-rotate` and screenshots.
+* **Proposal**: F1, a 1–2 day spike on `<physical-tv>` (go/no-go on the kernel panic, HDR and Dolby Vision), then F2, an opt-in ExoPlayer for videos on TV only (about 9–13 days). Independent of B: B can ship first, and F2 would lift B's cap whenever ExoPlayer plays the video.
+* **Open input** (owner: user): the five-minute check with another app on the TV (for example 云视听小电视) at 4K60 and 杜比视界.
