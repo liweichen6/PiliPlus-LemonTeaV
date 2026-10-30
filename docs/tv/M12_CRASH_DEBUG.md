@@ -18,7 +18,7 @@ The plan, the status, the run log and the findings all live in this file. When t
 | `CD2` | MediaCodec without mpv (`app_process` harness) | 🔄 In progress (CD2a done: the deadlock is explained; CD2c survived 10 minutes offscreen) | Low for the 10 s sweeps, high for the 10-minute runs | Go-ahead for the long runs |
 | `CD3` | A `SurfaceView` probe app | 🔄 In progress (6 runs of 10 minutes survived; one more, with a media session, took the TV down) | High | Go-ahead |
 | `CD4` | Barebone mpv (production libmpv, no app around it) | ⏳ Planned (no Flutter SDK on the development machine; a harness on the app's own libmpv package instead, see the session 1 log) | Low for the `vo=gpu` sweeps, high for the panic runs | Approval to download the app's libmpv package; go-ahead for panic runs; approval if the official mpv-android app is installed |
-| `CD5` | Content bisect | ⏳ Planned | High | Go-ahead |
+| `CD5` | Content bisect | 🔄 In progress (on a warm TV, 1080p60 and 4K30 each survived 10 minutes on the GPU path) | High | Go-ahead |
 | `CD6` | TV picture settings | ⏳ Planned | High | Changes the TV's settings |
 | `CD7` | Telemetry and post-panic forensics | ⏳ Planned (runs alongside CD1–CD6) | None of its own | One bug report after the first panic |
 | `CD8` | Desk research | 🔄 In progress (mpv's upstream change found; no public source for the panic strings yet) | None | Checks for a firmware update |
@@ -101,7 +101,7 @@ Details and raw numbers are in the [Log](#log).
    | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | No | Yes | **Panic at about 264 s** |
    | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | No | Session only | **Panic at about 174 s** |
    | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | No | Focus only | **Panic at about 119 s** |
-   | Probe app, `MediaPlayer`, repeated on a warm TV | `TextureView` | `M4` | Yes | No | No | **TV lost at about 178 s** |
+   | Probe app, `MediaPlayer`, repeated on a warm TV | `TextureView` | `M4` | Yes | No | No | **Panic at about 178 s** |
    | Probe app, `MediaPlayer` | `SurfaceView` | `M4` | Yes | Opened, refused | Yes | 600 s, no panic |
    | Probe app, `MediaPlayer` | `SurfaceView` | `M2` (AV1, looped) | Yes | Opened, refused | Yes | 600 s, no panic |
    | Just Player (Media3 1.11.1) | `SurfaceView`, its controls in a window above | `M4` | Yes | No | Yes | 600 s, no panic |
@@ -109,7 +109,7 @@ Details and raw numbers are in the [Log](#log).
 
    * The last column means nothing: the run that survived 600 s with no session panicked when repeated later (finding 14). The runs weren't in random order.
    * The window's composition is the same in both: one 1920 × 1080 window layer, `DEVICE`, scaled to the panel by the hardware. So is the decoder's setup (`bufferCount:6`, `bufferSize:15671296`, `sideband:0`, `bufferQueue:1`).
-   * All six confirmed new panics have the signature of M12.2: `miup_hit_panic`, `CID 0xE000` read, block 24, at `0x1C43C7F00`, `0x1C3BE5800`, `0x1C3BFDE00`, `0x1C43C7000`, `0x1C3BF8400` and `0x1C3BEB200`. The nine read addresses span about 8.3 MB, not the 2.8 MB of the first three.
+   * All seven confirmed new panics have the signature of M12.2: `miup_hit_panic`, `CID 0xE000` read, block 24, at `0x1C43C7F00`, `0x1C3BE5800`, `0x1C3BFDE00`, `0x1C43C7000`, `0x1C3BF8400`, `0x1C3BEB200` and `0x1C3BEEE40`. The ten read addresses span about 8.3 MB, not the 2.8 MB of the first three.
 8. **A second decoder that the TV refuses is neither enough nor needed** (H10). Within about 0.6 s of `MediaPlayer` opening its decoder (0.57 s and 0.35 s in the two runs), MiXplorer's own process opens a second `c2.mtk.avc.decoder` on a surface. The resource check refuses it (`[CheckVdecResource] previous video:… no resource`, `VCodec Initialize failed`), the kernel driver logs `mtk_vdec_s_ctrl: ctrl-id=0x99300e fails!`, and the picture-quality service logs `closePqRepository fail` for a stream it doesn't know. The first decoder plays on. Its failure is logged under the tag `FRAME`, so it is probably a frame grabber for a thumbnail. The probe app's `second=` option reproduces every one of these lines, and that alone survives 600 s. And a run with a media session and audio focus but no second decoder also took the TV down, at about 264 s.
 9. **The `SurfaceView` path is the TV's video path, and its AI picture engine runs on it** (session 2).
    * The layer is composed as `DEVICE(MM)`: the buffers are 4 KB handles to frames that go to the video plane without the GPU. Only here does the `[MI][AIPQ]` post-processing run (6,094 `SendRaw` calls in 10 minutes, none in either MiXplorer run), and it runs without a panic. That weakens H3 as far as the AI engine goes.
@@ -132,14 +132,28 @@ Details and raw numbers are in the [Log](#log).
     | 15:47 | Probe, session only | Off for about 3 minutes | Panic at 174 s |
     | 15:59 | Probe, focus only | Off for about 8 minutes | Panic at 119 s |
     | 16:05 | Probe, no session, no focus (S2-7 again) | Off for about 3 minutes | Panic at 178 s |
+    | 16:41 | The same, after finding 15's three runs | 30 minutes of playback | Panic at about 11 s |
 
-    * Four of the five survivors come from the first hour after a cold start. Since 14:01, six of seven GPU runs on screen have panicked, all within 5 minutes. A warm TV (H9), or something else that builds up over the day, fits this. It isn't proven: the 14:15 run survived on a warm TV.
+    * Four of the five survivors come from the first hour after a cold start. Between 14:01 and 16:05, six of seven GPU runs on screen at 4K60 panicked, all within 5 minutes. A warm TV (H9), or something else that builds up over the day, fits this. It isn't proven: the 14:15 run survived on a warm TV.
     * The first panic of the day came about 66 minutes after the cold start, about 50 of them spent playing 4K.
     * One warm run didn't panic and doesn't fit neatly: the offscreen AV1 run (S2-1), 12 minutes before MiXplorer's first panic, at about 48 fps. So being on screen may still matter.
     * The session's effects in the logs are all at startup: Bluetooth media control (`MediaPlayerList`, `AvrcpTargetJni`), Cast (`cast_shell`) and Google Assistant (`katniss`). After the first 20 s, the crash runs log nothing that the survivors don't.
-    * What holds either way: warm or not, nothing on the video plane has panicked, and the GPU path has panicked 7 times in this track and 3 in M12.2.
-    * Option B's cap rests on 1080p being safe, and 1080p has only had short runs, none of them on a warm TV. That needs testing, and 4K30 with it.
-    * The next tests: 1080p60 and 4K30 on the GPU path on a warm TV, an offscreen AVC run on a warm TV, then S2-7 after a long cold start.
+    * What holds either way: warm or not, nothing on the video plane has panicked, and the GPU path has panicked 8 times in this track and 3 in M12.2.
+    * The next test: S2-7 after a long cold start, repeated until it panics.
+15. **On a warm TV, only 4K60 on the GPU path, on screen, panics** (H5, session 2). Run one after another on one boot, and ended by a control:
+
+    | Output | Stream | Decoder path | Result |
+    | :--- | :--- | :--- | :--- |
+    | `TextureView`, `MediaPlayer` | 1080p60 AVC | `hwRender:0, gdec:0` | 600 s, no panic |
+    | `TextureView`, `MediaPlayer` | 4K30 AVC | `hwRender:0, gdec:1` | 600 s, no panic |
+    | Offscreen `SurfaceTexture` | 4K60 AVC, 1920 × 1080 target | `hwRender:0, gdec:1` | 600 s at 60 fps, no panic |
+    | `TextureView`, `MediaPlayer` (the control) | `M4`, 4K60 AVC | `hwRender:0, gdec:1` | **TV lost at about 11 s**, the fastest yet |
+
+    * Each is one pass, so **probably safe** by this plan's verdicts. In the boots before, 4K60 panicked within 3 minutes of a start at the same uptime, so these three runs lasted over three times that.
+    * So neither `gdec`, nor 60 fps through the decoder, nor the GPU drawing into a 1920 × 1080 target is enough. It takes 4K60 going to the screen through the GPU.
+    * 1080p runs a different path: `gdec:0`, and no `Detile` lines at all. At 4K, each 15,671,296-byte frame holds the tiled picture (8,355,840 bytes of luma, then chroma) and, from offset 12,533,760, a 1920 × 1080 scaled copy (VSD). On the video plane the decoder's frames are larger, 16,203,776 bytes.
+    * `Detile` logs the frames' addresses, but these are IOVAs (`0x218B1D000`) and the panic's are physical (`0x1C3…`), so they can't be matched. H4 stays open.
+    * A cap at 1080P60 is supported, with 4K30 as a possible exception. The re-encoded 4K30 clip needs only 3 decoder buffers, though, so bilibili's own 4K30 streams may still hit Fault 1.
 
 ## Questions
 
@@ -158,7 +172,7 @@ Details and raw numbers are in the [Log](#log).
 | H2 | The path the TV's own apps use (`SurfaceView`, the video plane, tunneled playback) is safe at 4K60 | CD1, CD3 |
 | H3 | Client `0xE000` belongs to the picture-quality or AI pipeline (AI picture, AI super resolution, motion smoothing), and turning those features off avoids the panic | CD6, CD8 |
 | H4 | A hardware engine reads past the end of a 4K frame buffer, because 2160 isn't a multiple of the tile height, and the overrun lands in block 24 | CD5 (alignment variants), CD7 and CD8 (addresses against buffers and regions) |
-| H5 | The panic scales with throughput (pixel rate or memory bandwidth), not with resolution: 4K60 fails, 4K30 or 1440p60 don't | CD5 |
+| H5 | The panic scales with throughput (pixel rate or memory bandwidth), not with resolution: 4K60 fails, 4K30 or 1440p60 don't. **Supported** on a warm TV (finding 15); 1440p60 is untested | CD5 |
 | H6 | The panic comes from buffer recycling (a buffer reused while another block still reads it), so it depends on how many frames the consumer holds | CD2 hold sweeps, CD4 queue options, CD5 reference-frame variant |
 | H7 | A reader queue larger than 5 images, or mpv holding at most 1 frame, breaks the `vo=gpu` deadlock | CD2a/b, CD4 |
 | H8 | Memory pressure (demuxer and cache size) plays a part. Low prior: about 850 MB was free during the M12.2 stalls | CD4, CD7 |
@@ -396,7 +410,11 @@ Local copies supplied by the user, kept outside the repository:
 | S2-17 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | media session, audio focus; no second decoder | about 264 s | Position kept up | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C43C7000`. The fourth this session |
 | S2-18 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | media session only: no audio focus, no second decoder | about 174 s | Position kept up | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BF8400`. The fifth this session |
 | S2-19 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | audio focus only: no session, no second decoder | about 119 s | Position kept up | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BEB200` (the kernel log; `sys.boot.reason` garbles it as `0x1c3bug200`). The sixth this session |
-| S2-20 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | S2-7 repeated exactly, on a warm TV | about 178 s | Position kept up | **The TV was lost** (adb): the seventh shutdown this session; signature pending |
+| S2-20 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | S2-7 repeated exactly, on a warm TV | about 178 s | Position kept up | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BEEE40`. The seventh this session |
+| S2-21 | 2026-10-30 | CD5 | Probe app, `MediaPlayer` on a `TextureView` (`gdec:0`) | `V-AVC-1080` (looped) | warm TV | 600 s | Position kept up | **No panic** |
+| S2-22 | 2026-10-30 | CD5 | Probe app, `MediaPlayer` on a `TextureView` (`gdec:1`) | `V-AVC30` (looped) | warm TV | 600 s | Position kept up | **No panic** |
+| S2-23 | 2026-10-30 | CD2c | `SurfaceTexture` + GLES, offscreen (`gdec:1`) | `V-AVC60` (looped) | warm TV, queued 2 | 600 s | 5,540 of 35,955 late, 60 fps | **No panic** |
+| S2-24 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | S2-7 again, straight after S2-23 | about 11 s | Position kept up | **The TV was lost** (adb): the eighth shutdown this session; signature pending |
 
 ## Log
 
