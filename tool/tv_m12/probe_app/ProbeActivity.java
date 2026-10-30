@@ -38,9 +38,10 @@ public class ProbeActivity extends Activity {
     if (extras != null) {
       for (String key : extras.keySet()) CodecProbe.ARGS.put(key, String.valueOf(extras.get(key)));
     }
-    if (CodecProbe.ARGS.containsKey("clip")) {
-      getSystemService(ClipboardManager.class)
-          .setPrimaryClip(ClipData.newPlainText("m12", CodecProbe.ARGS.get("clip")));
+    // Removed, or the process would keep it and the next run would stop here too.
+    String clip = CodecProbe.ARGS.remove("clip");
+    if (clip != null) {
+      getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("m12", clip));
       finish();
       return;
     }
