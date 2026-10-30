@@ -2,7 +2,12 @@ package m12;
 
 import android.app.Activity;
 import android.graphics.SurfaceTexture;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.Surface;
@@ -17,7 +22,8 @@ import android.view.WindowManager;
  * ExoPlayer would in option F). The player is CodecProbe, or the system's MediaPlayer (player=media),
  * which has its own audio, A/V sync and frame dropping, and is what MiXplorer plays with. Started by
  * tool/tv_m12/run.sh with string extras: view=texture|surface, player=media, plus CodecProbe's arguments
- * (file, secs, lookahead, audio, drop, second, ...). Finishes itself when the run ends.
+ * (file, secs, lookahead, audio, drop, second, ...), plus session=1 for an active media session and
+ * focus=1 for audio focus, which MiXplorer and the app have. Finishes itself when the run ends.
  */
 public class ProbeActivity extends Activity {
   @Override
@@ -68,6 +74,8 @@ public class ProbeActivity extends Activity {
 
   private void start(Surface surface) {
     new Thread(() -> {
+      if (CodecProbe.ARGS.containsKey("focus")) requestAudioFocus();
+      if (CodecProbe.ARGS.containsKey("session")) startMediaSession();
       try {
         if ("media".equals(CodecProbe.ARGS.get("player"))) {
           playWithMediaPlayer(surface);
@@ -79,6 +87,29 @@ public class ProbeActivity extends Activity {
       }
       runOnUiThread(this::finish);
     }, "m12-decode").start();
+  }
+
+  private static final AudioAttributes MOVIE = new AudioAttributes.Builder()
+      .setUsage(AudioAttributes.USAGE_MEDIA)
+      .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+      .build();
+
+  private void requestAudioFocus() {
+    int focus = getSystemService(AudioManager.class).requestAudioFocus(
+        new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(MOVIE).build());
+    System.out.println("FOCUS " + focus);
+  }
+
+  /** Shows the system a playing media session, as a video player does. */
+  private void startMediaSession() {
+    MediaSession session = new MediaSession(this, "m12");
+    session.setPlaybackToLocal(MOVIE);
+    session.setPlaybackState(new PlaybackState.Builder()
+        .setActions(PlaybackState.ACTION_PLAY_PAUSE)
+        .setState(PlaybackState.STATE_PLAYING, 0, 1f)
+        .build());
+    session.setActive(true);
+    System.out.println("SESSION active");
   }
 
   /** Plays file= in a loop for secs= seconds, printing the position once a second. */
