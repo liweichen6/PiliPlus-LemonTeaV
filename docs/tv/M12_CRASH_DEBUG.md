@@ -13,15 +13,15 @@ The plan, the status, the run log and the findings all live in this file. When t
 
 | Task | Title | Status | Panic risk | Needs the user |
 | :--- | :--- | :--- | :--- | :--- |
-| `CD0` | Setup, tools and test media | 🔄 In progress (branch, plan and media inventory done) | None | The TV's adb port |
+| `CD0` | Setup, tools and test media | ✅ Done (session 1) | None | The TV's adb port |
 | `CD1` | The TV's own players | ⏳ Planned | High | Present; go-ahead and panic budget; the five-minute check from option F1 |
-| `CD2` | MediaCodec without mpv (`app_process` harness) | ⏳ Planned | Low for the 20 s sweeps, high for the 10-minute runs | Go-ahead for the long runs |
+| `CD2` | MediaCodec without mpv (`app_process` harness) | 🔄 In progress (CD2a done: the deadlock is explained; the 10-minute runs wait for the go-ahead) | Low for the 10 s sweeps, high for the 10-minute runs | Go-ahead for the long runs |
 | `CD3` | A `SurfaceView` probe app | ⏳ Planned | High | Go-ahead |
-| `CD4` | Barebone mpv (production libmpv, no app around it) | ⏳ Planned | Low for the `vo=gpu` sweeps, high for the panic runs | Go-ahead; approval if the official mpv-android app is installed |
+| `CD4` | Barebone mpv (production libmpv, no app around it) | ⏳ Planned (no Flutter SDK on the development machine; a harness on the app's own libmpv package instead, see the session 1 log) | Low for the `vo=gpu` sweeps, high for the panic runs | Approval to download the app's libmpv package; go-ahead for panic runs; approval if the official mpv-android app is installed |
 | `CD5` | Content bisect | ⏳ Planned | High | Go-ahead |
 | `CD6` | TV picture settings | ⏳ Planned | High | Changes the TV's settings |
 | `CD7` | Telemetry and post-panic forensics | ⏳ Planned (runs alongside CD1–CD6) | None of its own | One bug report after the first panic |
-| `CD8` | Desk research | ⏳ Planned | None | Checks for a firmware update |
+| `CD8` | Desk research | 🔄 In progress (mpv's upstream change found; no public source for the panic strings yet) | None | Checks for a firmware update |
 | `CD9` | Synthesis and merge-back | ⏳ Planned | None | Decides on the fix options |
 
 ## Starting Point (from M12.2)
@@ -48,6 +48,42 @@ The plan, the status, the run log and the findings all live in this file. When t
     * a panic on `vo=gpu`, which never played 4K for more than a few seconds;
     * a panic at 1080p, which had only short runs;
     * a panic in 6.3 days of normal use before the first one.
+
+## Findings So Far
+
+Details and raw numbers are in the [Log](#log).
+
+1. **The freeze comes from the TV's buffer budget, not from mpv's image count** (session 1, CD2a, without mpv). At 4K, MediaTek's buffer manager (`C2MtkTvBufferManager`) gives the output surface the decoder's own buffer count plus exactly 2. The size of the consumer's queue (`maxImages`) is ignored. A player that holds more frames than the stream leaves free deadlocks the decoder. Held frames count both the images it keeps and the decoded frames it queues:
+
+   | Stream | Decoder buffers (`bufferCount`) | Surface slots (`mMaxSlot`) | Freezes when the player holds |
+   | :--- | :--- | :--- | :--- |
+   | bilibili's 4K60 AVC (`V-AVC60`, 3 B-frames) | 6 | 8 | 3 or more frames (images kept + frames queued) |
+   | 4K60 AVC with 1 reference frame and no B-frames (`V-AVC60-ref1`) | 3 | 5 | 4 or more |
+   | 4K60 AV1 (`V-AV1-60`) | 9 | 11 | any queued frame (up to 2 kept images with nothing queued plays) |
+   | 4K60 HEVC, no B-frames, encoded on the development machine (`V-HEVC60-8`) | 6 | (never reached) | never in the sweep (up to 4) |
+   | 1080p60 AVC (`V-AVC-1080`) | 5 | (never reached) | never (up to 8) |
+
+   * mpv's `vo=gpu` holds about 4 (2 images, 2 queued; M12.2), so every bilibili 4K stream freezes. 1080p has no such cap.
+   * `maxImages` 2, 3, 4, 5, 6, 8 and 12 all behave the same, so mpv's upstream change from 5 to 3 images (finding 6) wouldn't fix this TV.
+   * None of these decoder settings changes the budget:
+     * the standard `low-latency` key;
+     * MediaTek's `render-planar`, `low-latency-mode` and `game-mode`, which the decoder logs as 0, so they weren't taken;
+     * `target-width` and `target-height` at 1920 × 1080: taken, but the output stays 3840 × 2176 with 8 slots.
+2. **A texture consumer doesn't freeze** (CD2c, 10 s). A `SurfaceTexture` drawn by GLES, which is what Flutter does and so what `vo=mediacodec_embed` amounts to, plays 4K60 AVC at 60 fps with 2 frames queued. That is the path that panicked in M12.2. Its 10-minute runs are the next panic test.
+3. **The screensaver blocks 4K hardware decoding.** The TV's screensaver (Google TV ambient mode) takes the hardware JPEG decoder. While it holds it, every new hardware video decoder above 1080p fails right after it starts: the vendor resource manager logs `[C2GRM] 1hw + 1sw (>fhd)`, and the decoder reports error -14. The tools now send a wake-up key before and during each run. The same resource limit may explain the app's `无法加载解码器` toast when a 4K video opens while another decoder is still busy (M12.1 side finding).
+4. **The panic logs point at the picture-quality pipeline** (CD7, from the three saved panic logs).
+   * The panic is raised from the `mtk_miup` interrupt and lands on whatever CPU 0 is running (`logcat`, a Mali thread, idle), so the backtrace names no software culprit.
+   * In the panic notifier chain, three drivers rule themselves out:
+     * the JPEG decoder (`jpd_cid = 0x8118`);
+     * the demux and descrambler (`no match tsp module`);
+     * the render DMA (its windows are off).
+   * The picture-quality driver dumps the memory clients of its video window (window 0): `SCMI`, `UCM` and `MDW`. The AI accelerator only repeats the hit.
+   * The decoder's frame buffers in the panic's IOMMU dump are `0xEF2000` = 15,671,296 bytes each, exactly the size the decoder announces for 4K AVC in the harness (3840 × 2176, `bufferSize:15671296`).
+   * So client `0xE000` is most likely one of the picture-quality memory clients reading video frames (H3).
+   * The decoder also exposes picture-quality vendor parameters (`vendor.mtk-codec2.memc-mode`, `vendor.mtk-camera.ai-sr`, `vendor.mtk-camera.enable-pq`, `vendor.mtk-pq.pqsetting`), candidates for CD6 from the app's side.
+   * The kernel reports the SoC as `MediaTek MT5896`; the GPU property says `mt9690`.
+5. **AI picture is on.** `sys.vt.aipq.smart_scene_state=1`, and the TV has `com.vt.tv.aipq` and `com.vt.tv.ai_sense` services. It is the first candidate for CD6.
+6. **mpv upstream cut its image reader from 5 to 3 images** on 2026-09-11 (`c8d3f6884d`, mpv PR #18453), after mpv-android issue #540: 5 was too many for a MediaTek Fire TV Stick's decoder. The app's libmpv, the media_kit fork's build `20260906` (and the newer `20260930`), is mpv v0.41.0 with 5 images. On this TV the count makes no difference (finding 1).
 
 ## Questions
 
@@ -97,14 +133,16 @@ Local copies supplied by the user, kept outside the repository:
 | `M1` | Sony 4K60 HDR demo (Las Vegas at night) | HEVC Main 10, level 5.1 | 3840 × 2160 at 60 | 10-bit, HDR10 (PQ, BT.2020) | 3:09 | about 13.6 Mbps | None |
 | `M2` | Xiaomi TV S Pro 2027 review | AV1 Main, level 5.1 | 3840 × 2160 at 59.94 | 8-bit SDR | 5:32 | 3.1 Mbps | AAC |
 | `M3` | 8K demo | AV1 Main, level 6.0 | 8192 × 4320 at 25 | 8-bit SDR | 3:13 | 20.8 Mbps | None |
+| `M4` | Flagship phone chip comparison (bilibili's own 4K AVC encode, supplied after the plan) | AVC High, level 5.2, 3 B-frames | 3840 × 2160 at 59.94 | 8-bit SDR | 57:15 | 3.9 Mbps on average | AAC |
 
 * `M2` matches the stream that panicked fastest (4K60 AV1).
 * `M3` exceeds the 4096 × 2304 that the decoders claim. It tests what happens when the decoder can't open: the `无法加载解码器` toast and mpv's fallback to software decoding. It is not a panic test.
-* There is no AVC file, and AVC is the codec of the third panic. The AVC and alignment variants below are made in CD0 from `M2`, with ffmpeg on the development machine (its hardware encoders, or libx264 if needed), 3–5 minutes each, looped for longer runs:
+* `M4` is bilibili's own 4K AVC encode, the codec of the third panic. The variants below are 3-minute cuts (from 2:00) made by `tool/tv_m12/variants.sh` on the development machine. `V-AVC60` and `V-AV1-60` are cut from `M4` and `M2` without re-encoding. The rest re-encode `M4` with the VideoToolbox encoders, or libx264 where the encoder settings matter. The harness loops them for longer runs:
 
   | ID | Variant | For |
   | :--- | :--- | :--- |
-  | `V-AVC60` | AVC High, 3840 × 2160 at 59.94, about 20 Mbps | The main AVC reproducer |
+  | `V-AVC60` | `M4` cut, unchanged: AVC High 3840 × 2160 at 59.94 (this part of the video averages about 9 Mbps) | The main AVC reproducer |
+  | `V-AV1-60` | `M2` cut, unchanged: AV1 3840 × 2160 at 59.94 | The main AV1 reproducer |
   | `V-HEVC60-8` | HEVC Main, 8-bit SDR, 3840 × 2160 at 59.94 | Against `M1`'s 10-bit HDR |
   | `V-AVC30`, `V-AVC50` | AVC at 4K, 29.97 and 50 fps | H5 (frame rate) |
   | `V-AVC-1800`, `V-AVC-1440`, `V-AVC-1080` | AVC at 60 fps: 3200 × 1800, 2560 × 1440, 1920 × 1080 | H5 (resolution ladder) |
@@ -112,18 +150,18 @@ Local copies supplied by the user, kept outside the repository:
   | `V-AVC60-8M`, `V-AVC60-40M` | `V-AVC60` at about 8 and 40 Mbps | Bitrate |
   | `V-AVC60-ref1` | `V-AVC60` with 1 reference frame and no B-frames | H6 and H7 (fewer buffers held as references) |
 
-* Optional input from the user: a local copy of `BV1kMxM6FECM` at 4K AVC, bilibili's own encode of the third panic.
 * Local files take the network, the CDN and the thread ripper out of the picture. M12.2 showed the stall happens with data already buffered.
 
 ## Tasks
 
-* **Task CD0 (`🔄 In progress`) — Setup, Tools and Test Media** (no panic risk):
+* **Task CD0 (`✅ Done`, session 1) — Setup, Tools and Test Media** (no panic risk):
   * Branch and this plan: done.
-  * Rebuild the run tools under `tool/tv_m12/`. The M12.2 scripts and instrumentation diff lived in a scratchpad that is gone; the diff can be recovered from the session transcript.
-    * `run.sh` runs one test. It pushes the options file and starts the player, then streams logcat (and the kernel log, if readable) to the development machine, and runs the CD7 sampler. When the run ends, a trap stops everything it started, and it prints a one-line summary.
+  * The run tools, in `tool/tv_m12/`. The M12.2 scripts and instrumentation diff lived in a scratchpad that is gone; the diff can be recovered from the session transcript if CD4 needs it.
+    * `run.sh` runs one test: the CD2 harness (`probe`) or any start and stop command (`shell`). It sends a wake-up key, then streams logcat and the kernel log to the development machine and runs the CD7 sampler (`sampler.sh`). When the run ends, a trap stops everything it started, and it prints a one-line summary. A TV that stops answering ends the run as `lost`.
+    * `probe.sh` builds the CD2 harness (`CodecProbe.java`), pushes it and the chosen videos to the TV's work folder (`/data/local/tmp/m12`), and removes that folder with `--clean`.
     * `variants.sh` makes the variants above.
     * `postpanic.sh` collects the evidence after a reboot: boot reason, `SYSTEM_LAST_KMSG`, `SYSTEM_BOOT` and exit info, with the panic signature on one line.
-    * The adb address is passed as an argument or an environment variable and never written to a file.
+    * Machine- and network-specific values come from the environment and are never written to a file: `ANDROID_SERIAL` (the TV's adb address), `M12_MEDIA` (the media folder) and `M12_RUNS` (run output), both folders outside the repository.
   * Read-only checks on the TV:
     * Are `logcat -b kernel` and `dmesg` readable from the shell?
     * Which thermal, `cpufreq` and `devfreq` nodes are readable?
@@ -141,11 +179,12 @@ Local copies supplied by the user, kept outside the repository:
   * Answers H2:
     * The TV's own path survives 10 minutes twice → the panic comes from how our app hands frames to the GPU, and option F is promising.
     * It panics too → the TV faults on every path at 4K60, and only a cap or a firmware update helps.
-* **Task CD2 (`⏳ Planned`) — MediaCodec Without mpv** (an `app_process` harness, like `tool/tv_codecs.sh`, so no install and no root):
-  * A small Java program decodes a local file in a loop with `MediaExtractor` and `MediaCodec`, at real-time pace, into one of three outputs:
-    * **a.** An `ImageReader` (`PRIVATE` format, GPU-sampled usage, `maxImages` N) with a policy that keeps K images acquired, the way mpv does. Sweep N = 5 (mpv's value) / 6 / 8 / 12 against K = 0–4, 20 s each. This reproduces the deadlock without mpv and finds the smallest queue that avoids it (H7). Low risk.
-    * **b.** The same reader, with each image imported into GLES (an `EGLImage` from its `AHardwareBuffer`) and drawn offscreen. This is mpv's `vo=gpu` import path, MediaTek's `Detile` step included.
-    * **c.** A `SurfaceTexture` consumed by GLES (`updateTexImage`, then a draw). This is what Flutter does with a texture, so it is in effect `vo=mediacodec_embed` (H1).
+* **Task CD2 (`🔄 In progress`; CD2a done in session 1) — MediaCodec Without mpv** (an `app_process` harness, like `tool/tv_codecs.sh`, so no install and no root):
+  * A small Java program (`tool/tv_m12/CodecProbe.java`) decodes a local file in a loop with `MediaExtractor` and `MediaCodec`, at real-time pace. It keeps Q decoded frames (`lookahead`) behind the oldest one, which it shows only once they are there, as mpv does. The output is one of three:
+    * **a.** An `ImageReader` (`PRIVATE` format, GPU-sampled usage, `maxImages` N) with a policy that keeps K images acquired, the way mpv does. Sweep N, K and Q, 10 s each. This reproduces the deadlock without mpv and finds what avoids it (H7). Low risk. **Done**: see the session 1 log.
+    * **b.** The same reader, with each image imported into GLES and drawn offscreen: mpv's `vo=gpu` import path, MediaTek's `Detile` step included. Deferred: Java has no call to turn an `AHardwareBuffer` into an `EGLImage` (`eglGetNativeClientBufferANDROID` is native-only), so it needs NDK code. CD2a's counts already explain the deadlock without it.
+    * **c.** A `SurfaceTexture` consumed by GLES (`updateTexImage`, then a draw). This is what Flutter does with a texture, so it is in effect `vo=mediacodec_embed` (H1). A 10 s smoke run works (below).
+  * `fmt.KEY=VALUE` arguments set keys in the decoder's format, `vendor=1` lists the decoder's vendor parameters.
   * Panic-prone: 10-minute runs of b (if some N avoids the deadlock) and of c, on `M2`, then on `V-AVC60`.
   * Measured each second: frames decoded and released, dequeue failures, `C2BqBuffer` failures, `Detile` count. Also the time to panic.
   * scrcpy's server shows that `MediaCodec` and surfaces work from `app_process`. If the shell can't open the hardware decoder with a surface (SELinux), the same code moves into the CD3 app.
@@ -270,7 +309,11 @@ Local copies supplied by the user, kept outside the repository:
 
 | Run | Date | Task | Path | Stream | Options | Played | Dropped | Result |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| — | | | | | | | | No runs yet |
+| S1-1 | 2026-10-30 | CD2a | `ImageReader` | `V-AVC60` | images 2–12 × kept 0–6 × queued 0–4 (55 runs; 9 invalid, the screensaver held the hardware) | 10 s each | — | Freezes exactly when kept + queued ≥ 3; images make no difference |
+| S1-2 | 2026-10-30 | CD2a | `ImageReader` | `V-AV1-60`, `V-HEVC60-8` | images 5 × kept 0–2 × queued 0–2 (16 runs) | 10 s each | — | AV1 freezes on any queued frame; this HEVC never froze |
+| S1-3 | 2026-10-30 | CD2a | `ImageReader` | `V-AVC60-ref1`, `V-AVC-1080` | kept + queued 2–8 (8 runs) | 10 s each | — | 1 reference frame: freezes at 4 or more; 1080p: never |
+| S1-4 | 2026-10-30 | CD2a | `ImageReader` | `V-AVC60` | kept 2, queued 2, with 5 format keys (low latency, MediaTek planar, low-latency, game mode, target size) | 10 s each | — | Freezes as without them |
+| S1-5 | 2026-10-30 | CD2c | `SurfaceTexture` + GLES | `V-AVC60` | queued 2 | 10 s | 3 of 596 not shown before the end; 65 late | Plays at 60 fps; no freeze, no panic (a smoke test only) |
 
 ## Log
 
@@ -283,3 +326,43 @@ Local copies supplied by the user, kept outside the repository:
   * ideas to cover: a barebone mpv matrix (`vo`, codec, resolution, demuxer size and other options), and ways to debug the TV's hardware and firmware.
 * **Media inventory**: probed with `ffprobe` on the development machine (the table above). The set has no AVC file; the AVC variants are made in `CD0`.
 * **Lost since M12.2**: the run scripts and the instrumentation diff were kept in a scratchpad that no longer exists. `CD0` rebuilds them, and the diff can be recovered from the session transcript.
+
+---
+
+### [2026-10-30] Session 1: Setup, the Deadlock Explained Without mpv, and Desk Research (`CD0`, `CD2a`, `CD2c` Smoke Test, `CD7`, `CD8`)
+* **Status**: `CD0` ✅; `CD2a` ✅; `CD2c` smoke test only; `CD8` 🔄. No panic-prone run yet, and the TV didn't reboot.
+* **Branch**: `debug/tv-m12-crash`.
+* **Files Changed**: `[NEW] tool/tv_m12/` (`lib.sh`, `run.sh`, `sampler.sh`, `probe.sh`, `postpanic.sh`, `variants.sh`, `CodecProbe.java`); `[MODIFY] docs/tv/M12_CRASH_DEBUG.md`.
+* **Inputs from the user**: `M4`, bilibili's own 4K AVC encode (a 57-minute video), and the TV's adb address. The four videos were moved into a media folder outside the repository and renamed by ID.
+* **Setup**:
+  * adb had to run outside the tool sandbox to reach the TV.
+  * All the variants in the Test Media table were made.
+  * The harness and the clips under test were pushed to `/data/local/tmp/m12` on the TV (about 0.9 GB; 15 GB free). They stay there for the next session, and `probe.sh --clean` removes them.
+* **TV checks** (`CD0`, read-only):
+  * **Kernel log**: `logcat -b kernel` is readable from the shell, about 15,000 lines buffered. `dmesg` and `/proc/iomem` are denied.
+  * **Sensors**: the thermal-zone and `devfreq` nodes (including the AI accelerator's `apusys_power:APUMDLA`) are denied. The CPU clock is readable: 1.8 GHz on all four cores at idle. `dumpsys thermalservice` reports a single temperature, 56 °C at idle, for every sensor type.
+  * **Picture features**: `sys.vt.aipq.smart_scene_state=1`. The TV has `com.vt.tv.aipq`, `com.vt.tv.ai_sense` and `com.vt.tv.videocolor`.
+  * **Players for `VIEW` on a local `video/mp4`**: FongMi TV (`com.fongmi.android.tv`) and MiXplorer's player. The TV's media center (`com.vt.tv.mediacenter`) has only a file browser and doesn't take `VIEW`, so CD1 drives it through its file browser or uses one of the two.
+  * **Installed**: 云视听小电视 and YouTube. The dev app `PiliPlus TV dev` is no longer installed.
+  * **Firmware**: build `UKN6.251123.001.049` (`00.00.00.49`), bootloader `01.01.260731`, kernel 5.15.192 (android14-11).
+  * **Uptime**: 2.3 days since the third panic, with no panic since.
+  * **Reboot recovery**: adb's mDNS discovery is switched off in this machine's adb environment, and forcing it on found no service. The user still sends the new port after a reboot.
+* **The deadlock, without mpv** (`CD2a`; Findings 1–2): runs S1-1 to S1-5 in the Run Log.
+  * mpv's own settings reproduce the freeze in the harness: 5 images, 2 kept, 2 queued. The AVC decoder delivers 5 frames, then stops, with `C2BqBuffer … consecutive failures` as in M12.2.
+  * In every frozen run the buffer manager logs `[newBuffer_l] … mContinueFailCnt(512), mAllocatedCount(8), mMaxSlot(8)`. The decoder announces `WxH[3840 x 2176] … bufferCount:6, bufferSize:15671296`.
+  * The rule from 79 valid runs: the slots are always the decoder's buffer count plus 2. The stream's references (B-frames, reference count) set the buffer count, and the reader's `maxImages` changes nothing.
+  * The decoder lists 105 vendor parameters. Besides the picture-quality ones, they include `vendor.mtk.output.buffer.alloc.config.usage` and `vendor.mtk-codec2.non-tunnel-render-latency`, not tried yet.
+* **The screensaver** (Finding 3): its photo player started at 00:46:45 and took `c2.mtk.jpeg.decoder` (`dumpsys media.resource_manager`). Every run after it failed at start, until the TV was woken.
+* **Panic logs** (`CD7` on the three saved `SYSTEM_LAST_KMSG`s; Finding 4): saved outside the repository.
+* **Desk research** (`CD8`):
+  * mpv's upstream change (Finding 6), and which mpv the app's libmpv uses.
+  * No public hits for `miup_hit_panic`, `[MIUP][HIT]` or the PQ notifier names. Mapping client `0xE000` needs the TV maker's GPL kernel source for this SoC (to request or download).
+* **CD4 (barebone mpv)**: this machine has no Flutter SDK. A lighter route is the libmpv package the app's build downloads (the media_kit fork's `libmpv-android-video-build` release `20260906`, `default-armeabi-v7a.jar`, 6.4 MB, checked against the SHA-256 in the fork's `build.gradle`). It would be driven from an `app_process` harness with a small NDK shim, rendering into a `SurfaceTexture` like Flutter, so it's the exact libmpv without the app. Downloading it needs the user's approval.
+* **What this means for M12.3**:
+  * Fault 1 is a firmware limit: 2 spare output buffers at 4K. Through `vo=gpu` it could only be avoided if mpv held at most 2 frames for bilibili's AVC, and no queued frame at all for AV1. mpv's display loop always queues frames, so AV1 can't work on this path, and AVC is doubtful; CD4 would confirm with mpv's own options.
+  * Option B (the 1080P60 cap) stays the safe fix.
+  * The texture path doesn't freeze. Whether it panics without mpv and Flutter decides whether anything other than option F can bring 4K back.
+* **Next** (session 2, panic-prone, needs the user's go-ahead and panic budget):
+  1. `CD2c`: the texture harness for 10 minutes on `V-AV1-60`, then on `V-AVC60`.
+  2. `CD1`: a TV player on the same clips.
+  3. Then `CD6` (AI picture off) or `CD3`, depending on the results.
