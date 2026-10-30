@@ -41,7 +41,7 @@ case "${KIND}" in
       fi
       PROBE_ARGS+=("${arg}")
     done
-    START="CLASSPATH=${DEVICE_DIR}/probe.dex app_process /system/bin --nice-name=m12probe CodecProbe ${PROBE_ARGS[*]}"
+    START="CLASSPATH=${DEVICE_DIR}/probe.dex app_process /system/bin --nice-name=m12probe m12.CodecProbe ${PROBE_ARGS[*]}"
     STOP="pkill -f m12probe"
     ;;
   shell)
@@ -80,6 +80,7 @@ adb shell sh "${DEVICE_DIR}/sampler.sh" > "${OUT}/samples.txt" 2>&1 & PIDS+=($!)
 RESULT=running
 T0=$(date +%s)
 finish() {
+  set +e  # cleanup must run to the end, whatever fails
   local alive elapsed
   elapsed=$(( $(date +%s) - T0 ))
   alive="$(m12_uptime)"
@@ -98,7 +99,9 @@ finish() {
   c2=$(grep -c 'consecutive failures' "${OUT}/logcat.txt" 2>/dev/null || true)
   detile=$(grep -c 'Detile' "${OUT}/logcat.txt" 2>/dev/null || true)
   last=""
-  [[ -f "${OUT}/player.txt" ]] && last="$(grep -E '^(END|STALL|t=)' "${OUT}/player.txt" | tail -n 1)"
+  [[ -f "${OUT}/player.txt" ]] && last="$(grep -E '^(END|STALL|t=)' "${OUT}/player.txt" | tail -n 1 || true)"
+  # The probe app prints the same lines to logcat (tag System.out).
+  [[ -z "${last}" ]] && last="$(grep -oE 'System.out: (END|STALL|t=).*' "${OUT}/logcat.txt" | tail -n 1 | sed 's/^System.out: //' || true)"
   echo "${NAME}: ${RESULT} after ${elapsed}s, C2BqBuffer failures ${c2:-0}, Detile ${detile:-0}; ${last}" | tee "${OUT}/summary.txt"
   echo "output: ${OUT}"
 }

@@ -25,7 +25,7 @@ m12_sdk
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 javac --release 17 -cp "${ANDROID_JAR}" -d "${WORK}/classes" "${M12_DIR}/CodecProbe.java"
-"${D8}" --min-api 30 --lib "${ANDROID_JAR}" --output "${WORK}" "${WORK}"/classes/*.class
+"${D8}" --min-api 30 --lib "${ANDROID_JAR}" --output "${WORK}" $(find "${WORK}/classes" -name '*.class')
 adb shell mkdir -p "${DEVICE_MEDIA}"
 adb push "${WORK}/classes.dex" "${DEVICE_DIR}/probe.dex" >/dev/null
 echo "pushed the harness"

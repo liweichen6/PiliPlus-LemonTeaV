@@ -1,6 +1,11 @@
+package m12;
+
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.HardwareBuffer;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioTrack;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaCodec;
@@ -30,7 +35,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * M12 crash-debug harness: decodes a local video with MediaCodec, without mpv,
  * Flutter or an app, at real-time pace and in a loop, and prints counters once
- * a second. Run through app_process by tool/tv_m12/run.sh (pushed by probe.sh).
+ * a second. Run through app_process by tool/tv_m12/run.sh (pushed by probe.sh), or on screen
+ * by the probe app (ProbeActivity).
  *
  * <p>Arguments (key=value):
  *
@@ -45,8 +51,15 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>hold: reader images kept acquired, default 2.
  *   <li>lookahead: decoded frames held behind the oldest one, which is shown only
  *       once they are there (mpv waits for the next frame), default 2.
+ *   <li>drop: release frames later than this many milliseconds without showing
+ *       them, as MediaPlayer and mpv do. Default: show every frame.
+ *   <li>second: when present, opens a second decoder of the same format this many
+ *       ms after the start, feeds it until it fails or 2 s pass, and releases it,
+ *       as MiXplorer does while its MediaPlayer plays. Above 1080p the TV refuses it.
  *   <li>size: the texture's default buffer size WxH, default the video's size.
  *   <li>codec: decoder name, default the first that claims the format.
+ *   <li>audio: when present, also plays the file's first audio track, in a loop,
+ *       through an AudioTrack, as mpv does.
  *   <li>vendor: when present, print the decoder's vendor parameters first.
  *   <li>fmt.KEY=VALUE: set KEY in the format the decoder is configured with (an
  *       integer when VALUE is one, else a string), for example
@@ -54,7 +67,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  */
 public class CodecProbe {
-  private static final Map<String, String> ARGS = new TreeMap<>();
+  static final Map<String, String> ARGS = new TreeMap<>();
   private static final AtomicLong acquired = new AtomicLong();
   private static final AtomicLong acquireFailed = new AtomicLong();
   private static final AtomicLong texUpdates = new AtomicLong();
@@ -65,14 +78,8 @@ public class CodecProbe {
       int i = a.indexOf('=');
       if (i > 0) ARGS.put(a.substring(0, i), a.substring(i + 1));
     }
-    String file = ARGS.get("file");
-    if (file == null) {
-      System.out.println("END error: file= missing");
-      System.exit(2);
-    }
     String out = arg("out", "reader");
     int secs = num("secs", 20);
-    int lookahead = num("lookahead", 2);
 
     // A codec call stuck in the driver must not outlive the run.
     Thread watchdog = new Thread(() -> {
@@ -84,25 +91,11 @@ public class CodecProbe {
     watchdog.start();
 
     MediaExtractor extractor = new MediaExtractor();
-    extractor.setDataSource(file);
-    MediaFormat format = null;
-    for (int i = 0; i < extractor.getTrackCount(); i++) {
-      MediaFormat f = extractor.getTrackFormat(i);
-      if (f.getString(MediaFormat.KEY_MIME).startsWith("video/")) {
-        extractor.selectTrack(i);
-        format = f;
-        break;
-      }
-    }
-    if (format == null) {
-      System.out.println("END error: no video track");
-      System.exit(2);
-    }
+    MediaFormat format = openVideo(extractor);
+    if (format == null) System.exit(2);
     int width = format.getInteger(MediaFormat.KEY_WIDTH);
     int height = format.getInteger(MediaFormat.KEY_HEIGHT);
-    float fps = format.containsKey(MediaFormat.KEY_FRAME_RATE)
-        ? format.getNumber(MediaFormat.KEY_FRAME_RATE).floatValue() : 60f;
-    long frameUs = (long) (1_000_000 / fps);
+    extractor.release();
 
     HandlerThread outputThread = new HandlerThread("m12-out");
     outputThread.start();
@@ -121,6 +114,45 @@ public class CodecProbe {
         System.out.println("END error: out must be reader, texture or none");
         System.exit(2);
     }
+    decode(surface);
+    System.exit(0);
+  }
+
+  /** Selects the first video track of the file= argument; null (after an END line) if there is none. */
+  private static MediaFormat openVideo(MediaExtractor extractor) throws Exception {
+    String file = ARGS.get("file");
+    if (file == null) {
+      System.out.println("END error: file= missing");
+      return null;
+    }
+    extractor.setDataSource(file);
+    for (int i = 0; i < extractor.getTrackCount(); i++) {
+      MediaFormat f = extractor.getTrackFormat(i);
+      if (f.getString(MediaFormat.KEY_MIME).startsWith("video/")) {
+        extractor.selectTrack(i);
+        return f;
+      }
+    }
+    System.out.println("END error: no video track");
+    return null;
+  }
+
+  /**
+   * Decodes the file= argument into `surface` (null: ByteBuffer mode) for secs= seconds, printing
+   * counters once a second and an END line. Used by main and by the probe app (ProbeActivity).
+   */
+  public static void decode(Surface surface) throws Exception {
+    int secs = num("secs", 20);
+    int lookahead = num("lookahead", 2);
+    long dropUs = num("drop", -1) * 1000L;
+    MediaExtractor extractor = new MediaExtractor();
+    MediaFormat format = openVideo(extractor);
+    if (format == null) return;
+    int width = format.getInteger(MediaFormat.KEY_WIDTH);
+    int height = format.getInteger(MediaFormat.KEY_HEIGHT);
+    float fps = format.containsKey(MediaFormat.KEY_FRAME_RATE)
+        ? format.getNumber(MediaFormat.KEY_FRAME_RATE).floatValue() : 60f;
+    long frameUs = (long) (1_000_000 / fps);
 
     String name = ARGS.get("codec");
     if (name == null) {
@@ -150,9 +182,11 @@ public class CodecProbe {
     ArrayDeque<long[]> pending = new ArrayDeque<>();
     long start = SystemClock.elapsedRealtime();
     long end = start + secs * 1000L;
+    if (ARGS.containsKey("audio")) startAudio(end);
+    if (ARGS.containsKey("second")) startSecondDecoder();
     long nextReport = start + 1000;
     long ptsOffset = 0, maxInputPts = 0, baseWallUs = -1, basePts = 0;
-    long decoded = 0, rendered = 0, late = 0, tryAgain = 0, loops = 0, stalls = 0;
+    long decoded = 0, rendered = 0, late = 0, dropped = 0, tryAgain = 0, loops = 0, stalls = 0;
     long lastRendered = 0, lastOutput = start;
     int maxIndex = -1;
     boolean stalled = false;
@@ -208,9 +242,10 @@ public class CodecProbe {
           long due = baseWallUs + (frame[1] - basePts);
           if (due > nowUs + 1000) break;
           if (nowUs - due > frameUs) late++;
-          codec.releaseOutputBuffer((int) frame[0], render);
+          boolean drop = dropUs >= 0 && nowUs - due > dropUs;
+          codec.releaseOutputBuffer((int) frame[0], render && !drop);
           pending.removeFirst();
-          rendered++;
+          if (drop) dropped++; else rendered++;
           busy = true;
         }
 
@@ -225,9 +260,9 @@ public class CodecProbe {
         }
 
         if (now >= nextReport) {
-          System.out.printf("t=%d dec=%d ren=%d fps=%d late=%d try=%d acq=%d acqfail=%d tex=%d pend=%d held=%d"
-                  + " buffers=%d loops=%d%n",
-              (now - start) / 1000, decoded, rendered, rendered - lastRendered, late, tryAgain,
+          System.out.printf("t=%d dec=%d ren=%d fps=%d late=%d drop=%d try=%d acq=%d acqfail=%d tex=%d pend=%d"
+                  + " held=%d buffers=%d loops=%d%n",
+              (now - start) / 1000, decoded, rendered, rendered - lastRendered, late, dropped, tryAgain,
               acquired.get(), acquireFailed.get(), texUpdates.get(), pending.size(), heldNow, maxIndex + 1,
               loops);
           lastRendered = rendered;
@@ -239,12 +274,142 @@ public class CodecProbe {
     } catch (Exception e) {
       result = "error " + e;
     } finally {
-      System.out.printf("END %s: %.1f s, decoded=%d rendered=%d late=%d stalls=%d buffers=%d loops=%d%n", result,
-          (SystemClock.elapsedRealtime() - start) / 1000.0, decoded, rendered, late, stalls, maxIndex + 1, loops);
+      System.out.printf("END %s: %.1f s, decoded=%d rendered=%d late=%d dropped=%d stalls=%d buffers=%d loops=%d%n",
+          result, (SystemClock.elapsedRealtime() - start) / 1000.0, decoded, rendered, late, dropped, stalls,
+          maxIndex + 1, loops);
     }
     codec.stop();
     codec.release();
-    System.exit(0);
+    extractor.release();
+  }
+
+  /** Runs trySecondDecoder on its own thread after second= milliseconds. */
+  static void startSecondDecoder() {
+    Thread thread = new Thread(() -> {
+      SystemClock.sleep(num("second", 0));
+      try {
+        trySecondDecoder();
+      } catch (Exception e) {
+        System.out.println("SECOND error " + e);
+      }
+    }, "m12-second");
+    thread.setDaemon(true);
+    thread.start();
+  }
+
+  private static void trySecondDecoder() throws Exception {
+    MediaExtractor extractor = new MediaExtractor();
+    MediaFormat format = openVideo(extractor);
+    if (format == null) return;
+    String name = new MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(format);
+    MediaCodec codec = MediaCodec.createByCodecName(name);
+    SurfaceTexture texture = new SurfaceTexture(false);
+    Surface surface = new Surface(texture);
+    MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+    long end = SystemClock.elapsedRealtime() + 2000;
+    long fed = 0, output = 0;
+    String result = "still running after 2 s";
+    try {
+      codec.configure(format, surface, null, 0);
+      codec.start();
+      System.out.println("SECOND started " + name);
+      while (SystemClock.elapsedRealtime() < end) {
+        int in = codec.dequeueInputBuffer(2000);
+        if (in >= 0) {
+          int size = extractor.readSampleData(codec.getInputBuffer(in), 0);
+          if (size < 0) break;
+          codec.queueInputBuffer(in, 0, size, extractor.getSampleTime(), 0);
+          extractor.advance();
+          fed++;
+        }
+        int out = codec.dequeueOutputBuffer(info, 2000);
+        if (out >= 0) {
+          output++;
+          codec.releaseOutputBuffer(out, false);
+        }
+      }
+    } catch (Exception e) {
+      result = "failed: " + e;
+    }
+    System.out.println("SECOND " + result + ", fed=" + fed + " output=" + output);
+    codec.release();
+    surface.release();
+    texture.release();
+    extractor.release();
+  }
+
+  /** Plays the first audio track of the file= argument on its own thread until `end`. */
+  private static void startAudio(long end) {
+    Thread thread = new Thread(() -> {
+      try {
+        playAudio(end);
+      } catch (Exception e) {
+        System.out.println("AUDIO error " + e);
+      }
+    }, "m12-audio");
+    thread.setDaemon(true);
+    thread.start();
+  }
+
+  private static void playAudio(long end) throws Exception {
+    MediaExtractor extractor = new MediaExtractor();
+    extractor.setDataSource(ARGS.get("file"));
+    MediaFormat format = null;
+    for (int i = 0; i < extractor.getTrackCount() && format == null; i++) {
+      MediaFormat f = extractor.getTrackFormat(i);
+      if (f.getString(MediaFormat.KEY_MIME).startsWith("audio/")) {
+        extractor.selectTrack(i);
+        format = f;
+      }
+    }
+    if (format == null) {
+      System.out.println("AUDIO none: the file has no audio track");
+      return;
+    }
+    MediaCodec codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));
+    codec.configure(format, null, null, 0);
+    codec.start();
+    int rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+    int mask = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) == 1
+        ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO;
+    AudioTrack track = new AudioTrack.Builder()
+        .setAudioAttributes(new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build())
+        .setAudioFormat(new AudioFormat.Builder()
+            .setSampleRate(rate)
+            .setChannelMask(mask)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .build())
+        .setBufferSizeInBytes(AudioTrack.getMinBufferSize(rate, mask, AudioFormat.ENCODING_PCM_16BIT) * 4)
+        .build();
+    track.play();
+    System.out.println("AUDIO codec=" + codec.getName() + " " + rate + " Hz");
+    MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+    while (SystemClock.elapsedRealtime() < end) {
+      int in = codec.dequeueInputBuffer(2000);
+      if (in >= 0) {
+        ByteBuffer buffer = codec.getInputBuffer(in);
+        int size = extractor.readSampleData(buffer, 0);
+        if (size < 0) {
+          extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+          size = extractor.readSampleData(buffer, 0);
+        }
+        codec.queueInputBuffer(in, 0, size, extractor.getSampleTime(), 0);
+        extractor.advance();
+      }
+      int out = codec.dequeueOutputBuffer(info, 2000);
+      if (out >= 0) {
+        if (info.size > 0) track.write(codec.getOutputBuffer(out), info.size, AudioTrack.WRITE_BLOCKING);
+        codec.releaseOutputBuffer(out, false);
+      }
+    }
+    track.stop();
+    track.release();
+    codec.stop();
+    codec.release();
+    extractor.release();
   }
 
   /** The decoder's vendor parameters (MediaCodec.getSupportedVendorParameters) and their types. */
