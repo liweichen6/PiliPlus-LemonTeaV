@@ -104,7 +104,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15) — In Progress
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M16) — In Progress
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -113,9 +113,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ✅ Done | `<physical-tv>`, `tool/tv_codecs.sh` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | 🔄 Proposal updated with the crash-debug findings, awaiting the user's decision | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ⏳ Planned | Decided in `M12.3` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G next, option F deferred to M16 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | 🔄 Built, awaiting CI | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `README.md`, `README.en.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.4 | `M12.6` | Option G, 4K on a `SurfaceView` (Spike First) | ⏳ Planned | Estimate in `docs/tv/PLAN.md`, M12.3 |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
@@ -128,6 +129,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
+| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
+| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M16 |
 
 ---
 
@@ -1091,3 +1094,16 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Not answered**: which hardware block client `0xE000` is, and whether heat or bandwidth sets the panic off (the TV reports no real temperature). Not tested: HDR, Dolby Vision, tunneled playback, network streams on the video plane, PiliPlus itself on the video plane, the TV's own media app, the TV's picture settings, and bilibili's own 4K30 streams.
 * **Housekeeping**: the test apps and files are off the TV. `tool/tv_m12/` stays, for `M12.5` and for F1 or G, and is noted in the READMEs.
 * **Open input** (owner: user): the fix decision, and the five-minute check with another app on the TV at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-30] Milestone M12 (Tasks `M12.3`–`M12.4`): Fix Decided, Option A Built, Option G Estimated
+* **Status**: `M12.3` ✅ Decided; `M12.4` 🔄 built, awaiting CI. There's no Flutter SDK on the development machine, so analyze and the tests haven't run; `tv-checks.yml` runs them on the pull request.
+* **Branch**: `fix/tv-m12-default-quality`
+* **Files Changed**: `[MODIFY] lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `README.md`, `README.en.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Decision** (the user): option A now, with a README warning; option G as a temporary fix for 4K, estimate first; option F deprioritized to a long-term plan.
+* **Option A**: `SettingBoxKey.defaultVideoQa: 116` joins `TvPlatform.defaultTvSettings`, seeded only when the key is missing. Installs that never chose a quality get 1080P60; a stored choice stays. On Android TV the value is read through `Pref.defaultVideoQa` on Wi-Fi and Ethernet. Known gap: picking 4K in the HUD still freezes, and is saved as the new default. The READMEs warn about it and give the way back.
+* **Option G estimate** (details in `PLAN.md`): 8 code files, 3 new and 5 edited, 4–7 days after reading media_kit's Android controller and chenx-dust's fork. A design with no package change looks possible, because `vo` can be passed as configuration and `onLoadHooks` run in order. A 1–2 day spike decides. The fallback, a build-time patch of `media_kit_video`, adds 1–2 days.
+* **"TV layer only"**: true today (5 upstream Dart files, 27 added lines) and for option A. Option G breaks it by a little: 2 more upstream files, both busy. Option F breaks it outright.
+* **Option F**: moved to a new M16. Its place after M15 is proposed, not confirmed.
+* **Open input** (owner: user): confirm M16's place; go-ahead for G's spike; the pull request for this branch.
