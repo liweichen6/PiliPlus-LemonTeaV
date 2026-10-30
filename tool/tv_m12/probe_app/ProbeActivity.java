@@ -24,8 +24,9 @@ import android.view.WindowManager;
  * ExoPlayer would in option F). The player is CodecProbe, or the system's MediaPlayer (player=media),
  * which has its own audio, A/V sync and frame dropping, and is what MiXplorer plays with. Started by
  * tool/tv_m12/run.sh with string extras: view=texture|surface, player=media, plus CodecProbe's arguments
- * (file, secs, lookahead, audio, drop, second, ...), plus session=1 for an active media session and
- * focus=1 for audio focus, which MiXplorer and the app have. Finishes itself when the run ends.
+ * (file, secs, lookahead, audio, drop, second, ...), plus session=playing|paused|inactive for a media
+ * session and focus=1 for audio focus, which MiXplorer and the app have. Finishes itself when the run
+ * ends.
  * clip=TEXT only puts TEXT on the clipboard and finishes: the TV's keyboard rewrites whatever adb
  * types, so settings for other apps (mpv-android's mpv.conf) have to be pasted.
  */
@@ -111,16 +112,17 @@ public class ProbeActivity extends Activity {
     System.out.println("FOCUS " + focus);
   }
 
-  /** Shows the system a playing media session, as a video player does. */
+  /** Shows the system a media session: playing, as a video player does, or paused, or not active. */
   private void startMediaSession() {
+    String mode = CodecProbe.ARGS.get("session");
     MediaSession session = new MediaSession(this, "m12");
     session.setPlaybackToLocal(MOVIE);
     session.setPlaybackState(new PlaybackState.Builder()
         .setActions(PlaybackState.ACTION_PLAY_PAUSE)
-        .setState(PlaybackState.STATE_PLAYING, 0, 1f)
+        .setState("paused".equals(mode) ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_PLAYING, 0, 1f)
         .build());
-    session.setActive(true);
-    System.out.println("SESSION active");
+    session.setActive(!"inactive".equals(mode));
+    System.out.println("SESSION " + mode);
   }
 
   /** Plays file= in a loop for secs= seconds, printing the position once a second. */
