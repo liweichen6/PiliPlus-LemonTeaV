@@ -1,6 +1,8 @@
 package m12;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.SurfaceTexture;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
@@ -24,6 +26,8 @@ import android.view.WindowManager;
  * tool/tv_m12/run.sh with string extras: view=texture|surface, player=media, plus CodecProbe's arguments
  * (file, secs, lookahead, audio, drop, second, ...), plus session=1 for an active media session and
  * focus=1 for audio focus, which MiXplorer and the app have. Finishes itself when the run ends.
+ * clip=TEXT only puts TEXT on the clipboard and finishes: the TV's keyboard rewrites whatever adb
+ * types, so settings for other apps (mpv-android's mpv.conf) have to be pasted.
  */
 public class ProbeActivity extends Activity {
   @Override
@@ -33,6 +37,12 @@ public class ProbeActivity extends Activity {
     Bundle extras = getIntent().getExtras();
     if (extras != null) {
       for (String key : extras.keySet()) CodecProbe.ARGS.put(key, String.valueOf(extras.get(key)));
+    }
+    if (CodecProbe.ARGS.containsKey("clip")) {
+      getSystemService(ClipboardManager.class)
+          .setPrimaryClip(ClipData.newPlainText("m12", CodecProbe.ARGS.get("clip")));
+      finish();
+      return;
     }
     if ("texture".equals(CodecProbe.ARGS.get("view"))) {
       TextureView view = new TextureView(this);

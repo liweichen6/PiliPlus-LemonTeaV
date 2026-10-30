@@ -97,17 +97,24 @@ Details and raw numbers are in the [Log](#log).
    | Probe app | `TextureView` | `M4` | Yes | No | No | 600 s, no panic |
    | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | No | No | 600 s, no panic |
    | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | Opened, refused | No | 600 s, no panic |
-   | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | Opened, refused | Yes | **TV lost at about 234 s** |
+   | Probe app, `MediaPlayer` | `TextureView` | `M4` | Yes | Opened, refused | Yes | **Panic at about 234 s** |
+   | Probe app, `MediaPlayer` | `SurfaceView` | `M4` | Yes | Opened, refused | Yes | 600 s, no panic |
+   | Probe app, `MediaPlayer` | `SurfaceView` | `M2` (AV1, looped) | Yes | Opened, refused | Yes | 600 s, no panic |
+   | Just Player (Media3 1.11.1) | `SurfaceView`, its controls in a window above | `M4` | Yes | No | Yes | 600 s, no panic |
+   | mpv-android, `vo=mediacodec_embed` | `SurfaceView` | `M4` | Yes | No | Yes | 600 s, no panic, no freeze |
 
-   * The time to panic rules out chance: the three panics in M12.2 and MiXplorer's two came within 40–190 s, and the probe app played 60 minutes without one until it had a media session. Only one run shows that so far, and its signature is pending.
+   * The time to panic rules out chance: the three panics in M12.2 and MiXplorer's two came within 40–190 s, and the probe app played 60 minutes without one until it had a media session. Only one run shows that so far.
    * The window's composition is the same in both: one 1920 × 1080 window layer, `DEVICE`, scaled to the panel by the hardware. So is the decoder's setup (`bufferCount:6`, `bufferSize:15671296`, `sideband:0`, `bufferQueue:1`).
-   * Both MiXplorer panics have the signature of M12.2: `miup_hit_panic`, `CID 0xE000` read, block 24, at `0x1C43C7F00` and `0x1C3BE5800`. The five read addresses span about 8.3 MB, not the 2.8 MB of the first three.
+   * All three new panics have the signature of M12.2: `miup_hit_panic`, `CID 0xE000` read, block 24, at `0x1C43C7F00`, `0x1C3BE5800` and `0x1C3BFDE00`. The six read addresses span about 8.3 MB, not the 2.8 MB of the first three.
 8. **A second decoder that the TV refuses isn't enough** (H10). Within about 0.6 s of `MediaPlayer` opening its decoder (0.57 s and 0.35 s in the two runs), MiXplorer's own process opens a second `c2.mtk.avc.decoder` on a surface. The resource check refuses it (`[CheckVdecResource] previous video:… no resource`, `VCodec Initialize failed`), the kernel driver logs `mtk_vdec_s_ctrl: ctrl-id=0x99300e fails!`, and the picture-quality service logs `closePqRepository fail` for a stream it doesn't know. The first decoder plays on. Its failure is logged under the tag `FRAME`, so it is probably a frame grabber for a thumbnail. The probe app's `second=` option reproduces every one of these lines, and that alone survives 600 s. It may still be necessary: it is in all three panics here, and M12.1 found the app opening short-lived 4K decoders that the driver rejects too (`VIDIOC_STREAMON failed`). The logs of M12.2's panic runs are gone, so whether they did the same is unknown.
 9. **The `SurfaceView` path is the TV's video path, and its AI picture engine runs on it** (session 2).
    * The layer is composed as `DEVICE(MM)`: the buffers are 4 KB handles to frames that go to the video plane without the GPU. Only here does the `[MI][AIPQ]` post-processing run (6,094 `SendRaw` calls in 10 minutes, none in either MiXplorer run), and it runs without a panic. That weakens H3 as far as the AI engine goes.
    * The decoder's buffers are larger on this path (`bufferSize:16203776`, not `15671296`).
 10. **The TV's temperature can't be read over adb.** `dumpsys thermalservice` gives the same placeholder for every sensor, `battery` and `usb_port` included (56 on one boot, 39 on the next), and the `thermal_zone` nodes are empty. So H9 can't be tested from here; the sampler's temperature column means nothing.
-11. **A media session is the first thing to turn a surviving run into a crash** (H11). Adding an active `MediaSession` and audio focus to the run that had survived took the TV down at about 234 s. MiXplorer has both, and so has PiliPlus (`audio_service`). The only messages in all three crashes and in no survivor are the system reacting to the session at startup: Bluetooth media control (`MediaPlayerList`, `AvrcpTargetJni`), Cast (`cast_shell`) and Google Assistant (`katniss`). Nothing in common shows just before a panic, so how a session reaches the memory fault is unknown.
+11. **The decoder names the path a run is on.** Its log line `sideband:0, bufferQueue:1, hwRender:…, gdec:…` reads `hwRender:1, gdec:0` on the video plane and `hwRender:0, gdec:1` on the GPU path. Every panic in this track is on the GPU path, and no run on the video plane has panicked.
+12. **mpv can run on the video plane** (session 2). `vo=mediacodec_embed` is the setting that panicked in M12.2 (option D), but there media_kit gives mpv a `SurfaceTexture` from Flutter, so the GPU still draws every frame. Given a real `SurfaceView`, mpv-android's decoder reports `hwRender:1, gdec:0`, and it plays 4K60 for 10 minutes with a media session and audio focus. That is a candidate the plan didn't have: a `SurfaceView` for mpv, in place of a second player. It keeps option D's limit, no mpv shaders, and needs a change to the media_kit fork's Android `VideoOutput`.
+13. **Fault 1 belongs to mpv on this TV, and it isn't certain.** mpv-android, with its own mpv and FFmpeg builds and no Flutter, freezes at its defaults exactly as the app does. But the same app, settings and file played 30 s on the next try, with matching logs. So finding 1's table says when a freeze can happen, not that it always does.
+14. **A media session is the first thing to turn a surviving run into a crash** (H11). Adding an active `MediaSession` and audio focus to the run that had survived took the TV down at about 234 s, on the GPU path; the same run survives on the video plane. MiXplorer has both, and so has PiliPlus (`audio_service`). The only messages in all three crashes and in no survivor are the system reacting to the session at startup: Bluetooth media control (`MediaPlayerList`, `AvrcpTargetJni`), Cast (`cast_shell`) and Google Assistant (`katniss`). Nothing in common shows just before a panic, so how a session reaches the memory fault is unknown.
 
 ## Questions
 
@@ -142,8 +149,8 @@ Details and raw numbers are in the [Log](#log).
   * Logs, kernel logs and bug reports stay outside the repository; only summaries go here.
 * **The user's login export is never touched.** The dev app (`PiliPlus TV dev`) keeps its imported login, so don't clear its data.
 * **Panic-prone runs need the user's go-ahead.** A run is panic-prone if it hardware-decodes 4K into a surface for more than about 20 s.
-  * Each batch needs the go-ahead and an agreed panic budget (suggested: at most 3 reboots per session).
-  * After a reboot, the user re-enables wireless debugging and sends the new port.
+  * Each batch needs the go-ahead and an agreed panic budget (suggested: at most 3 panics per session).
+  * A panic shuts the TV down; it doesn't come back by itself. Notify the user at once. They turn it on, re-enable wireless debugging and send the new port.
 * **Every run stops what it started at the end, even on an error**: the player app, the probe app or the harness.
 * **No swipes on a player screen**: a vertical swipe changes the TV's volume. Use D-pad keys, intents or adb commands.
 * **The user changes the TV's system settings**, not adb: picture mode, AI picture, motion smoothing, display mode, system updates.
@@ -215,6 +222,7 @@ Local copies supplied by the user, kept outside the repository:
   * Measured each second: frames decoded and released, dequeue failures, `C2BqBuffer` failures, `Detile` count. Also the time to panic.
   * scrcpy's server shows that `MediaCodec` and surfaces work from `app_process`. If the shell can't open the hardware decoder with a surface (SELinux), the same code moves into the CD3 app.
 * **Task CD3 (`🔄 In progress`) — A `SurfaceView` Probe App** (panic-prone):
+  * Just Player and mpv-android are installed on the TV for this track (the user approved it), and are removed when it ends.
   * Built: `tool/tv_m12/probe_app/` and `probe_app.sh`, with the harness's `decode` loop on a `SurfaceView` or a `TextureView` (`view=`), or the system's `MediaPlayer` (`player=media`). It takes the harness's options, including `audio`, `drop` (release late frames unshown) and `second` (open a second decoder), plus `session` (an active media session) and `focus` (audio focus). Tunneled playback and ExoPlayer aren't built yet. Videos go in shared storage, `Movies/m12`: the app can't read files adb puts in its own data folder, since they belong to the shell.
   * A tiny native Android app under `tool/tv_m12/`: no Flutter, debug-signed, in its own package with no login. It plays a local file in one of three modes:
     * `MediaCodec` into a `SurfaceView`;
@@ -293,6 +301,7 @@ Local copies supplied by the user, kept outside the repository:
     * the candidate fixes, for example:
       * option B's cap refined (say, 4K30 allowed);
       * a go or no-go on option F for 4K60;
+      * mpv with `vo=mediacodec_embed` on a real `SurfaceView` (finding 12);
       * a new option, a patched libmpv with a larger reader queue that keeps `vo=gpu` and the shaders, if H7 holds and that path survives 10 minutes twice;
       * a workaround for the user, such as a picture setting.
   * Move the findings into `PLAN.md` (M12.3) and `PROGRESS.md`.
@@ -323,7 +332,7 @@ Local copies supplied by the user, kept outside the repository:
 1. **Before**: record the kernel uptime, `sys.boot.reason` and free storage. Start the log streams on the development machine and the sampler.
 2. **Run** for the planned time: 20 s for deadlock sweeps, 60 s for a smoke test, 10 minutes for a verdict.
 3. **After**: stop everything the run started (a trap, also on failure), stop the streams, record the counters.
-4. **After a reboot**: wait for the user's port, run the post-panic collection, and take the time to panic from the stream's last line.
+4. **After a panic**: wait for the user's port, run the post-panic collection, and take the time to panic from the stream's last line.
 5. Add one row per run to the run log below.
 
 ## Out of Scope
@@ -343,15 +352,21 @@ Local copies supplied by the user, kept outside the repository:
 | S1-4 | 2026-10-30 | CD2a | `ImageReader` | `V-AVC60` | kept 2, queued 2, with 5 format keys (low latency, MediaTek planar, low-latency, game mode, target size) | 10 s each | — | Freezes as without them |
 | S1-5 | 2026-10-30 | CD2c | `SurfaceTexture` + GLES | `V-AVC60` | queued 2 | 10 s | 3 of 596 not shown before the end; 65 late | Plays at 60 fps; no freeze, no panic (a smoke test only) |
 | S2-1 | 2026-10-30 | CD2c | `SurfaceTexture` + GLES, offscreen (nothing on screen) | `V-AV1-60` (looped) | queued 2 | 600 s | about 48 of 60 fps decoded | **No panic** in 10 minutes (the app panicked at 40 s and 190 s on this stream) |
-| S2-2 | 2026-10-30 | CD1 | MiXplorer's player: the video drawn by the GPU into its window, one window layer composed by the hardware composer | `M4` (bilibili 4K60 AVC) | — | about 144 s | — | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C43C7F00`, block 24. Reboot 1 |
+| S2-2 | 2026-10-30 | CD1 | MiXplorer's player: the video drawn by the GPU into its window, one window layer composed by the hardware composer | `M4` (bilibili 4K60 AVC) | — | about 144 s | — | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C43C7F00`, block 24. The first this session |
 | S2-3 | 2026-10-30 | CD3 | Probe app, `SurfaceView` (`DEVICE(MM)`, the video plane) | `V-AVC60` (looped) | queued 2 | 600 s | 196 of 35,954 late, 60 fps | **No panic**; AI post-processing active |
 | S2-4 | 2026-10-30 | CD3 | Probe app, `TextureView` (one window layer) | `V-AVC60` (looped) | queued 2 | 600 s | 12,431 of 35,954 late, 60 fps | **No panic** |
 | S2-5 | 2026-10-30 | CD3 | Probe app, `TextureView` | `V-AVC60` (looped) | queued 2, audio | 600 s | 14,141 of 35,949 late, 60 fps | **No panic** |
 | S2-6 | 2026-10-30 | CD3 | Probe app, `TextureView` | `M4` | queued 2, audio | 600 s | 10,627 of 35,956 late, 60 fps | **No panic** |
 | S2-7 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | — | 600 s | Position kept up | **No panic** |
-| S2-8 | 2026-10-30 | CD1 | MiXplorer's player, the same command as S2-2 | `M4` | — | about 165 s | — | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BE5800`, block 24. Reboot 2 |
+| S2-8 | 2026-10-30 | CD1 | MiXplorer's player, the same command as S2-2 | `M4` | — | about 165 s | — | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BE5800`, block 24. The second this session |
 | S2-9 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | second decoder at 350 ms, refused | 600 s | Position kept up | **No panic** |
-| S2-10 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | second decoder at 350 ms, media session, audio focus | about 234 s | Position kept up | **The TV was lost** (adb): reboot 3; signature pending |
+| S2-10 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `TextureView` | `M4` | second decoder at 350 ms, media session, audio focus | about 234 s | Position kept up | **Panic**: `miup_hit_panic`, `CID 0xE000` read at `0x1C3BFDE00`. The third this session |
+| S2-11 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `SurfaceView` (`DEVICE(MM)`) | `M4` | second decoder at 350 ms, media session, audio focus | 600 s | Position kept up | **No panic**: S2-10 with only the output changed |
+| S2-12 | 2026-10-30 | CD1 | Just Player, Media3 1.11.1, `SurfaceView` (`DEVICE(MM)`) | `M4` | as the app ships | 600 s | Video plane active throughout | **No panic** |
+| S2-13 | 2026-10-30 | CD3 | Probe app, `MediaPlayer` on a `SurfaceView` (`DEVICE(MM)`) | `M2` (AV1, looped) | second decoder at 350 ms, media session, audio focus | 600 s | Position kept up | **No panic** |
+| S2-14 | 2026-10-30 | CD4 | mpv-android 2026-09-17 at its defaults (`vo=gpu`) | `M4` | cold start | 30 s | — | **Froze** within 5 s, as in M12.2: `C2BqBuffer` failures, GPU path |
+| S2-15 | 2026-10-30 | CD4 | The same, the same settings | `M4` | app already running | 30 s | No `C2BqBuffer` failures, about 1,040 `Detile` lines a second | **Played** without a freeze: mpv's logs match S2-14 |
+| S2-16 | 2026-10-30 | CD4 | mpv-android, `vo=mediacodec_embed` into its `SurfaceView` (`hwRender:1`) | `M4` | `mpv.conf` | 600 s | Video plane active throughout; one audio underrun warning | **No panic, no freeze** |
 
 ## Log
 
