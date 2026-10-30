@@ -7,7 +7,7 @@ The goal is to find out three things:
 * which output paths survive 4K60;
 * whether 4K can be fixed in the app instead of capped.
 
-The plan, the status, the run log and the findings all live in this file. When the track ends (CD9), the findings move into `PLAN.md` (M12.3) and [`PROGRESS.md`](./PROGRESS.md), and each tool is kept or dropped.
+The plan, the status, the run log and the findings all live in this file. The findings moved into `PLAN.md` (M12.3) and [`PROGRESS.md`](./PROGRESS.md) on 2026-10-30 (CD9), and every tool in `tool/tv_m12/` stays. This file keeps the detail. The tasks still open here run only if the fix needs them.
 
 ## Status
 
@@ -22,7 +22,7 @@ The plan, the status, the run log and the findings all live in this file. When t
 | `CD6` | TV picture settings | ⏳ Planned, low priority: the AI engine runs on the video plane, which doesn't panic, and not on the path that does (finding 9) | High | Changes the TV's settings |
 | `CD7` | Telemetry and post-panic forensics | 🔄 In progress (11 panic signatures collected; no warning signs before a panic; no temperature available) | None of its own | One bug report after the first panic |
 | `CD8` | Desk research | 🔄 In progress (mpv's upstream change found; no public source for the panic strings yet) | None | Checks for a firmware update |
-| `CD9` | Synthesis and merge-back | ⏳ Planned | None | Decides on the fix options |
+| `CD9` | Synthesis and merge-back | ✅ Done (the fix decision stays with the user, in M12.3) | None | Decides on the fix options |
 
 ## Starting Point (from M12.2)
 
@@ -335,7 +335,7 @@ Local copies supplied by the user, kept outside the repository:
   * **Firmware.** Compare the TV's firmware version with the latest. The user checks for a system update; after an update, re-run the reproducer.
   * **Known reports.** Look for reboots or freezes at 4K on Hisense or MediaTek TVs from users of mpv-android, media_kit, Kodi, SmartTube or VLC, and for mpv issues about `hwdec_aimagereader` and buffer starvation.
   * **mpv's `hwdec_aimagereader`.** Confirm the hard-coded `maxImages` (5, from the reader thread's name). If H7 holds, work out what building a patched libmpv for media_kit on `armeabi-v7a` would take.
-* **Task CD9 (`⏳ Planned`) — Synthesis and Merge-Back**:
+* **Task CD9 (`✅ Done`) — Synthesis and Merge-Back**:
   * Write the conclusions in M12.3's terms:
     * the faulting component;
     * the safe paths and streams at 4K;

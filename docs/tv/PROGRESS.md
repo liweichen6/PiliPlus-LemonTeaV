@@ -113,7 +113,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ✅ Done | `<physical-tv>`, `tool/tv_codecs.sh` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | 🔄 Proposal written, awaiting the user's decision | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | 🔄 Proposal updated with the crash-debug findings, awaiting the user's decision | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ⏳ Planned | Decided in `M12.3` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
@@ -1072,3 +1072,22 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * None of them was tested on a TV, and all HDR-capable ones use Hybrid Composition for the `SurfaceView`.
 * **Consequences for option F**: F1 adapts kkren's and PR 2145's Kotlin plus yifgu's Dolby Vision decoder rule instead of starting from scratch, and also measures frame times under Hybrid Composition with danmaku on; F2 probably shrinks by 3–4 days, and the transparent-Flutter-view approach becomes the fallback if Hybrid Composition is too slow.
 * **Open input** (owner: user): unchanged, the five-minute check with another app on the TV at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-30] Milestone M12 (Task `M12.3`): Crash-Debug Side Track Merged
+* **Status**: 🔄 Still awaiting the user's decision on the fix, now with the track's evidence behind the options. No app code changed.
+* **Branch**: `debug/tv-m12-crash`
+* **Files Changed**: `[NEW] docs/tv/M12_CRASH_DEBUG.md` (plan, findings, run log), `[NEW] tool/tv_m12/*` (run tools, MediaCodec harness, probe app), `[MODIFY] docs/tv/PLAN.md` (M12: findings, root cause, options B, D, F and the new G, "done" bar), `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Method**: two device sessions on `<physical-tv>` without the app: a MediaCodec harness over `app_process`, a small probe app on a `SurfaceView` or a `TextureView`, MiXplorer's player, Just Player and mpv-android (the last two installed with the user's approval and removed afterwards). 27 numbered runs and 8 kernel panics in session 2. Everything is in [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
+* **Findings**:
+  * The panic needs 4K60 drawn to the screen by the GPU, on a warm TV, in any player. mpv, Flutter and PiliPlus are incidental. 1080p60, 4K30 and offscreen 4K60 each survived one 10-minute run in the same state, and on-screen 4K60 then panicked in about 11 s.
+  * Nothing on the video plane panicked: 4K60 AVC four times for 10 minutes, across three players, and AV1 once for 10 minutes and twice for the file's full 5:32.
+  * mpv itself can use the video plane: `vo=mediacodec_embed` into a real `SurfaceView`. It panicked in M12.2 because media_kit gives it a Flutter texture.
+  * The decoder's log line names the path: `hwRender:1, gdec:0` on the video plane, `hwRender:0, gdec:1` on the 4K GPU path, `gdec:0` with no `Detile` step at 1080p.
+  * The freeze is a fixed budget: surface slots are the decoder's buffer count plus 2, whatever the consumer's queue size. mpv-android froze in 5 of 6 runs at its defaults.
+  * Not the cause, after testing: a second decoder that the TV refuses, a media session, audio focus. Each looked like the trigger until the unchanged survivor was repeated on a warm TV and panicked too; the earlier runs had been confounded by the TV warming up.
+* **Consequences for `M12.3`**: option B stands as the recommendation, with evidence that 1080P60 holds on a warm TV. F's panic question is answered for local AVC and AV1. A new option G keeps mpv on a `SurfaceView`, with `chenx-dust/PiliPlus` as prior work. The `M12.5` bar now runs on a warm TV.
+* **Not answered**: which hardware block client `0xE000` is, and whether heat or bandwidth sets the panic off (the TV reports no real temperature). Not tested: HDR, Dolby Vision, tunneled playback, network streams on the video plane, PiliPlus itself on the video plane, the TV's own media app, the TV's picture settings, and bilibili's own 4K30 streams.
+* **Housekeeping**: the test apps and files are off the TV. `tool/tv_m12/` stays, for `M12.5` and for F1 or G, and is noted in the READMEs.
+* **Open input** (owner: user): the fix decision, and the five-minute check with another app on the TV at 4K60 and 杜比视界.
