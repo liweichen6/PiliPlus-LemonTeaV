@@ -14,7 +14,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 4. **Universal APK & Side-by-Side Coexistence**:
    - **Application ID**: `com.lemontea.piliplus.tv` (Launcher label: **`PiliPlus TV`**) — coexists side-by-side with official PiliPlus (`com.example.piliplus`) and LemonTea PiliPlus (`com.lemontea.piliplus`).
    - **Adaptive Runtime**: Automatically activates the TV control layer on Android TV / Leanback devices (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `--dart-define=PILI_FORCE_TV=true`) while behaving identically to upstream touch PiliPlus on phones and tablets.
-   - **4K Video Plane (M16)**: The opt-in `4K 视频直通` setting (TV only, off by default) puts mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes to the TV's video layer and the GPU stays out of the path. It fails closed: nothing on this path can reach Flutter's texture. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.14.
+   - **4K Video Plane (M16)**: On this branch only, see [`4K_VARIANT.md`](./4K_VARIANT.md): the `4K 视频直通` setting (TV only, on by default) puts mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes to the TV's video layer and the GPU stays out of the path. It fails closed: nothing on this path can reach Flutter's texture. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.14.
    - **TV Defaults**: On every TV launch `TvPlatform` fills in TV-friendly preferences for keys that are **not set yet** (landscape layout, side rail, dark theme, `1.2x` text scale, 1080P60 default quality, ...) and never overwrites a value you chose. This includes **启用键盘控制** (`keyboardControl`): the player HUD and the split-screen Quick Strip hang off the player page's key handler, which upstream builds only while that switch is on, so turning it off on a TV removes the HUD and the Quick Strip. Keep it on.
 
 ---
@@ -25,6 +25,8 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | :--- | :--- |
 | [**README.en.md**](./README.en.md) ([中文](./README.md)) | Overview, package identity, upstream sync guide, local APK build guide, and CI/CD signing setup. |
 | [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M10`), and 23 capability invariants (`C1`–`C23`). |
+| [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant: what differs from `main`, how to update it from `main`, its device check, and how to release it. |
+| [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | Every mpv option tried on the video plane, with results, and which ones became settings. |
 | [**REVIEW.md**](./REVIEW.md) | **Comprehensive Android TV Layer Code & Architecture Review**: file-by-file engineering audit, technical observations (`R1`–`R20`), and upstream sync risk matrix. |
 | [**PLAN.md**](./PLAN.md) | Complete implementation, optimization, and remediation roadmap across **Phase 1–3 → Milestone → Epic → Task**, with verification criteria and privacy rules. |
 | [**PROGRESS.md**](./PROGRESS.md) | Task-by-task execution log, commit hashes, before/after performance benchmarks, and dual-device verification results. |

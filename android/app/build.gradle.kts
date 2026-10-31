@@ -55,9 +55,7 @@ android {
     }
 
     buildFeatures {
-        if (project.hasProperty("dev")) {
-            resValues = true
-        }
+        resValues = true
     }
 
     buildTypes {
@@ -72,6 +70,16 @@ android {
                     type = "string",
                     name = "app_name",
                     value = "PiliPlus TV dev",
+                )
+            } else {
+                // The 4K variant installs beside the normal app, with its own
+                // data, so a stored 4K default can't reach a build without the
+                // video plane.
+                applicationIdSuffix = ".passthrough"
+                resValue(
+                    type = "string",
+                    name = "app_name",
+                    value = "PiliPlus TV 4K",
                 )
             }
             proguardFiles(

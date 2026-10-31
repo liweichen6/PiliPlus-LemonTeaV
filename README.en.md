@@ -57,11 +57,14 @@ Located under **Settings → Audio & Video Settings** (changes take effect on th
 ## Known Issues
 
 > [!WARNING]
-> **On a TV with a MediaTek chip, turn on `4K 视频直通` before picking 4K, and don't pick 4K or higher without it.** On the one MediaTek MT9690 TV tested, without it 4K video freezes within seconds and the app then stops responding. 4K60 can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
+> **This is PiliPlus TV 4K, with `4K 视频直通` on by default.** It installs beside the normal PiliPlus TV with its own data, and needs its own login. See [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md).
+>
+> **On a TV with a MediaTek chip, don't pick 4K or higher with `4K 视频直通` turned off.** On the one MediaTek MT9690 TV tested, without it 4K video freezes within seconds and the app then stops responding. 4K60 can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
 >
 > - TVs now default to **1080P 60 fps**. Existing installs that never changed the default quality get this too; a default you already chose is left alone.
 > - This is a default, not a hard limit. You can still pick 4K in the player, and that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality).
-> - **`设置 → 音视频设置 → 4K 视频直通`** (Settings → Audio & Video, TV only, off by default) sends the decoder straight to the TV's video layer, around the GPU. With it on, 4K60 AVC and AV1 played steadily inside the app on this TV. It applies the next time a video opens.
+> - **`设置 → 音视频设置 → 4K 视频直通`** (Settings → Audio & Video, TV only, on by default) sends the decoder straight to the TV's video layer, around the GPU. With it on, 4K60 AVC and AV1 played steadily inside the app on this TV. It applies the next time a video opens.
+>   - **`视频直通解码队列`** (default 4 frames) decodes ahead to reduce dropped frames at 4K. It rarely needs changing; the test data is in [docs/tv/PLAYBACK_PARAMETERS.md](docs/tv/PLAYBACK_PARAMETERS.md).
 >   - On this path, super-resolution, flip, zoom and screenshots don't work, and neither do the `裁剪`, `等宽`, `等高` and `原始` fit modes. With heavy danmaku the UI drops to about 42 fps; the video itself isn't affected.
 >   - Turning it off puts a default quality above 1080P 60 fps back to 1080P 60 fps.
 >   - A video opened from a live room reuses the room's player, so it can't play 4K there. Go back to the home page and open the video again.

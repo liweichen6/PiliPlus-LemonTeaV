@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:PiliPlus/pages/setting/models/model.dart';
+import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage.dart';
@@ -45,7 +46,7 @@ class _NativePlaneMpv implements TvPlaneMpv {
 
 /// mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes to
 /// the TV's video plane and the GPU stays out of the path (docs/tv/PLAN.md,
-/// M16). One per player, for videos only, behind an opt-in TV setting.
+/// M16). One per player, for videos only, behind a TV setting.
 ///
 /// Fails closed. 4K60 through the GPU shuts `<physical-tv>` down, so nothing
 /// here may leave mpv on Flutter's texture:
@@ -64,8 +65,12 @@ class _NativePlaneMpv implements TvPlaneMpv {
 class TvVideoPlane {
   TvVideoPlane._();
 
-  /// Fork-only, so `storage_key.dart` stays upstream's. Off when missing.
+  /// Fork-only, so `storage_key.dart` stays upstream's. On when missing: this
+  /// build exists for it, and with it on 4K can't reach the GPU path.
   static const String settingKey = 'tvVideoPlane';
+
+  /// Fork-only too. See [decodeQueueOptions].
+  static const String decodeQueueKey = 'tvVideoPlaneDecodeQueue';
 
   static const String viewType = 'com.example.piliplus/tv_video_plane';
   static const Duration surfaceTimeout = Duration(seconds: 8);
@@ -75,9 +80,13 @@ class TvVideoPlane {
 
   // Decoding on its own thread: with it on mpv's main thread, 4K60 AV1 lost
   // 5-8 % of its frames, and with 4 frames queued about 0.2 %
-  // (docs/tv/PROGRESS.md, M16.3). Queued frames are held from the decoder, so
-  // this stays small.
-  static const int _decodeQueueFrames = 4;
+  // (docs/tv/PLAYBACK_PARAMETERS.md).
+  static const int _defaultDecodeQueue = 4;
+
+  /// Frames mpv decodes ahead on its own thread, 0 for none. Only values tested
+  /// on `<physical-tv>`: frames held from this decoder can deadlock it, so a
+  /// larger number isn't just a slower setting.
+  static const List<int> decodeQueueOptions = <int>[0, 1, 2, 4];
 
   // VideoQuality.high108060.code, and the long side of the frames it allows.
   static const int _maxTextureQa = 116;
@@ -96,16 +105,53 @@ class TvVideoPlane {
   ];
 
   static bool get enabled =>
-      TvPlatform.isTv && GStorage.setting.get(settingKey, defaultValue: false);
+      TvPlatform.isTv && GStorage.setting.get(settingKey, defaultValue: true);
+
+  /// A stored value that isn't an option falls back to the default, so an
+  /// imported setting can't queue more frames than were tested.
+  static int get decodeQueueFrames {
+    final value = GStorage.setting.get(decodeQueueKey);
+    return decodeQueueOptions.contains(value) ? value : _defaultDecodeQueue;
+  }
 
   @visibleForTesting
   static ValueChanged<String> showToast = SmartDialog.showToast;
 
-  static SettingsModel get settingsModel => SwitchModel(
+  static List<SettingsModel> get settingsModels => <SettingsModel>[
+    _planeSetting,
+    NormalModel(
+      title: '视频直通解码队列',
+      leading: const Icon(Icons.queue_play_next_outlined),
+      getSubtitle: () =>
+          '当前：${_decodeQueueLabel(decodeQueueFrames)}。提前解码以减少 4K 掉帧，重新打开视频后生效',
+      onTap: (context, setState) async {
+        final frames = await showDialog<int>(
+          context: context,
+          builder: (context) => SelectDialog<int>(
+            title: '视频直通解码队列',
+            value: decodeQueueFrames,
+            values: decodeQueueOptions
+                .map((frames) => (frames, _decodeQueueLabel(frames)))
+                .toList(),
+          ),
+        );
+        if (frames != null) {
+          await GStorage.setting.put(decodeQueueKey, frames);
+          setState();
+        }
+      },
+    ),
+  ];
+
+  static String _decodeQueueLabel(int frames) =>
+      frames == 0 ? '关闭' : '$frames 帧';
+
+  static SettingsModel get _planeSetting => SwitchModel(
     title: '4K 视频直通',
     subtitle: '画面由电视直接显示，不经过 GPU，可播放 4K，重新打开视频后生效；超分辨率、镜像、缩放和截图不可用',
     leading: const Icon(Icons.layers_outlined),
     setKey: settingKey,
+    defaultVal: true,
     onChanged: (value) {
       if (!value) capStoredQuality(GStorage.setting);
     },
@@ -214,9 +260,9 @@ class TvVideoPlane {
     _mpv = mpv;
     _videoRect = videoRect;
     _onFail = onFail;
-    mpv
-      ..setOption('vd-queue-enable', 'yes')
-      ..setOption('vd-queue-max-samples', '$_decodeQueueFrames');
+    final frames = decodeQueueFrames;
+    mpv.setOption('vd-queue-enable', frames == 0 ? 'no' : 'yes');
+    if (frames != 0) mpv.setOption('vd-queue-max-samples', '$frames');
   }
 
   @visibleForTesting

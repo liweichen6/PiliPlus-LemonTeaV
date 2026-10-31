@@ -1312,9 +1312,32 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 ---
 
 ### [2026-10-31] Milestone M16: Chinese Wording
-* **Status**: ✅ Done, on `feat/tv-m16-video-plane`, not pushed.
+* **Status**: ✅ Done, not pushed.
 * **Files Changed**: `[MODIFY]` `lib/tv/tv_video_plane.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PROGRESS.md`.
 * **Change** (the user's choice): the setting is now `4K 视频直通`. `视频平面` was a literal translation of "video plane", and `视频层` was a second name for the same thing, so both are gone from the app and the READMEs. The strings are simpler too: the subtitle says `画面由电视直接显示，不经过 GPU`, and the refusal says `当前无法播放 4K，请返回首页后重新打开视频`. Earlier entries in this file keep the old wording, as a record of what shipped in each task.
 * **Not changed**: the code names (`TvVideoPlane`, the `tvVideoPlane` setting key) and "video plane" in the English engineering docs. They're for developers, and changing the key would lose the setting.
 * **Verification**: analyze and all 137 TV tests pass. Wording only; not checked on the TV.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.4`): Split Into a Variant, Parameter Doc, Decode Queue Setting
+* **Status**: ✅ Done locally on `variant/4k-passthrough` (renamed from `feat/tv-m16-video-plane`), not pushed. The first release needs the user's setup, in `4K_VARIANT.md`.
+* **Decision** (the user): M16 gets its own branch and release instead of landing on `main`, because `main` follows upstream and publishes automatically with no TV in the loop. The recommendation had been to stay on `main` with a release check; the user chose the split.
+* **Files Changed**:
+  * `[NEW]` `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-release.yml`, `tool/tv_m16/`.
+  * `[MODIFY]` `android/app/build.gradle.kts`, `lib/http/api.dart`, `lib/common/constants.dart`, `lib/tv/tv_video_plane.dart`, `lib/pages/setting/models/video_settings.dart`, `test/tv_video_plane_test.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Two traps found before building it**:
+  * `Update.checkUpdate` takes `releases[0]` of its repository, pre-releases included, and that code is already on users' TVs. A variant release in this repository would be offered to everyone on the normal app, so releases go to `liweichen6/PiliPlus-LemonTeaV-4K`.
+  * With the same application ID, a user going back to the normal app would keep a stored 4K default on a build with no video plane, which is the path that panics `<physical-tv>`. The variant is `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TV 4K`, with its own data and its own login. `-Pdev` builds stay `PiliPlus TV dev`.
+* **Release flow**: nothing follows upstream by itself. Merge `main`, pass the device check, push, tag `v*-4k`. A push builds and runs the TV checks; only the tag publishes, and a red check publishes nothing. The workflow pushes the commit to the release repository first, because the updater compares the release's commit with the build's.
+* **The setting is on by default here**: installing the variant is the opt-in, and with it on 4K can't reach the GPU path.
+* **Parameters**: `docs/tv/PLAYBACK_PARAMETERS.md` has every option tried, with results and the method. The scripts and the logging patch moved into `tool/tv_m16/` with their private paths removed, so the runs can be repeated.
+* **`视频直通解码队列`**: of everything tried, only the decode queue changed the result, so it's the one new setting: 关闭, 1, 2 or 4 帧, default 4. Only tested sizes are offered, and a stored value that isn't one of them falls back to 4, because frames held from this decoder can deadlock it. `framedrop` and `video-latency-hacks` aren't offered: the first hides drops and the second did nothing. `vo` and `hwdec` are never offered, and there's no free-form mpv box, because either would walk around failing closed.
+* **Verification**:
+  * Analyze: no issues. 141 of 141 TV tests pass.
+  * A release build reports `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TV 4K`; a `-Pdev` build still reports `com.lemontea.piliplus.tv.dev`, `PiliPlus TV dev`.
+  * On `<physical-tv>`, no 4K60: both settings render and the new subtitle wraps cleanly; the queue dialog works by D-pad, and `2 帧` saved and showed in the subtitle before going back to `4 帧`. Focus starts on the first row of the dialog, as in upstream's other `SelectDialog`s.
+* **Not verified**: the release workflow has never run, because it needs the push, the release repository and the token. The release build hasn't been installed on a TV. The default-on path is covered by unit tests, since the dev app has the setting stored off. Queue sizes through the setting are unit-tested; the sizes themselves were measured by overriding mpv's options in the logging build.
+* **Known cost**: `PLAN.md` and `PROGRESS.md` now differ between this branch and `main`, so each merge of `main` conflicts at their ends until M16's docs reach `main`.
+* **Next** (owner: user): create the release repository, and decide on pushing this branch and sending the docs to `main`.
 

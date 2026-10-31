@@ -31,7 +31,7 @@ List<SettingsModel> get videoSettings => [
     setKey: SettingBoxKey.enableHA,
     defaultVal: true,
   ),
-  if (TvPlatform.isTv) TvVideoPlane.settingsModel,
+  if (TvPlatform.isTv) ...TvVideoPlane.settingsModels,
   const SwitchModel(
     title: '免登录1080P',
     subtitle: '免登录查看1080P视频',

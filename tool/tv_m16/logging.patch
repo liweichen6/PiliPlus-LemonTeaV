@@ -1,0 +1,156 @@
+diff --git a/android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt b/android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt
+index 63125da1a..fa7bef55f 100644
+--- a/android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt
++++ b/android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt
+@@ -117,7 +117,7 @@ class TvBridge private constructor(
+                 flutterEngine.dartExecutor.binaryMessenger,
+                 CHANNEL_NAME,
+             ).setMethodCallHandler(TvBridge(activity))
+-            TvVideoPlane.register(flutterEngine)
++            TvVideoPlane.register(flutterEngine, activity.applicationContext)
+         }
+     }
+ }
+diff --git a/android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt b/android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt
+index f88b219c1..aa02a15a4 100644
+--- a/android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt
++++ b/android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt
+@@ -71,10 +71,19 @@ class TvVideoPlane private constructor(
+     companion object {
+         private const val VIEW_TYPE = "com.example.piliplus/tv_video_plane"
+ 
+-        fun register(flutterEngine: FlutterEngine) {
++        fun register(flutterEngine: FlutterEngine, context: Context) {
++            val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VIEW_TYPE)
++            channel.setMethodCallHandler { call, result ->
++                if (call.method == "spikeConfig") {
++                    val file = java.io.File(context.getExternalFilesDir(null), "m16.conf")
++                    result.success(if (file.isFile) file.readText() else "")
++                } else {
++                    result.notImplemented()
++                }
++            }
+             flutterEngine.platformViewsController.registry.registerViewFactory(
+                 VIEW_TYPE,
+-                TvVideoPlane(MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VIEW_TYPE)),
++                TvVideoPlane(channel),
+             )
+         }
+     }
+diff --git a/lib/tv/tv_video_plane.dart b/lib/tv/tv_video_plane.dart
+index 9bd2ed3dc..e6d0f39b0 100644
+--- a/lib/tv/tv_video_plane.dart
++++ b/lib/tv/tv_video_plane.dart
+@@ -109,6 +109,8 @@ class TvVideoPlane {
+   /// takes a stored quality above 1080P60 back down.
+   @visibleForTesting
+   static void capStoredQuality(Box<dynamic> box) {
++    // ignore: avoid_print
++    print('[m16] cap, stored ${box.get(SettingBoxKey.defaultVideoQa)}');
+     for (final key in const <String>[
+       SettingBoxKey.defaultVideoQa,
+       SettingBoxKey.defaultVideoQaCellular,
+@@ -190,6 +192,7 @@ class TvVideoPlane {
+   }) {
+     _current = this;
+     bind(_NativePlaneMpv(player), controller.rect, onFail: onFail);
++    _TempProbe.start(player);
+     player.onLoadHooks.add(onLoad);
+     // media_kit's own unload hook sets vo=null and wid=0.
+     player.onUnloadHooks.add(onUnload);
+@@ -433,3 +436,95 @@ class _PlaneSurface extends StatelessWidget {
+     );
+   }
+ }
++
++
++// TEMPORARY, never committed: counters for the M16.3 device pass.
++abstract final class _TempProbe {
++  static const MethodChannel _ch = MethodChannel(TvVideoPlane.viewType);
++  static Timer? _timer;
++
++  static Future<void> start(NativePlayer player) async {
++    final text = await _ch.invokeMethod<String>('spikeConfig') ?? '';
++    final conf = <String, String>{
++      for (final line in text.split('\n'))
++        if (line.contains('='))
++          line.substring(0, line.indexOf('=')).trim(): line
++              .substring(line.indexOf('=') + 1)
++              .trim(),
++    };
++    // ignore: avoid_print
++    print(
++      '[m16] conf $conf qa=${GStorage.setting.get(SettingBoxKey.defaultVideoQa)}',
++    );
++    if (conf['codecs'] case final codecs?) {
++      GStorage.setting.put(SettingBoxKey.preferCodecs, codecs.split(','));
++    }
++    conf.forEach((k, v) {
++      if (k.startsWith('mpv.')) player.setProperty(k.substring(4), v);
++    });
++    if (conf['timings'] == '1') _FrameLog.start();
++    _timer?.cancel();
++    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
++      String p(String name) {
++        try {
++          return player.getProperty(name);
++        } catch (_) {
++          return '?';
++        }
++      }
++
++      // ignore: avoid_print
++      print(
++        '[m16] stats pos=${p('time-pos')} vo=${p('vo')} '
++        'voconf=${p('vo-configured')} hwdec=${p('hwdec-current')} '
++        'codec=${p('video-codec')} size=${p('width')}x${p('height')} '
++        'fps=${p('estimated-vf-fps')} sync=${p('video-sync')} '
++        'drop=${p('frame-drop-count')} '
++        'decdrop=${p('decoder-frame-drop-count')} '
++        'delayed=${p('vo-delayed-frame-count')}',
++      );
++    });
++    player.release.add(() async => _timer?.cancel());
++  }
++}
++
++abstract final class _FrameLog {
++  static bool _started = false;
++  static final List<int> _build = [];
++  static final List<int> _raster = [];
++  static final List<int> _total = [];
++
++  static void start() {
++    if (_started) return;
++    _started = true;
++    WidgetsBinding.instance.addTimingsCallback((timings) {
++      for (final t in timings) {
++        _build.add(t.buildDuration.inMicroseconds);
++        _raster.add(t.rasterDuration.inMicroseconds);
++        _total.add(t.totalSpan.inMicroseconds);
++      }
++    });
++    Timer.periodic(const Duration(seconds: 10), (_) => _flush());
++  }
++
++  static String _stats(List<int> values) {
++    final sorted = values.toList()..sort();
++    int at(double p) => sorted[((sorted.length - 1) * p).round()];
++    return 'p50=${at(.5)} p90=${at(.9)} p99=${at(.99)} max=${sorted.last}';
++  }
++
++  static void _flush() {
++    if (_total.isNotEmpty) {
++      final over = _total.where((t) => t > 16667).length;
++      // ignore: avoid_print
++      print(
++        '[m16] frames=${_total.length} over16ms=$over '
++        'build ${_stats(_build)} raster ${_stats(_raster)} '
++        'total ${_stats(_total)}',
++      );
++    }
++    _build.clear();
++    _raster.clear();
++    _total.clear();
++  }
++}

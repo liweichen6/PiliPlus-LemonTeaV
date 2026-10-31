@@ -100,7 +100,11 @@ void main() {
   }
 
   group('the setting', () {
-    test('is off by default, also on a TV', () {
+    test('is on by default on a TV, and can be turned off', () async {
+      expect(TvVideoPlane.enabled, isTrue);
+      expect(TvVideoPlane.forNewPlayer(isLive: false), isNotNull);
+
+      await box.put(TvVideoPlane.settingKey, false);
       expect(TvVideoPlane.enabled, isFalse);
       expect(TvVideoPlane.forNewPlayer(isLive: false), isNull);
     });
@@ -165,7 +169,8 @@ void main() {
       expect(toasts, isEmpty);
     });
 
-    test('with the setting off, playback is unchanged', () {
+    test('with the setting off, playback is unchanged', () async {
+      await box.put(TvVideoPlane.settingKey, false);
       expect(TvVideoPlane.refusesTexture(null, false, 3840, 2160), isFalse);
       expect(toasts, isEmpty);
     });
@@ -180,15 +185,42 @@ void main() {
   group('load', () {
     setUp(settingOn);
 
-    test('decodes on its own thread, with a small queue', () {
+    test('decodes on its own thread by default, with a small queue', () {
       final mpv = FakeMpv();
       newPlane(mpv);
       expect(mpv.values['vd-queue-enable'], 'yes');
-      // M12: frames held from this decoder can deadlock it.
-      expect(
-        int.parse(mpv.values['vd-queue-max-samples']!),
-        lessThanOrEqualTo(4),
-      );
+      expect(mpv.values['vd-queue-max-samples'], '4');
+    });
+
+    test('the queue follows the setting', () async {
+      await box.put(TvVideoPlane.decodeQueueKey, 2);
+      final mpv = FakeMpv();
+      newPlane(mpv);
+      expect(mpv.values['vd-queue-enable'], 'yes');
+      expect(mpv.values['vd-queue-max-samples'], '2');
+    });
+
+    test('the queue can be turned off', () async {
+      await box.put(TvVideoPlane.decodeQueueKey, 0);
+      final mpv = FakeMpv();
+      newPlane(mpv);
+      expect(mpv.values['vd-queue-enable'], 'no');
+      expect(mpv.values.containsKey('vd-queue-max-samples'), isFalse);
+    });
+
+    test(
+      'a stored queue that was never tested falls back to the default',
+      () async {
+        // M12: frames held from this decoder can deadlock it.
+        for (final value in <Object>[8, 64, -1, 'lots']) {
+          await box.put(TvVideoPlane.decodeQueueKey, value);
+          expect(TvVideoPlane.decodeQueueFrames, 4, reason: '$value');
+        }
+      },
+    );
+
+    test('the queue only offers sizes tested on a TV', () {
+      expect(TvVideoPlane.decodeQueueOptions, <int>[0, 1, 2, 4]);
     });
 
     test('with a surface attaches, wid before vo, and hwdec pinned', () {
@@ -594,7 +626,7 @@ void main() {
       ).readAsStringSync();
       expect(
         source,
-        contains('if (TvPlatform.isTv) TvVideoPlane.settingsModel,'),
+        contains('if (TvPlatform.isTv) ...TvVideoPlane.settingsModels,'),
       );
     });
   });
