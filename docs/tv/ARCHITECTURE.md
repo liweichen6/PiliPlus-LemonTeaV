@@ -186,7 +186,7 @@ flowchart TD
 
 ### 2.14 `TvVideoPlane`: 4K on the Video Plane (M16)
 
-On `<physical-tv>` (MediaTek MT9690), 4K60 drawn to the screen by the GPU can shut the TV down, and `vo=gpu` freezes at 4K. Only the video plane survives 4K60 (`docs/tv/M12_CRASH_DEBUG.md`). `TvVideoPlane` puts mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes straight to that plane, behind the opt-in `4K 视频平面` setting (off by default, TV only).
+On `<physical-tv>` (MediaTek MT9690), 4K60 drawn to the screen by the GPU can shut the TV down, and `vo=gpu` freezes at 4K. Only the video plane survives 4K60 (`docs/tv/M12_CRASH_DEBUG.md`). `TvVideoPlane` puts mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes straight to that plane, behind the opt-in `4K 视频直通` setting (off by default, TV only).
 
 * **G-a, no package change**: media_kit always creates a `SurfaceTexture`, but with a `vo` other than `gpu` and `androidAttachSurfaceAfterVideoParameters: true` it never hands it to mpv. The plane sets `wid` and `vo` itself, to a global reference to the `SurfaceView`'s surface.
 * **Fails closed**: nothing may leave mpv on Flutter's texture, which is the path that panics the TV.
@@ -233,7 +233,7 @@ The TV control layer maintains 24 verified capability invariants across navigati
 | **C21** | Player Hold-Select 3.0x Temporary Speed | Holding `Select`/`Enter` ($\ge 250\text{ms}$) activates 3.0x temporary playback speed (`'3.0倍速中'`), also on a HUD or Quick Strip pill that focus has left and come back to (`ExcludeFocus` pill, M10 `R8`); short press toggles play/pause. | `test/tv_player_hud_test.dart` |
 | **C22** | Inline Sheet (`MiniScaffold`) Focus Isolation & LIFO Restoration | Isolates occluded `BottomSheetType.body` layers (`评论详情`, `对话列表`, `选集`, `AI总结`), promotes focus into opening/async-loading sheets without left-pane leaks, translates pinned/floating sliver headers (`SliverPinnedHeader` / `SliverFloatingHeaderWidget`) to scroll-order positions so upward D-pad scrolling never jumps prematurely to pinned sort controls, supports embedded comment actions (`回复`/`查看对话`/`点赞`), and restores exact pre-sheet focus & scroll offset on Back. | `test/tv_navigation_test.dart` |
 | **C23** | Overlay Dialog (`SmartDialog`) Focus Promotion, Isolation & Restoration | Dialogs inserted outside the root `Navigator` (`🎉 发现新版本`, permission dialogs) take D-pad focus and the focus ring when they open, the page behind them is unfocusable and ringless, a dialog replaced by another keeps focus in the overlay, and Back or `取消` returns focus and the ring to the control that opened it. Popup routes (C18) run on the same `_TvFocusLayerStack`. | `test/tv_navigation_test.dart` (`overlay dialogs outside the Navigator (M10, SmartDialog)`, `route focus layers`) |
-| **C24** | Video Plane Fails Closed | With `4K 视频平面` on, mpv is never handed Flutter's texture: a failed attach stops playback, a player off the plane refuses a video above 1080P60, and turning the setting off caps a stored quality above 1080P60. With it off, playback is unchanged. | `test/tv_video_plane_test.dart` |
+| **C24** | Video Plane Fails Closed | With `4K 视频直通` on, mpv is never handed Flutter's texture: a failed attach stops playback, a player off the plane refuses a video above 1080P60, and turning the setting off caps a stored quality above 1080P60. With it off, playback is unchanged. | `test/tv_video_plane_test.dart` |
 
 ---
 

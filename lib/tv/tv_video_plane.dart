@@ -102,8 +102,8 @@ class TvVideoPlane {
   static ValueChanged<String> showToast = SmartDialog.showToast;
 
   static SettingsModel get settingsModel => SwitchModel(
-    title: '4K 视频平面',
-    subtitle: '解码器直接输出到电视的视频层，可播放 4K，重新打开视频后生效；超分辨率、镜像、缩放和截图不可用',
+    title: '4K 视频直通',
+    subtitle: '画面由电视直接显示，不经过 GPU，可播放 4K，重新打开视频后生效；超分辨率、镜像、缩放和截图不可用',
     leading: const Icon(Icons.layers_outlined),
     setKey: settingKey,
     onChanged: (value) {
@@ -136,7 +136,7 @@ class TvVideoPlane {
   ) {
     if (plane != null || isLive || !enabled) return false;
     if (math.max(width ?? 0, height ?? 0) <= _maxTextureSide) return false;
-    showToast('此播放器未使用视频平面，无法播放 4K，请返回首页后重新打开视频');
+    showToast('当前无法播放 4K，请返回首页后重新打开视频');
     return true;
   }
 
@@ -287,7 +287,7 @@ class TvVideoPlane {
     });
   }
 
-  static const String failedText = '视频平面启动失败，已停止播放';
+  static const String failedText = '4K 视频直通启动失败，已停止播放';
 
   @visibleForTesting
   void onSurfaceReady(int wid) {

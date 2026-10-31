@@ -1309,3 +1309,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Cleanup**: nothing of this session is running on the TV, and its test files are gone. `PiliPlus TV dev` holds the clean build with its login, with the setting off, 1080P60 and AVC first. `READ_MEDIA_VIDEO` is revoked. The user's normal app and MiXplorer weren't touched. TV patches are reverted.
 * **Next** (owner: user): the pull request and M16's own release.
 
+---
+
+### [2026-10-31] Milestone M16: Chinese Wording
+* **Status**: ✅ Done, on `feat/tv-m16-video-plane`, not pushed.
+* **Files Changed**: `[MODIFY]` `lib/tv/tv_video_plane.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PROGRESS.md`.
+* **Change** (the user's choice): the setting is now `4K 视频直通`. `视频平面` was a literal translation of "video plane", and `视频层` was a second name for the same thing, so both are gone from the app and the READMEs. The strings are simpler too: the subtitle says `画面由电视直接显示，不经过 GPU`, and the refusal says `当前无法播放 4K，请返回首页后重新打开视频`. Earlier entries in this file keep the old wording, as a record of what shipped in each task.
+* **Not changed**: the code names (`TvVideoPlane`, the `tvVideoPlane` setting key) and "video plane" in the English engineering docs. They're for developers, and changing the key would lose the setting.
+* **Verification**: analyze and all 137 TV tests pass. Wording only; not checked on the TV.
+
