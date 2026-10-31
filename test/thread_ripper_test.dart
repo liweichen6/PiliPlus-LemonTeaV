@@ -294,6 +294,41 @@ void main() {
             );
             return;
           }
+          if (request.uri.path.startsWith('/pace')) {
+            // The link is the limit: every connection receives at the same
+            // steady 160 KiB/s, so pieces take longer than the hedge delay.
+            var at = 0;
+            void next() {
+              try {
+                if (at >= body.length) {
+                  unawaited(response.close().catchError((Object _) {}));
+                  return;
+                }
+                response.add(body.sublist(at, min(at + 16384, body.length)));
+                at += 16384;
+                timers.add(Timer(const Duration(milliseconds: 100), next));
+              } catch (_) {}
+            }
+
+            next();
+            return;
+          }
+          if (request.uri.path == '/trickle' && start >= 65536) {
+            // Half of every piece now, the rest after a pause, like a piece
+            // sharing a slow link with the others in flight.
+            final half = body.length ~/ 2;
+            response.add(body.sublist(0, half));
+            await response.flush();
+            timers.add(
+              Timer(const Duration(seconds: 3), () {
+                try {
+                  response.add(body.sublist(half));
+                  unawaited(response.close().catchError((Object _) {}));
+                } catch (_) {}
+              }),
+            );
+            return;
+          }
           if (request.uri.path == '/resume' &&
               start >= 65536 &&
               body.length > 65536 &&
@@ -401,7 +436,10 @@ void main() {
     final whole = await fetch(url);
     expect(whole.$1.statusCode, 200);
     expect(whole.$2, source);
-    expect((await fetch(url, range: 'bytes=10-99')).$2, source.sublist(10, 100));
+    expect(
+      (await fetch(url, range: 'bytes=10-99')).$2,
+      source.sublist(10, 100),
+    );
   });
 
   test('HEAD, suffix, open-ended seek and 416 responses', () async {
@@ -597,6 +635,36 @@ void main() {
     );
     expect(result.$2, source);
     expect(paths.length, lessThanOrEqualTo(10));
+  });
+
+  test('a piece reaches the player while it is still arriving', () async {
+    final response = await (await client.getUrl(
+      Uri.parse(register(['/trickle'])),
+    )).close();
+    final watch = Stopwatch()..start();
+    final bytes = <int>[];
+    final early = Completer<Duration>();
+    await response.forEach((chunk) {
+      bytes.addAll(chunk);
+      // The head plus part of the first piece, which completes after 3 s.
+      if (bytes.length > 65536 + 100000 && !early.isCompleted) {
+        early.complete(watch.elapsed);
+      }
+    });
+    expect(await early.future, lessThan(const Duration(seconds: 2)));
+    expect(bytes, source);
+  });
+
+  test('pieces arriving at the usual speed get no second copy', () async {
+    source = Uint8List.fromList(List.generate(3 << 20, (i) => i % 251));
+    proxy.close();
+    proxy = RipperRangeProxy(concurrency: 8, userAgent: 'test');
+    await proxy.start();
+    final result = await fetch(register(['/pace', '/pace-b']));
+    expect(result.$2, source);
+    // A copy asks for the same piece end as its first copy.
+    final ends = requests.where((r) => r.$2 >= 65536).map((r) => r.$3);
+    expect(ends.length - ends.toSet().length, lessThanOrEqualTo(3));
   });
 
   test(
