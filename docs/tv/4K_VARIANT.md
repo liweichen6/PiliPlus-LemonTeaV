@@ -33,8 +33,13 @@ Never merge this branch into `main`.
 
    Keep `videoPlane?.configuration` ahead of the texture configuration in `_initPlayer`. Read `android_video_controller/real.dart` in `media_kit_video` if it moved: with `androidAttachSurfaceAfterVideoParameters: true` and a `vo` other than `gpu`, it must still never set `wid` or `vo`.
 3. Apply the patches, run analyze and the TV tests, and build `-Pdev`.
-4. Pass the device check below on `<physical-tv>`, on the `plane` guard from [`tool/tv_m16/run.sh`](../../tool/tv_m16/run.sh).
+4. Pass the device check below on `<physical-tv>`, on the `plane` guard from [`tool/tv_m16/run.sh`](https://github.com/liweichen6/PiliPlus-LemonTeaV/blob/variant/4k-passthrough/tool/tv_m16/run.sh).
 5. Push. A push runs nothing here, so start a build as below.
+
+## Docs on Both Branches
+
+* **The same on both**: `PLAN.md`, `PROGRESS.md`, this file and `PLAYBACK_PARAMETERS.md`. Change them on `main` first, in a Markdown-only pull request, which publishes no release. Then merge `main` here.
+* **Different on purpose**: `README*`, `docs/tv/README*`, `ARCHITECTURE.md` and `REVIEW.md` describe the code on their own branch, so they differ where the code does.
 
 ## Device Check
 

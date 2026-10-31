@@ -24,12 +24,12 @@ flowchart TD
         T2D["tool/tv_patch.sh<br/>(Reversible local developer script for macOS/Linux to apply/revert patches)"]
     end
 
-    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks & App Identity (about 55 Lines)"]
-        T3A["android/app/.../AndroidManifest.xml, build.gradle.kts, MainActivity.kt, string.xml<br/>(applicationId: com.lemontea.piliplus.tv, label: PiliPlus TV, Leanback launcher + TvBridge)"]
+    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks & App Identity (about 57 Lines)"]
+        T3A["android/app/.../AndroidManifest.xml, build.gradle.kts, MainActivity.kt, string.xml<br/>(applicationId: com.lemontea.piliplus.tv.passthrough, label: PiliPlus TVP, Leanback launcher + TvBridge)"]
         T3B["lib/main.dart (3 lines)<br/>(TvPlatform.initialize, TvNavigationObserver, TvNavigation wrapper)"]
         T3C["lib/utils/connectivity_utils.dart (1-line hook)<br/>(TvPlatform.isOnWifiOrEthernet: Ethernet counts as Wi-Fi on TV)"]
         T3D["lib/pages/video/widgets/player_focus.dart (4 lines)<br/>(Wrap PlayerFocus with TvPlayerHud on TV)"]
-        T3F["lib/plugin/pl_player/controller.dart (22 lines), view/view.dart (3 lines), lib/pages/setting/models/video_settings.dart (3 lines)<br/>(M16: create the player on the video plane, refuse 4K off it, mount the view, the setting)"]
+        T3F["lib/plugin/pl_player/controller.dart (22 lines), view/view.dart (3 lines), lib/pages/setting/models/video_settings.dart (3 lines), lib/utils/update.dart (2 lines)<br/>(M16: create the player on the video plane, refuse 4K off it, mount the view, the setting, no update check)"]
         T3E["lib/common/constants.dart & lib/http/api.dart (2 lines)<br/>(Point sourceCodeUrl & latestApp update check to liweichen6/PiliPlus-LemonTeaV)"]
     end
 
@@ -250,4 +250,4 @@ The TV control layer maintains 24 verified capability invariants across navigati
 | **Android Native Memory Safety** | Strong `Activity` reference in `TvBridge` prevented garbage collection on configuration changes. | `WeakReference<Activity>` with null-safe platform channel fallbacks. | **Zero Activity memory leaks** across orientation/display mode transitions. |
 | **Patch Closure Overhead** | Anonymous closure allocated per `GestureDetector` build in directional mode. | Static method `_handleDirectionalKeyEvent` in `tv_gesture_detector.patch`. | **Zero closure allocations** during directional widget rebuilds. |
 | **Modal Layer Focus** | Bespoke fixes per kind of layer (M6 popup promotion, M9 inline sheets) and none for overlay dialogs outside the `Navigator`: the `🎉 发现新版本` dialog's buttons were unreachable by D-pad. | One `_TvFocusLayerStack` lifecycle (detect → save trigger → promote → occlude → restore) shared by popup routes and overlay dialogs; M9 inline sheets keep their own bookkeeping (§2.13). | **Dialog buttons reachable, page behind unreachable, trigger restored**; one place to fix the next kind of layer. |
-| **Automated Test Coverage** | 15 TV navigation tests. | 137 TV tests (navigation/benchmarks/M6/M7/M9/M10 regressions, Player HUD/dialogs/3x hold speed, and 40 for the M16 video plane). | **100% TV test pass rate** with deterministic latency benchmarks. |
+| **Automated Test Coverage** | 15 TV navigation tests. | 144 TV tests (navigation/benchmarks/M6/M7/M9/M10 regressions, Player HUD/dialogs/3x hold speed, and 49 for the M16 video plane). | **100% TV test pass rate** with deterministic latency benchmarks. |

@@ -6,7 +6,8 @@
 > - **Fork Footprint vs. `lemonteaau/PiliPlus`**: 33 files touched, with **only 5 upstream Dart files in `lib/` modified (`< 30` net lines)**
 > - **Verification Status**: `flutter analyze --no-pub` reports **0 issues** across all TV modules, hooks, and tests; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes **88 / 88 tests** (~3s); all 38 SDK/pub-cache patches apply and revert cleanly via `./tool/tv_patch.sh`.
 > - **Follow-up Review (2026-10-26, Milestone M10)**: findings `R8`–`R20` and the still-open `R2` / `R3` / `R5` items were added after M9.5 and are resolved in M10 (the task is in the severity column of §3). `R1`–`R7` keep their original numbering. The `SmartDialog` update-dialog focus bug that started M10 is not an `R` item: see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.13 and invariant `C23`.
-> - **Follow-up (2026-10-31, Milestone M16)**: `TvVideoPlane` adds 3 upstream Dart files and 28 added lines (`controller.dart` +22/−5, `view.dart` +3, `video_settings.dart` +3), the first hooks in `controller.dart` and `view.dart`, two of upstream's busiest files. The TV-layer-only rule no longer holds strictly; see `PLAN.md`, M16. Figures above this line are from the original review.
+> - **Device Verification (2026-10-31, Milestone M12.5)**: option A passed on `<physical-tv>` with `v2.1.6.2-fork.5870`: 10+ minutes of each agreed test video at 1080P60 or the best quality below it, with no freeze, ANR or kernel panic. Picking 4K in the HUD still freezes on that TV with `4K 视频直通` off, as the README warns. Details and limits are in `PROGRESS.md`.
+> - **Follow-up (2026-10-31, Milestone M16)**: `TvVideoPlane` adds 4 upstream Dart files and 30 added lines (`controller.dart` +22/−5, `view.dart` +3, `video_settings.dart` +3, `update.dart` +2), the first hooks in `controller.dart` and `view.dart`, two of upstream's busiest files. The TV-layer-only rule no longer holds strictly; see `PLAN.md`, M16. Figures above this line are from the original review.
 
 ---
 
@@ -16,7 +17,7 @@
 
 1. **Tier 1 — Self-Contained TV Module (`lib/tv/*` & `TvBridge.kt`, 6,402 LOC)**: Owns platform detection, Hive defaults, on-demand IME gating, 2D spatial focus traversal, zero-rebuild focus ring rendering, modal/popup/overlay-dialog (`SmartDialog`)/inline-sheet (`MiniScaffold` / `BottomSheetLayout`) focus promotion & isolation, route focus memory, and the 10-foot video player HUD.
 2. **Tier 2 — Build-Time SDK & Material Patches (`lib/scripts/tv_*.patch`, 4 patch files)**: Adapts `GestureDetector`, `RadioGroup`, and `InkResponse` under `NavigationMode.directional` at build time (`patch.ps1` in CI, `tool/tv_patch.sh` locally), keeping `git diff` across upstream UI pages at zero.
-3. **Tier 3 — Ultra-Thin Upstream Micro-Hooks (about 55 lines across 8 Dart files + Android manifest/identity)**: Mounts `TvPlatform`, `TvNavigation`, `TvNavigationObserver`, `TvPlayerHud`, `TvVideoPlane`, Ethernet broadband recognition, and fork release update URLs.
+3. **Tier 3 — Ultra-Thin Upstream Micro-Hooks (about 57 lines across 9 Dart files + Android manifest/identity)**: Mounts `TvPlatform`, `TvNavigation`, `TvNavigationObserver`, `TvPlayerHud`, `TvVideoPlane`, Ethernet broadband recognition, and fork release update URLs.
 
 | Dimension | Rating | Assessment Summary |
 | :--- | :---: | :--- |
@@ -26,7 +27,7 @@
 | **10-Foot Player HUD (`TvPlayerHud`)** | **A** | Full transport/episode/quality/speed/fit/danmaku OSD, hardware-decoupled virtual seek accumulator (`1x → 2x → 3x`), Hold-Select 3.0x temporary speed boost, remote hold-to-triple-like, and `PopScope` Back dismissal. |
 | **Native Bridge & Platform Layer** | **A-** | `WeakReference<Activity>` prevents Activity leaks; `_TvTextInputGateControl` reliably blocks unwanted soft-keyboard popups during D-pad traversal; minor doc/predicate nuance around non-Leanback HDMI boxes (see **R1**). |
 | **SDK & Package Patch Pipeline** | **A** | Minimal, surgical patches guarded by `NavigationMode.directional` (zero overhead in touch mode); includes an important fix for stock Flutter's `_InkResponseState._canRequestFocus` directional bug. |
-| **Test Suite & Release Hygiene** | **A** | 137 targeted TV tests (navigation/geometry/benchmark/inline-sheet/overlay, HUD/modal/3x-speed, and 40 for the M16 video plane), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
+| **Test Suite & Release Hygiene** | **A** | 144 targeted TV tests (navigation/geometry/benchmark/inline-sheet/overlay, HUD/modal/3x-speed, and 49 for the M16 video plane), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
 
 ---
 

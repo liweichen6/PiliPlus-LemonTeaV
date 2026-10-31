@@ -6,7 +6,7 @@ Every number comes from one TV, in one session. Treat them as a comparison, not 
 
 ## How It Was Measured
 
-* **Setup**: a `-Pdev` release build with [`tool/tv_m16/logging.patch`](../../tool/tv_m16/logging.patch) applied, a warm TV, real bilibili streams through the thread ripper, and danmaku on. Each option ran on a fresh start, 90 s measured after 30 s of settling.
+* **Setup**: a `-Pdev` release build with [`tool/tv_m16/logging.patch`](https://github.com/liweichen6/PiliPlus-LemonTeaV/blob/variant/4k-passthrough/tool/tv_m16/logging.patch) applied, a warm TV, real bilibili streams through the thread ripper, and danmaku on. Each option ran on a fresh start, 90 s measured after 30 s of settling.
 * **mpv's counter**: `frame-drop-count`, as a share of the frames due at 59.94 fps.
 * **What reached the screen**: `dumpsys SurfaceFlinger --latency` on the video layer gives the time each frame was presented, 127 frames at a time, sampled 8 times per run. `Layer fps` is their average. `Long intervals` is the share of gaps over 25 ms, against 16.7 ms for a clean frame.
 * **Why both**: mpv's counter can be switched off without fixing anything (`framedrop=no`, below), and the layer's timing can't.
@@ -86,6 +86,8 @@ During these runs, after about 9.6 hours of uptime and dozens of starts, `dumpsy
 `dumpsys -t 6 media.player` answers in about 0.15 s when healthy, so `tool/tv_m16/stress.sh` checks it after every cycle.
 
 ## Reproducing This
+
+Run these on `variant/4k-passthrough`, which has `tool/tv_m16/`.
 
 ```bash
 git apply tool/tv_m16/logging.patch
