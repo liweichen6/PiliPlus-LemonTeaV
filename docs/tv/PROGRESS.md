@@ -1164,3 +1164,65 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Privacy check**: the docs, every commit unique to this fork, the pull request refs, the text of pull requests, issues and releases, and the latest release run's log were checked against Execution Rule 4. No LAN addresses, ports, serials, local paths, local usernames, tokens or keys turned up. One rule in `M12_CRASH_DEBUG.md` was reworded.
 * **Stale facts fixed**: the no-Flutter note in `M12_CRASH_DEBUG.md`, the SDK step in `M16.1`, and the pinned version in `docs/tv/README.md` and `README.en.md`.
 * **Next**: `M16.1`, and `M12.5` on `v2.1.6.2-fork.5863` or later.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.1`): Spike Passed, 4K60 Plays on the Video Plane Inside the App
+* **Status**: `M16.1` ✅ Done, recommendation **go**. `M16.2` hasn't started and waits for the user's go-ahead.
+* **Branch**: `feat/tv-m16-video-plane`. The spike code stays uncommitted, as the plan says: `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, one line in `TvBridge.kt`, and small hooks in `lib/plugin/pl_player/controller.dart` and `view/view.dart`. A copy is kept outside the repository with the run logs.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M16, Phase 5 roadmap, M17), `docs/tv/PROGRESS.md`.
+* **Result**: G-a works, with no change to `media_kit_video` (`85f0a69ea`, unchanged in `pubspec.lock`), so G-b isn't needed. mpv's `vo=mediacodec_embed` on a real `SurfaceView` played 4K60 AVC and AV1 inside the app on a warm `<physical-tv>` for about 41 minutes, with no panic, freeze or ANR. TV uptime ran unbroken from 6.1 to 7.8 hours. On the GPU path, 4K60 on a warm TV usually panicked within 5 minutes.
+* **Spike list, in the plan's order**:
+
+  | # | Item | Result | Evidence |
+  | :--- | :--- | :--- | :--- |
+  | 1 | `hwRender:1, gdec:0` at 1080p | ✅ Pass | `C2MtkVdecTv` logs it on the local clip and real streams; mpv reports `vo=mediacodec_embed`, `hwdec=mediacodec` and the plane's `wid`; the layer is `DEVICE` |
+  | 2 | Hook fails on purpose | ✅ Pass | A thrown error and a surface timeout, repeated on the final build: `vo=null`, `wid=0`, no decoder opened, no `Detile` lines, position empty. The toast shows in the capture from the timeout run |
+  | 3 | Next-video on one `Surface` | ✅ Pass | No `native_window_api_connect … -22`. Quality switches 1080P60 → 720P and 1080P60 → 4K on the same surface; a related video pushed over the page; Back to the first video. Each opened a new decoder with `hwRender:1`. A part switch on a multi-part video isn't run: none of the three test videos has one |
+  | 4 | Hybrid Composition frame cost, Impeller off, danmaku on | 📊 Measured | Tables below. The cost is real, and it falls on danmaku and the UI, not on the video |
+  | 5 | Above `FittedBox` and `Transform.flip` | ✅ Pass | `自动`: `0 0 3840 2160`. 4:3: `480 0 3360 2160`, centred, and the surface resized to 1440 × 1080 under a running decoder. `Transform.flip` isn't applied on this path, as planned |
+  | 6 | D-pad focus stays in Flutter; split-screen to fullscreen keeps the rect | ✅ Pass | HUD, its dialogs, the Quick Strip and the related list all take the D-pad; focus returns to the card on Back; the window keeps Android focus. Rect `2332 × 1312` in split-screen and `3840 × 2160` in fullscreen, both ways |
+  | 7 | Home, TV sleep and back | ✅ Pass at 1080P60 | mpv detached 1–2 ms after the surface went; a new surface re-attached in under 5 ms; a new decoder with `hwRender:1`; the position moved on; no ANR. 147 frames dropped catching up after Home, 35 after sleep. adb stayed connected through sleep. Not run at 4K |
+  | 8 | 4K60 AVC and AV1, 10+ minutes, warm TV | ✅ Pass | Table below |
+
+* **4K60 runs** (warm TV, danmaku on, `hwRender:1, gdec:0` in every run; 31–32 layer samples per run, all `DEVICE`; no ANR):
+
+  | Run | Stream | Decoder buffers | Played | mpv dropped | UI fps | Frames over 16.7 ms | Frame total, p50 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | d1 | `M4`, local, AVC | 6 | 610 s | 18 (0.05 %) | 52.8 | 68.0 % | 21.4 ms |
+  | d2 | `M2`, local, AV1, looped | 9 | 610 s | About 5 % (433 in the first 138 s of one pass) | 54.5 | 20.7 % | 13.1 ms |
+  | d3 | `BV1kMxM6FECM`, real stream, AVC, picked in the HUD | 6 | 628 s | 599 (1.6 %) | 45.4 | 74.5 % | 22.8 ms |
+  | d5 | `BV1kMxM6FECM`, real stream, AV1 | 9 | 630 s | 2,483 (6.6 %) | 53.7 | 59.4 % | 18.4 ms |
+
+  * By the verdicts in `M12_CRASH_DEBUG.md`, 10 minutes twice makes a path **safe**: AVC and AV1 each have two passes on this path.
+  * `Detile` logged one burst at start (40 lines on AVC, 52 on AV1), the same counts as mpv-android's safe plane runs in M12. The GPU path logged 39,644 in one run.
+  * `BV1fiHN6zEfx` opened straight into 4K on the plane too, but it resumed from history at its end, so that attempt isn't counted. Its AV1 stream is `M2`, run d2.
+  * One TV, one session. AV1's drops are mpv's counter; nobody judged the panel's smoothness by eye.
+* **Frame times at 1080p, plane against texture** (same videos and quality, 90 s each, the first 30 s skipped):
+
+  | Video | Path | UI fps | Frames over 16.7 ms | Raster, p50 | Frame total, p50 | Frame total, p90 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `BV1fiHN6zEfx`, moderate danmaku, 1080P60 | Plane | 54.7 | 26.4 % | 6.9 ms | 13.9 ms | 21.5 ms |
+  | The same | Texture | 59.3 | 13.5 % | 6.1 ms | 8.6 ms | 15.4 ms |
+  | `BV1NGZtBwELa`, heavy danmaku, 1080P | Plane | 42.3 | 85.7 % | 9.6 ms | 24.0 ms | 41.6 ms |
+  | The same | Texture | 56.1 | 26.8 % | 7.4 ms | 10.4 ms | 25.6 ms |
+
+  * Hybrid Composition adds 5–14 ms at p50. Raster itself adds only 1–2 ms, so most of it looks like frames waiting their turn. That wasn't traced. The worst case is heavy danmaku at about 42 fps.
+  * The video isn't held back: the decoder goes straight to the plane, and at 1080P60 mpv dropped 36 frames in the 90 s run.
+  * If this is too slow, the way out is the one F2 names: a transparent Flutter view over a `SurfaceView` behind it, which needs no platform view. Not tried.
+* **What the spike changed in the plan**:
+  * **The hook can't wait for the surface.** The plan said it could. With a saved speed other than 1x, `_initializePlayer` awaits an mpv reply, mpv events are handled one at a time, and the hook was holding that handler. The view mounted 0.2 s after the 8 s timeout. It failed closed, but the video would never have played. Now the hook never waits: with no surface yet, the file loads with `vid=no` and the surface attaches on arrival, through the same path as Back, Home and sleep. An 8 s timer still fails closed. Normal load, 1.5x speed and both forced failures were re-run on this build.
+  * **Failing closed is stronger than planned.** With `vo` other than `gpu` and `androidAttachSurfaceAfterVideoParameters: true`, media_kit never hands mpv the texture at all, so a hook that doesn't run leaves `vo=null`. The hook also reads `vo` and `wid` back before it lets mpv go on.
+  * **A stored 4K default is a hazard wherever the plane is off.** Picking 4K in the HUD saved it as the dev app's default, and opening the app without the plane would have put 4K60 on the GPU path. Restored and verified before the session ended. `M16.2` clamps it.
+* **Items for `M16.2`**: in `PLAN.md`, under the task. Also, after a failure the page stays on `加载中…`, and AV1's drop rate needs a look.
+* **Estimate**: 3.5–5.5 days remain, so 4–6 in all, down from 5–8. G-b's 1–2 days are gone.
+* **Not run**: Home and TV sleep at 4K; a part switch on a multi-part video; live rooms, which stay on `vo=gpu`; HDR and Dolby Vision streams. `M16.3` runs the first two.
+* **Device notes**:
+  * If the first `adb` call of a session runs inside the tool sandbox, it starts the adb server there, and every later `adb connect` fails with `No route to host`, even from outside the sandbox. Restart the server outside it.
+  * The launcher's home-screen preview also logs `hwRender:0`. A guard on that line has to check that the dev app is on top: the first version force-stopped the dev app and voided one Home test.
+  * After Home, the launcher's preview left a decoder on an abandoned surface that logs `C2BqBuffer … consecutive failures` every 5 s. It isn't the app's, and it was left alone. Its counter started before the runs, and it shows up on the texture path too, so it isn't Fault 1.
+  * `screencap` usually shows the picture on the video plane, but one early capture was black behind the danmaku, so a black capture proves nothing. The decoder's log is the evidence.
+  * The HUD's quality list differs per video. Check the highlighted row before confirming: `4K` can sit one row above the default.
+* **Safety**: the guard for plane runs force-stopped the dev app on `hwRender:0` with the dev app on top, on `Detile` past the start burst, and on a 4K layer on `CLIENT`. It never fired on a real problem. No panic in this session, and no 4K60 before the user's go-ahead.
+* **Cleanup**: test clips, the config file and the work folder are off the TV; `READ_MEDIA_VIDEO` is revoked; nothing started by the session is running. `PiliPlus TV dev` stays installed with its login, for `M16.2`, with its default back at 1080P60 and AVC first. The user's normal app and MiXplorer weren't touched.
+* **Next** (owner: user): go or no-go on `M16.2`. `M12.5` is still open too.
