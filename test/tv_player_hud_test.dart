@@ -280,14 +280,14 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
 
   int prevPlayCount = 0;
   @override
-  bool prevPlay([bool auto = false]) {
+  bool prevPlay({bool skipPart = false}) {
     prevPlayCount++;
     return true;
   }
 
   int nextPlayCount = 0;
   @override
-  bool nextPlay([bool auto = false]) {
+  bool nextPlay({bool skipPart = false}) {
     nextPlayCount++;
     return true;
   }
