@@ -57,7 +57,7 @@
 ## 已知问题
 
 > [!WARNING]
-> **这是 PiliPlus TV 4K，默认开启 `4K 视频直通`。** 它与普通版 PiliPlus TV 并存，数据互不影响，需要单独登录，说明见 [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md)。
+> **这是 PiliPlus TVP，默认开启 `4K 视频直通`。** 它与普通版 PiliPlus TV 并存，数据互不影响，需要单独登录。它不发布 Release，也不会自动更新，APK 由 GitHub Actions 手动构建，说明见 [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md)。
 >
 > **MediaTek（联发科）芯片的电视，关闭 `4K 视频直通` 后请不要选择 4K 及以上画质。** 在已测试的一台 MediaTek MT9690 电视上，关闭时 4K 视频几秒内就会卡死，随后应用无响应；4K60 还可能让电视内核崩溃并直接关机，需要手动重新开机。
 >

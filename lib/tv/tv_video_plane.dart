@@ -117,6 +117,15 @@ class TvVideoPlane {
   @visibleForTesting
   static ValueChanged<String> showToast = SmartDialog.showToast;
 
+  static const String manualUpdateText = '此版本需手动更新，请到 GitHub Actions 下载';
+
+  /// This variant has no releases: its APKs stay in the Actions run that built
+  /// them, and the releases here are the normal app's, a different app ID.
+  static bool refusesUpdateCheck({required bool isAuto}) {
+    if (!isAuto) showToast(manualUpdateText);
+    return true;
+  }
+
   static List<SettingsModel> get settingsModels => <SettingsModel>[
     _planeSetting,
     NormalModel(

@@ -63,6 +63,7 @@ jobs:
             lib/plugin/pl_player/controller.dart \
             lib/plugin/pl_player/view/view.dart \
             lib/utils/connectivity_utils.dart \
+            lib/utils/update.dart \
             test/tv_navigation_test.dart \
             test/tv_player_hud_test.dart \
             test/tv_video_plane_test.dart

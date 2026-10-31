@@ -1,0 +1,105 @@
+# PiliPlus TV fork: build PiliPlus TVP, the video plane variant. Fork-only file.
+# See docs/tv/4K_VARIANT.md on variant/4k-passthrough.
+#
+# Run by hand, on that branch: it runs the TV checks, builds the APKs and keeps
+# them as this run's artifacts. It publishes nothing, because the normal app's
+# updater offers the newest release of this repository, whatever it is.
+#
+# GitHub only offers "Run workflow" for a file on the default branch, so this
+# file is on main too, where it refuses to build. A run uses its branch's copy.
+name: Build PiliPlus TVP
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: tv-variant-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  branch:
+    name: Check the branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse any branch but the variant's
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/variant/4k-passthrough" ]; then
+            echo "::error::Pick variant/4k-passthrough under \"Use workflow from\". This run is on $GITHUB_REF."
+            exit 1
+          fi
+
+  checks:
+    name: TV checks
+    needs: branch
+    uses: ./.github/workflows/tv-checks.yml
+    with:
+      ref: ${{ github.sha }}
+
+  android:
+    name: Build Android APKs
+    # A red TV check means no APK.
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the commit being built
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Apply project Flutter & TV patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Prepare build metadata
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Restore signing key from secrets
+        shell: bash
+        env:
+          SIGN_KEYSTORE_BASE64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGN_KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Signing secrets are missing. Building without them produces a random signature and every update conflicts with the installed app."
+            exit 1
+          fi
+          printf '%s' "$SIGN_KEYSTORE_BASE64" | base64 --decode > android/app/key.jks
+          printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+
+      - name: Build release APKs
+        shell: bash
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: PiliPlus-TVP-Android-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+          retention-days: 90

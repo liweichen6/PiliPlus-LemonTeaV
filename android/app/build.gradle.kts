@@ -79,7 +79,7 @@ android {
                 resValue(
                     type = "string",
                     name = "app_name",
-                    value = "PiliPlus TV 4K",
+                    value = "PiliPlus TVP",
                 )
             }
             proguardFiles(

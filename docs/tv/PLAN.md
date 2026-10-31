@@ -606,7 +606,7 @@
   * M12 can close on its own "done" bar. M13 and M14 come after M12, and they shouldn't wait for an opt-in feature.
   * A failed spike ends this work and leaves M12's result standing.
   * It's a feature, not a bug fix: about a week of work, a new setting, a HUD change and new hooks in upstream's files.
-* **Branch and release** (changed 2026-10-31, the user's decision): M16 doesn't land on `main`. It's a long-lived branch, `variant/4k-passthrough`, with its own app, its own release repository and manual updates, so that an upstream change can't reach it without a check on a TV. [`4K_VARIANT.md`](./4K_VARIANT.md) has the details. On this branch the setting is on by default: installing the variant is the opt-in, and with the setting on 4K can't reach the GPU path.
+* **Branch and release** (changed 2026-10-31, the user's decision): M16 doesn't land on `main`. It's a long-lived branch, `variant/4k-passthrough`, with its own app, no releases, and manual updates and builds, so that an upstream change can't reach it without a check on a TV. [`4K_VARIANT.md`](./4K_VARIANT.md) has the details. On this branch the setting is on by default: installing the variant is the opt-in, and with the setting on 4K can't reach the GPU path.
 * **Order**: before M13. `M12.5` doesn't hold this up. M14 shares `lib/tv/tv_player_hud.dart` with `M16.2`, so it starts after M16.
 * **Option G**: mpv with `vo=mediacodec_embed` on a real `SurfaceView` (added 2026-10-30). The output of option D, with mpv drawing to a `SurfaceView` instead of Flutter's texture, so the decoder goes straight to the video plane (`hwRender:1, gdec:0`). mpv-android did this at 4K60 on a warm TV with no panic and no freeze: AVC for 10 minutes, AV1 for the file's full 5:32. It keeps one player, and nothing in the app holds decoder buffers, so there's no deadlock. Not on this path: mpv's shaders (`超分辨率`), as in option D. media_kit's Android `VideoOutput` always hands mpv a Flutter `SurfaceTexture`, so the app has to replace that surface (G-a) or patch the package (G-b), and it has the same `SurfaceView` platform view and Hybrid Composition cost as F. `chenx-dust/PiliPlus` (see M17) already does this through its own media_kit fork, stale since 2026-04: HDR10, but not Dolby Vision Profile 5, so F stays the only route to 杜比视界. Not tried inside the app.
 * **Checked against the code** (2026-10-30, `main` after the upstream sync, `media_kit_video` `85f0a69ea`; reading only, nothing is built):
@@ -692,11 +692,13 @@
     * The README warning, `ARCHITECTURE.md` (§2.14, invariant `C24`), `REVIEW.md` and `docs/tv/README*.md` are updated.
   * **Task M16.4 (`✅ Done` locally; publishing waits for the user) — Split Into a Variant**:
     * **Why**: `main` releases automatically and CI has no TV. `media_kit_video` moved 15 times in six months, and upstream changed `androidAttachSurfaceAfterVideoParameters` on 2026-10-10, so a change that still compiles could put 4K60 back on the GPU path.
-    * **Own application ID and label**: `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TV 4K`. With one ID, going back to the normal app would keep a stored 4K default on a build with no video plane.
-    * **Own release repository**: the normal app's updater takes `releases[0]` of this repository, even a pre-release, and that code is already on users' TVs. A variant release here would be offered to all of them.
-    * **Manual updates**: the branch merges `main` by hand. A push only builds and runs the TV checks; a `v*-4k` tag publishes.
+    * **Own application ID and label**: `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TVP`. With one ID, going back to the normal app would keep a stored 4K default on a build with no video plane.
+    * **No releases**: the normal app's updater takes `releases[0]` of this repository, even a pre-release, and that code is already on users' TVs. A variant release here would be offered to all of them. So the APKs stay as artifacts of the run that built them, for 90 days.
+    * **Manual build**: `tv-variant-build.yml` runs TV checks, then the build, from a Run button. GitHub only offers that button for a file on the default branch, so the file is on `main` too and refuses to build there. Adding it publishes one normal release, which the user accepted.
+    * **Update check off**: the only releases it could find are the normal app's. A manual check says where the APK is.
+    * **Manual updates**: the branch merges `main` by hand.
     * **`视频直通解码队列`**: the one mpv option that changed the result is a setting, with only tested sizes. See [`PLAYBACK_PARAMETERS.md`](./PLAYBACK_PARAMETERS.md).
-    * **Left to do, owner: user**: create the release repository, disable Actions there, and add `VARIANT_REPO_TOKEN`.
+    * **Left to do, owner: user**: approve pushing this branch and the pull request that puts the workflow on `main`.
 * **Done when**: with the setting on, 4K60 AVC and AV1 play for 10+ minutes on a warm `<physical-tv>`, inside the app, with no freeze, ANR or panic; next-video, split-screen to fullscreen, and Home and back all work at 4K60; the D-pad stays responsive; the HUD hides what doesn't work; a failed attach stops playback and never reaches the texture. With the setting off, playback is unchanged.
 
 ### Milestone M13: Focus Engine (Staged, Parity-Gated)

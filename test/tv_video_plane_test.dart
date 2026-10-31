@@ -586,7 +586,26 @@ void main() {
     });
   });
 
+  group('update check', () {
+    test('an automatic check stays silent', () {
+      expect(TvVideoPlane.refusesUpdateCheck(isAuto: true), isTrue);
+      expect(toasts, isEmpty);
+    });
+
+    test('a check someone asked for says where the APK is', () {
+      expect(TvVideoPlane.refusesUpdateCheck(isAuto: false), isTrue);
+      expect(toasts, <String>[TvVideoPlane.manualUpdateText]);
+    });
+  });
+
   group('upstream hooks', () {
+    test('the update check stops before it asks GitHub', () {
+      final source = File('lib/utils/update.dart').readAsStringSync();
+      final hook = source.indexOf('TvVideoPlane.refusesUpdateCheck(');
+      expect(hook, greaterThan(0));
+      expect(source.indexOf('Api.latestApp'), greaterThan(hook));
+    });
+
     test('the plane sits above FittedBox and Transform.flip', () {
       final source = File(
         'lib/plugin/pl_player/view/view.dart',

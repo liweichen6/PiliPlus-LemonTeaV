@@ -57,7 +57,7 @@ Located under **Settings → Audio & Video Settings** (changes take effect on th
 ## Known Issues
 
 > [!WARNING]
-> **This is PiliPlus TV 4K, with `4K 视频直通` on by default.** It installs beside the normal PiliPlus TV with its own data, and needs its own login. See [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md).
+> **This is PiliPlus TVP, with `4K 视频直通` on by default.** It installs beside the normal PiliPlus TV with its own data, and needs its own login. It has no releases and doesn't update itself: its APKs come from a manual GitHub Actions run. See [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md).
 >
 > **On a TV with a MediaTek chip, don't pick 4K or higher with `4K 视频直通` turned off.** On the one MediaTek MT9690 TV tested, without it 4K video freezes within seconds and the app then stops responding. 4K60 can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
 >

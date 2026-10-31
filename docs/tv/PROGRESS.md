@@ -1341,3 +1341,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Known cost**: `PLAN.md` and `PROGRESS.md` now differ between this branch and `main`, so each merge of `main` conflicts at their ends until M16's docs reach `main`.
 * **Next** (owner: user): create the release repository, and decide on pushing this branch and sending the docs to `main`.
 
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.4`): CI-Only Builds, PiliPlus TVP
+* **Status**: ✅ Done locally on `variant/4k-passthrough`, not pushed. The workflow is also committed on a branch off `main`, not pushed.
+* **Decision** (the user): no second repository and no releases. APKs live only in the Actions run, from a real Run button, and the user accepted the one extra normal release that putting the workflow on `main` causes. This replaces the release repository, the `v*-4k` tag and `VARIANT_REPO_TOKEN` from the previous entry.
+* **Label**: `PiliPlus TVP`. The application ID stays `com.lemontea.piliplus.tv.passthrough`.
+* **Files Changed**:
+  * `[NEW]` `.github/workflows/tv-variant-build.yml`, replacing `tv-variant-release.yml`.
+  * `[MODIFY]` `android/app/build.gradle.kts`, `lib/utils/update.dart`, `lib/tv/tv_video_plane.dart`, `test/tv_video_plane_test.dart`, `.github/workflows/tv-checks.yml`, `README.md`, `README.en.md`, `docs/tv/4K_VARIANT.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+  * `[RESTORE]` `lib/http/api.dart`, `lib/common/constants.dart`, which match `main` again.
+* **Update check**: off in this variant through one line in `Update.checkUpdate`, because the only releases it could find are the normal app's. A manual check shows `此版本需手动更新，请到 GitHub Actions 下载`, and the automatic one stays silent.
+* **Workflow**: a run on any branch but the variant's fails at once, because the Run button defaults to `main`. The build waits for the TV checks, so a red check means no APK.
+* **Verification**:
+  * Analyze: no errors or warnings, and two infos on upstream lines in `update.dart`. 144 of 144 TV tests pass. Removing the hook fails its test.
+  * A release build reports `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TVP`.
+* **Not verified**: the workflow has never run, because the Run button needs the file on `main`. The release build hasn't been installed on a TV, so neither the label nor the update message has been seen there.
+* **Next** (owner: user): approve pushing this branch and the pull request that puts the workflow on `main`.
