@@ -5,6 +5,7 @@ import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/sliver/sliver_floating_header.dart';
 import 'package:PiliPlus/common/widgets/sliver/sliver_pinned_header.dart';
 import 'package:PiliPlus/models/common/theme/theme_type.dart';
+import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
@@ -98,6 +99,10 @@ void main() {
       expect(box.get(SettingBoxKey.showFsScreenshotBtn), isFalse);
       expect(box.get(SettingBoxKey.showFsLockBtn), isFalse);
       expect(box.get(SettingBoxKey.themeMode), ThemeType.dark.index);
+      expect(
+        box.get(SettingBoxKey.defaultVideoQa),
+        VideoQuality.high108060.code,
+      );
       expect(box.get(SettingBoxKey.keyboardControl), isTrue);
 
       // Modify a key and verify second invocation does not overwrite it.
@@ -110,11 +115,13 @@ void main() {
       await box.put(SettingBoxKey.defaultTextScale, 1.35);
       await box.put(SettingBoxKey.enableShowDanmaku, false);
       await box.put(SettingBoxKey.keyboardControl, false);
+      await box.put(SettingBoxKey.defaultVideoQa, VideoQuality.super4K.code);
 
       await TvPlatform.seedTvDefaultsToBox(box);
       expect(box.get(SettingBoxKey.defaultTextScale), 1.35);
       expect(box.get(SettingBoxKey.enableShowDanmaku), isFalse);
       expect(box.get(SettingBoxKey.keyboardControl), isFalse);
+      expect(box.get(SettingBoxKey.defaultVideoQa), VideoQuality.super4K.code);
       expect(box.get(SettingBoxKey.useSideBar), isTrue);
     });
 

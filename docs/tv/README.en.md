@@ -14,7 +14,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 4. **Universal APK & Side-by-Side Coexistence**:
    - **Application ID**: `com.lemontea.piliplus.tv` (Launcher label: **`PiliPlus TV`**) — coexists side-by-side with official PiliPlus (`com.example.piliplus`) and LemonTea PiliPlus (`com.lemontea.piliplus`).
    - **Adaptive Runtime**: Automatically activates the TV control layer on Android TV / Leanback devices (`UI_MODE_TYPE_TELEVISION`, `FEATURE_LEANBACK`, or `--dart-define=PILI_FORCE_TV=true`) while behaving identically to upstream touch PiliPlus on phones and tablets.
-   - **TV Defaults**: On every TV launch `TvPlatform` fills in TV-friendly preferences for keys that are **not set yet** (landscape layout, side rail, dark theme, `1.2x` text scale, ...) and never overwrites a value you chose. This includes **启用键盘控制** (`keyboardControl`): the player HUD and the split-screen Quick Strip hang off the player page's key handler, which upstream builds only while that switch is on, so turning it off on a TV removes the HUD and the Quick Strip. Keep it on.
+   - **TV Defaults**: On every TV launch `TvPlatform` fills in TV-friendly preferences for keys that are **not set yet** (landscape layout, side rail, dark theme, `1.2x` text scale, 1080P60 default quality, ...) and never overwrites a value you chose. This includes **启用键盘控制** (`keyboardControl`): the player HUD and the split-screen Quick Strip hang off the player page's key handler, which upstream builds only while that switch is on, so turning it off on a TV removes the HUD and the Quick Strip. Keep it on.
 
 ---
 
@@ -131,6 +131,12 @@ Built APKs are written to `build/app/outputs/flutter-apk/`:
 
 > **Tip (Forcing TV Mode on a Touchscreen Device / Emulator)**:
 > Pass `--dart-define=PILI_FORCE_TV=true` during `flutter run` or `flutter build apk` to force the TV control layer on a device that reports a touchscreen.
+
+> **Tip (Debugging Playback on a TV)**:
+> `tool/tv_m12/` holds the tools from M12's crash-debug track. `run.sh` runs one test over adb and records logcat, the kernel log and a sampler on the development machine, so they survive a kernel panic; `probe_app.sh` installs a small test app that plays a local file on a `SurfaceView` or a `TextureView`; `postpanic.sh` collects the evidence after a panic. They read `ANDROID_SERIAL`, `M12_MEDIA` and `M12_RUNS` from the environment. Some runs can shut the TV down: see [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
+
+> **Tip (Listing a TV's Decoders)**:
+> `./tool/tv_codecs.sh` prints, over adb, every video decoder that `MediaCodecList` reports on the device (the list the app actually sees): the sizes, frame rates, performance points and profile/level pairs each one claims. No app install or root is needed; pass `all` to include audio decoders, and set `ANDROID_SERIAL` to pick the device.
 
 ---
 

@@ -14,7 +14,7 @@
 4. **通用安装包与多版本并存（Universal APK & Side-by-Side Coexistence）**：
    - **独立包名**：`com.lemontea.piliplus.tv`（桌面名称：**`PiliPlus TV`**），可与原版 PiliPlus（`com.example.piliplus`）及海外加速版（`com.lemontea.piliplus`）在同一台设备上并存安装。
    - **自适应运行**：在 Android TV / Leanback 设备（系统上报 `UI_MODE_TYPE_TELEVISION` 或 `FEATURE_LEANBACK`，或编译注入 `--dart-define=PILI_FORCE_TV=true`）上自动开启 TV 控制层；在安卓手机与平板上自动保持原版触控体验。
-   - **电视端默认设置**：每次在电视端启动，`TvPlatform` 只为**尚未设置**的项补写电视友好默认值（横屏、侧边栏、深色模式、字体 `1.2x` 等），不会覆盖你已修改的值。其中包括「启用键盘控制」（`keyboardControl`）：播放器 HUD 与分屏快捷控制条挂在播放页的按键处理上，而上游仅在该开关开启时才构建它，因此在电视端手动关闭它会让 HUD 与 Quick Strip 一并消失，请保持开启。
+   - **电视端默认设置**：每次在电视端启动，`TvPlatform` 只为**尚未设置**的项补写电视友好默认值（横屏、侧边栏、深色模式、字体 `1.2x`、默认画质 1080P60 等），不会覆盖你已修改的值。其中包括「启用键盘控制」（`keyboardControl`）：播放器 HUD 与分屏快捷控制条挂在播放页的按键处理上，而上游仅在该开关开启时才构建它，因此在电视端手动关闭它会让 HUD 与 Quick Strip 一并消失，请保持开启。
 
 ---
 
@@ -131,6 +131,12 @@ flutter build apk --release --split-per-abi \
 
 > **提示（在触控手机/模拟器上强制开启 TV 模式）**：
 > 在 `flutter run` 或 `flutter build apk` 时添加 `--dart-define=PILI_FORCE_TV=true`，即可在带触摸屏的设备上强制开启 TV 焦点框与播控 HUD。
+
+> **提示（在电视上调试播放问题）**：
+> `tool/tv_m12/` 存放 M12 崩溃调试用到的工具。`run.sh` 通过 adb 运行一次测试，并把 logcat、内核日志和采样数据保存到开发机上，因此内核崩溃后日志不会丢失；`probe_app.sh` 安装一个小型测试应用，用 `SurfaceView` 或 `TextureView` 播放本地文件；`postpanic.sh` 在内核崩溃后收集证据。这些工具从环境变量 `ANDROID_SERIAL`、`M12_MEDIA` 和 `M12_RUNS` 读取配置。部分测试可能导致电视关机，详见 [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md)。
+
+> **提示（查看电视支持的解码器）**：
+> `./tool/tv_codecs.sh` 通过 adb 打印设备上 `MediaCodecList` 报告的全部视频解码器（应用实际能看到的列表）：各解码器声明的分辨率、帧率、性能点与 profile/level。无需安装应用或 root；加 `all` 参数同时列出音频解码器，用 `ANDROID_SERIAL` 指定设备。
 
 ---
 

@@ -53,6 +53,9 @@ abstract final class TvPlatform {
     SettingBoxKey.showFsLockBtn: false,
     SettingBoxKey.themeMode: 1, // ThemeType.dark.index
     SettingBoxKey.autoUpdate: false,
+    // VideoQuality.high108060.code. On MediaTek TV SoCs 4K freezes the player,
+    // and 4K60 can panic the TV's kernel (docs/tv/PLAN.md, M12.3).
+    SettingBoxKey.defaultVideoQa: 116,
     // The player HUD mounts only through the player page's key handler, which
     // upstream builds only while this is on. Seeding it keeps the HUD available
     // even if upstream's own default ever changes; a user who switches it off

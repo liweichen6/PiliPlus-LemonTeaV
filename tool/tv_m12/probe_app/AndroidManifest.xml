@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- M12 probe app (tool/tv_m12/probe_app.sh): CodecProbe's decoder output on screen. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.lemontea.m12probe"
+    android:versionCode="1"
+    android:versionName="1">
+  <!-- Reads the test videos from shared storage (Movies/m12); granted by install -g. -->
+  <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-feature android:name="android.software.leanback" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <application android:label="M12 probe" android:hasCode="true">
+    <activity
+        android:name="m12.ProbeActivity"
+        android:exported="true"
+        android:screenOrientation="landscape"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+  </application>
+</manifest>

@@ -190,7 +190,7 @@ The TV control layer maintains 23 verified capability invariants across navigati
 
 | Invariant | Capability Description | Architectural Mechanism | Verification Test |
 | :--- | :--- | :--- | :--- |
-| **C1** | TV Defaults Seeding | Fills TV-optimal settings (`SettingBoxKey.horizontalScreen: true`, `useSideBar: true`, `keyboardControl: true`, etc.) for keys that are not set yet, on every TV launch and idempotently, with no marker key and no key without a reader (M10, `R16` / `R17`). | `test/tv_navigation_test.dart` |
+| **C1** | TV Defaults Seeding | Fills TV-optimal settings (`SettingBoxKey.horizontalScreen: true`, `useSideBar: true`, `keyboardControl: true`, `defaultVideoQa: 116`, etc.) for keys that are not set yet, on every TV launch and idempotently, with no marker key and no key without a reader (M10, `R16` / `R17`). | `test/tv_navigation_test.dart` |
 | **C2** | User Preference Preservation | Does not overwrite pre-existing user customizations in Hive `GStorage.setting`. | `test/tv_navigation_test.dart` |
 | **C3** | 2D Spatial Grid Traversal | Navigates 2D rows and columns accurately with D-pad arrow keys based on geometric cone scoring. | `test/tv_navigation_test.dart` |
 | **C4** | Zero-Height & Micro-Button Filtering | Skips collapsed subtrees (`AnimatedHeightWidget`, `heightFactor == 0`) and secondary micro-buttons ($\le 36\times 36$). | `test/tv_navigation_test.dart` |

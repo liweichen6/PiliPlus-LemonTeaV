@@ -104,18 +104,19 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M15) — Planned
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M16) — In Progress
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.1` | TV Checks Workflow (`tv-checks.yml`: Patches, TV Analyze, TV Tests) | ⏳ Planned | `.github/workflows/tv-checks.yml` |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ⏳ Planned | `.github/workflows/tv-sync-build.yml` |
-| **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ⏳ Planned | `docs/tv/*`; branch protection on `main` (user) |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ⏳ Planned | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ⏳ Planned | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ⏳ Planned | Decided in `M12.3` |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.1` | TV Checks Workflow (`tv-checks.yml`: Patches, TV Analyze, TV Tests) | ✅ Done | `.github/workflows/tv-checks.yml` (`169a7434a`, `5b1168331`) |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.2` | Release Gate in `tv-sync-build.yml` | ✅ Done | `.github/workflows/tv-sync-build.yml` (`169a7434a`) |
+| **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ✅ Done | `<physical-tv>`, `tool/tv_codecs.sh` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G next, option F deferred to M16 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | 🔄 Built, awaiting CI | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `README.md`, `README.en.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.4 | `M12.6` | Option G, 4K on a `SurfaceView` (Spike First) | ⏳ Planned | Estimate in `docs/tv/PLAN.md`, M12.3 |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
@@ -128,6 +129,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
+| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
+| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M16 |
 
 ---
 
@@ -945,3 +948,162 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Release run after merging pull request #2 (merge commit `97d87d90b`): `Build Android APKs` and `TV checks / TV analyze and tests` started together; analyze `No issues found!`, `95 tests passed`. The checks took about 11 minutes against the build's 7.5 (cold caches plus the `apt-get` step), and `Publish custom release` started only after both finished. Release `v2.1.6.2-fork.5799` was published with the three APKs, and its notes say `Checks passed: TV analyze and tests.`
 * **Remaining (user action)**: GitHub → Settings → Branches → protect `main` and require `TV analyze and tests`; a failing pull request then shows as blocked instead of `UNSTABLE`.
 
+---
+
+### [2026-10-27] Milestone M12 (Tasks `M12.1`–`M12.2`, Device Session 1): Device Profile, Codec List and First Reproduction
+* **Status**: `M12.1` ✅ Completed; `M12.2` 🔄 In Progress (the freeze is reproduced and its mechanism located; the remaining matrix needs a `-Pdev` build, below)
+* **Branch**: `docs/tv-m12-device-profile` (docs and a device tool only; no app code changed)
+* **Files Changed**:
+  * `[NEW] tool/tv_codecs.sh`, `tool/tv_codecs/CodecDump.java`: print, over adb, every decoder that `MediaCodecList` reports on a device (the list the app sees) with the sizes, frame rates, performance points and profile/level pairs it claims. A small dex runs through `app_process`, so no app install and no root are needed. Added because third-party apps (AIDA64) don't show what an app's `MediaCodecList` returns.
+  * `[MODIFY] docs/tv/README.md`, `README.en.md` (the tool), `docs/tv/PLAN.md`, `PROGRESS.md`.
+* **Inputs from the user**: network adb to `<physical-tv>`; the freeze hits every video at 4K and above, 1080P60 is the highest quality that plays; upstream's own APK (`com.lemontea.piliplus`, build 5746) freezes and crashes the same way (driven over scrcpy, since it has no TV controls); two freezing videos, `BV1NGZtBwELa` and `BV1fiHN6zEfx`; `BV1kMxM6FECM` (4K) didn't freeze in this session but was very laggy with many artifacts on the panel. The account has 大会员, so 4K is offered. The TV build's playback settings are the defaults (`硬解模式` `mediacodec,auto-safe`, `视频同步` `display-resample`, codec order AVC then AV1, thread ripper on), checked on the device.
+* **Device profile (`M12.1`)**:
+
+  | Item | Value |
+  | :--- | :--- |
+  | Model | Hisense `SmartTV 4K FFM` (manufacturer HVCL, device `wutaishan`) |
+  | SoC | MediaTek MT9690 (`ro.board.platform=merak`), 4 × Cortex-A73 (`CPU part 0xd09`) running a 32-bit userspace: `armeabi-v7a` only, no 64-bit ABI |
+  | GPU | Mali (`ro.hardware.egl=mali.mt9690`), OpenGL ES 3.2 |
+  | RAM | 3.7 GB, plus 1 GB swap; `dalvik.vm.heapgrowthlimit` 192 MB |
+  | Android | 14 (API 34), kernel 5.15 |
+  | Panel | 3840 × 2160 at 60 Hz, one display mode; the UI runs at an override of 1920 × 1080 (density 320). HDR types reported: Dolby Vision, HDR10, HLG, HDR10+ |
+  | Video decoders (hardware) | `c2.mtk.avc`, `c2.mtk.hevc`, `c2.mtk.av1`, `c2.mtk.vp9`, plus MPEG-2/4, H.263, VP8, VC-1, AVS/AVS2, SHVC, MJPEG, five Dolby Vision decoders and secure variants. AVC, HEVC, AV1 and VP9 each claim up to 4096 × 2304, a `3840x2160@60` performance point and 60 fps at 3840 × 2160; HEVC lists Main, Main10, HDR10 and HDR10+, AV1 lists Main 8-bit and 10-bit with HDR10 and HDR10+ |
+  | Video decoders (software) | `c2.android.*` for AVC, HEVC, AV1, VP8, VP9, MPEG-4, H.263 |
+
+  * Consequence: the decoders *claim* every stream bilibili serves up to 4K60, so filtering streams by `MediaCodecList` alone (one of the M12.3 directions) would not have excluded the freezing streams.
+* **Evidence already on the device**:
+  * The system dropbox holds 14 ANR reports for the app between 2026-10-24 and 2026-10-27: TV builds 5745 (5), 5762 (4) and 5793 (2), and upstream's build 5746 (3). All 14 have the same shape: the Android main thread (which runs Dart since Flutter merged the UI and platform threads) waits on a condition variable inside `libmpv.so` at the same offset (`+0x307c84`, not an exported symbol; the shipped `libmpv.so` has no symbol table), while the decoding thread sits in `MediaCodec.dequeueOutputBuffer`. `ApplicationExitInfo` records these exits as ANR kills (`Input dispatching timed out`, about 5 s after a key or touch event); none was a low-memory kill. So the "crash" is an ANR, the same in upstream's APK and ours.
+* **Live reproduction (`M12.2`, session 1)** — installed TV release build 5799, default settings, logcat plus CPU and memory every 3 s:
+
+  | Video | Stream | Result |
+  | :--- | :--- | :--- |
+  | `BV1kMxM6FECM` | 4K 59.94 fps AVC (`c2.mtk.avc.decoder`, 3840 × 2160; first recorded here as 29.97 fps, corrected in session 2) | Kept playing for 5+ minutes, including seeks and the HUD; about 21.5 of 60 frames per second reached the renderer (2–27 per second). The user saw heavy lag and many artifacts on the panel. CPU 0.7–2 cores of 4, graphics memory about 200 MB |
+  | `BV1NGZtBwELa` | 4K 29.97 fps AVC | Opened over the previous video: froze after about 10 s |
+  | `BV1fiHN6zEfx` | 4K 59.94 fps AVC | Fresh process: first frame decoded, then frozen about 3 s later; only 2 frames reached the renderer. Same result a second time with `视频同步` set to `audio` (setting restored afterwards) |
+
+  * **What the freeze is**: from the moment the picture stops, the codec HAL logs `C2BqBuffer: last successful dequeue was … us ago, … consecutive failures` every 5 s, and the count only grows (still failing 230 s later). The hardware decoder can no longer get an output buffer back from the surface it decodes into, so no new frame is produced; the app's CPU drops to about 5 %. It never recovers on its own: after leaving the page, the shared player keeps the stalled decoder, and the next video opens with a black player. The main thread stayed responsive in these runs; the ANRs on record come from a later Dart call that needs mpv's core while that core is stuck in the decoder.
+  * **The output path that stalls** (`hwdec=mediacodec`, media_kit's default `vo=gpu` on Android): MediaCodec decodes in surface mode into an `AImageReader` (mpv's `hwdec_aimagereader`; the reader thread is named `ImageReader-16x16f22u256m5`, i.e. at most 5 images); mpv's video-output thread imports each frame into GLES, and on this SoC every 4K frame goes through MediaTek's `Detile` step inside our process (`is_tiled_yuv: 1`, logged once per frame); mpv renders into a `SurfaceTexture` that media_kit sizes to the video (`android-surface-size` 3840 × 2160); Flutter then composites that texture into its 1920 × 1080 UI.
+  * **Side finding**: opening a video while another is loaded makes Android's `ResourceManagerService` reclaim the app's own hardware decoder (`MediaCodec::reclaim … Released by resource manager`), and short-lived 4K decoders open in ByteBuffer (copy) mode, which the MediaTek driver rejects (`mtk_vcodec_unsupport=1`, `VIDIOC_STREAMON failed`). This is a likely source of the `无法加载解码器 … 可能会切换至软解` toast; not yet confirmed.
+* **Hypothesis update** (for `M12.3`):
+  * Refuted: "the hardware decoder can't open 4K, mpv falls back to software decoding, and the CPU starves". The hardware decoder opens and decodes 4K AVC; the freeze happens with the CPU nearly idle; free memory stayed around 850 MB during the stalls. (During upstream's ANR at 15:43 the TV was short of memory, 231 MB available and swap full, but the same stall happens without that.)
+  * New leading hypothesis: at 4K, the path from decoder output back to the decoder (`AImageReader` → mpv's GLES import with detiling → 4K render target → Flutter) is too slow on this SoC, and at some point every output buffer is held on the consumer side while mpv's core waits inside the decoder for a new frame: a deadlock that only a process restart clears. `video-sync` is not the trigger (same with `audio`).
+* **Next (rest of `M12.2`)**, with an uncommitted `-Pdev` build and mpv logging at `v` sent to logcat (the dev build installs next to the normal app, so it needs a QR login for 4K):
+  1. mpv's own log around the stall: which frames the decoder and the video output hold.
+  2. `vo=mediacodec_embed` (MediaCodec renders straight into Flutter's surface: no `AImageReader`, no GLES import or detiling in our process; mpv then can't draw subtitles or run shaders).
+  3. The render target capped at 1920 × 1080 instead of the video's size.
+  4. `hwdec=mediacodec-copy` and `no` at 4K, and HEVC and AV1 at 4K (only AVC was tested).
+  5. 1080P60 for 10 minutes as the known-good baseline on the same videos.
+* **Open inputs** (owner: user): a QR login on the `-Pdev` build when the instrumented runs start.
+
+---
+
+### [2026-10-27] Milestone M12 (Task `M12.2`, Device Session 2): Instrumented Dev Build, the Deadlock Traced, and the 4K Matrix
+* **Status**: 🔄 In Progress. The freeze's mechanism is traced to the buffer level and one output path avoids it at every 4K codec, but 4K60 on that path panicked the TV's kernel three times (below).
+* **Branch**: `docs/tv-m12-device-profile` (docs only; the instrumentation below is not committed)
+* **Build**: a `-Pdev` release build (`ORG_GRADLE_PROJECT_dev=true flutter build apk --release --target-platform android-arm`, TV patches applied for the build and reverted straight after) with uncommitted instrumentation in `lib/plugin/pl_player/controller.dart`: mpv's log is printed to logcat at a chosen level; a text file in the app's external files dir (`Android/data/com.lemontea.piliplus.tv.dev/files/`, writable over adb) overrides `vo`, `hwdec` and any mpv option for the next player, can cap the `vo=gpu` render target, and turns on a readout of mpv's frame counters every 2 s. The user signed the dev app in with the app's own 设置 → 关于 → 导出/导入登录信息; the dev app's default quality was set to 4K and its codec preference changed per run. The user's normal app was not touched in this session.
+  * Lesson: marking the dev build type debuggable (to get `run-as` and `debuggerd`) makes Flutter's Gradle plugin build in debug mode: no `libapp.so`, Dart in JIT, and the debug `hwdec` default. The first build did this and was caught before installing; the dev build must stay non-debuggable.
+* **The deadlock, from mpv's and FFmpeg's trace log** (`BV1fiHN6zEfx`, 4K60 AVC, default `vo=gpu`):
+  1. At 4K the decoder exposes 5 output buffers (indices 0–4). At 1080p no MediaTek `Detile` step runs at all; at 4K every buffer is tiled, and the decoder decodes straight into these buffers, which also serve as its reference frames.
+  2. After the resume seek, mpv renders 2 frames (`Releasing output buffer … with render=1`), drops 1, and keeps 2 decoded frames pending while it waits for the next one.
+  3. From then on FFmpeg only logs `No output buffer available, try again later`, and 1.5 s later the codec HAL starts logging `C2BqBuffer … consecutive failures`. Only 2 frames are ever rendered.
+  4. So it's a circular wait. The decoder needs a free buffer, but 4 of its 5 are held outside it: the 2 rendered ones by the `AImageReader` and mpv's GLES import, the 2 pending ones in mpv's queue. mpv won't render the pending frames before the decoder delivers another one.
+  * Not the trigger: `video-latency-hacks=yes` (mpv queues fewer frames) still deadlocks the same way; capping the `vo=gpu` render target at 1920 × 1080 still deadlocks (before the cap even applies); `video-sync=audio` (session 1).
+  * With `vo=gpu`, mpv's image-reader path imports every frame anew (one MediaTek `Detile` per frame in our process); with `vo=mediacodec_embed`, `Detile` runs about 8 times per run, once per buffer. That per-frame import is why 4K was laggy even when it didn't deadlock.
+* **Matrix** (dev build, about 60 s each; dropped frames from mpv's `frame-drop-count`; "deadlock" means the picture froze within seconds and `C2BqBuffer` failures kept growing):
+
+  | Video | Stream | `vo=gpu` (default) | `vo=mediacodec_embed` |
+  | :--- | :--- | :--- | :--- |
+  | `BV1fiHN6zEfx` | 4K 59.94 fps AVC | Deadlock (5 runs) | Plays; 115 dropped in about 50 s (3.8 %) |
+  | `BV1kMxM6FECM` | 4K 59.94 fps AVC | Deadlock at the resume position (limped along at about 21 fps in session 1) | Plays; 87 dropped in 60 s (2.4 %) |
+  | `BV1NGZtBwELa` | 4K 29.97 fps AVC | Deadlock (session 1) | Plays; 0 dropped in 58 s |
+  | `BV1fiHN6zEfx` | 4K 59.94 fps HEVC (`c2.mtk.hevc.decoder`) | Deadlock | Plays; 482 dropped in 56 s (14 %) |
+  | `BV1fiHN6zEfx` | 4K 59.94 fps AV1 (`c2.mtk.av1.decoder`) | Deadlock | Played 40 s, 189 dropped (7.8 %); then the TV rebooted (below) |
+  | `BV1fiHN6zEfx` | 1080P60 AVC | Plays; 69 dropped in 60 s (1.9 %) | Plays; 6 dropped in 54 s (0.2 %) |
+  | `BV1fiHN6zEfx` | 1080p 29.97 fps AVC (logged out) | Plays; no `Detile`, no `C2BqBuffer` failures | Plays |
+
+  * `hwdec=mediacodec-copy` at 4K60 AVC: the decoder opens in ByteBuffer mode and never deadlocks, but copying 4K frames through the CPU is far too slow (the picture changed about 3 times in 45 s, at 1–3.5 cores). Not an option.
+* **TV reboot**: at about 17:35, after 40 s of 4K60 AV1 with `vo=mediacodec_embed`, the TV rebooted by itself (confirmed by the user). Logcat stops mid-stream at 17:34:59 with no shutdown, sleep or Wi-Fi messages. After reconnecting (wireless debugging gets a new port after a reboot):
+  * `sys.boot.reason` is `kernel_panic,miup_hit_panic[cid:0xe000 …]`. The previous boot's kernel log (dropbox `SYSTEM_LAST_KMSG`) shows the memory-protection unit catching hardware client `CID 0xE000` reading a protected address (`[MIUP][HIT][CID:0xE000 read address: 0x1C3C5FD80 - 0x1C3C5FD9F block:24`), then `System Panic`. The panic notifiers that report it include the picture-quality driver (`pq_panic_notify`) and the AI accelerator driver (`[MDLA][MIUP]`). At that moment the decoder held 11 frame buffers of 15.6 MB for the stream (`vdec_fb`, owner `vid234.deque`).
+  * The kernel had been up for 542,051 s (about 6.3 days): the TV survived all earlier freezes and ANRs without a reboot, and this was the first kernel panic in that time.
+  * An app can't cause a memory-protection hit by itself; this is a fault inside the TV's video or picture-quality pipeline that our output path triggered once.
+  * **Repeat** (with the user's go-ahead, accepting another reboot): the same video, 4K60 AV1 with `vo=mediacodec_embed`. The 2-minute measurement window saw 115 s of playback, 706 frames dropped (10.2 %), no `C2BqBuffer` failures and no panic, and was first recorded here as "doesn't reproduce". That was wrong: the run script didn't stop playback when the window ended, the stream kept playing, and the TV panicked again about 3 min 10 s into playback (kernel uptime 788.6 s, about 17:51:10). Same signature: `miup_hit_panic`, client `CID 0xE000`, block 24 (read address `0x1C3EAE200`), the same 11 decoder buffers of 15.6 MB. The run script now force-stops the dev app at the end of every run.
+  * So 4K60 AV1 on `vo=mediacodec_embed` panicked the TV in both sessions it was played in, after about 40 s and about 190 s.
+  * **10-minute 4K60 AVC run** (with the user's go-ahead, accepting a reboot; `BV1kMxM6FECM`, codec preference AVC only): 141 s of playback with 104 frames dropped (1.2 %) and no `C2BqBuffer` failures, the smoothest 4K run so far. Then the TV panicked about 2.5 minutes in (kernel uptime 435.5 s, about 17:58:45) with the same signature: `miup_hit_panic`, `CID 0xE000`, block 24 (read address `0x1C3BFD500`).
+  * Three panics, all at 4K60 on `vo=mediacodec_embed` (AV1 twice, AVC once), after 40 s, 190 s and 150 s of playback. The shorter runs on this path (4K30 AVC, 4K60 HEVC, 1080P60, about a minute each) didn't panic, which doesn't show they're safe. With `vo=gpu`, 4K deadlocks within seconds, so that path never played 4K long enough to compare; the user's normal app ran for 6.3 days without a panic, through all the earlier freezes.
+* **What this means for `M12.3`**:
+  * The freeze is not a decoder capability problem and not CPU starvation. It's a buffer deadlock between MediaTek's tiled 4K output and mpv's `vo=gpu` image-reader path, which media_kit uses by default on Android, so upstream's APK has it too.
+  * Candidate fix: `vo=mediacodec_embed` for TV playback (`VideoControllerConfiguration(vo: 'mediacodec_embed', hwdec: 'mediacodec')`). It removes the deadlock at every 4K codec tested and is also smoother at 1080P60. Costs to check: mpv's GLSL shaders (super-resolution, `超分辨率`) can't run; subtitles should be unaffected because PiliPlus draws them in Flutter (`SubtitleView`), to be verified; screenshots and the `video-rotate` option need checking; but 4K60 on this path panicked the TV's kernel three times (AV1 twice, AVC once) within minutes, so it is not a fix for 4K on this TV.
+  * Other options to weigh: a 1080P60 quality cap as the TV default (safe, loses 4K); a stall watchdog that reloads at a lower quality when `time-pos` stops moving while playing; preferring AVC at 4K (fewest drops).
+* **Next**: the `M12.3` write-up and decision. 4K is not playable on this TV with either mpv output path: `vo=gpu` deadlocks within seconds, `vo=mediacodec_embed` crashes the TV within minutes. 1080P60 played cleanly on both paths in short runs, so a 1080P60 cap on TV is the leading candidate; a long 1080P60 run on the chosen path belongs in `M12.5`.
+
+---
+
+### [2026-10-27] Milestone M12 (Task `M12.3`): Root-Cause Summary and Fix Options (Proposal)
+* **Status**: 🔄 Proposal written; the fix and the "done" bar wait for the user's decision (discussion gate). No code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Task M12.3: root cause, options A–E, recommendation, proposed "done" bar), `docs/tv/PROGRESS.md`.
+* **`M12.2` closed**: the matrix ran quality (4K60, 4K30, 1080P60, 1080p30) × codec (AVC, HEVC, AV1) × output (`vo=gpu`, `vo=mediacodec_embed`) × hardware decoding (`mediacodec`, `mediacodec-copy`), plus upstream's APK (from the user and the ANR reports). Not run: thread ripper off and software decoding. The stall happens with data already buffered (the demuxer keeps reading), so the download path doesn't matter; and software decoding at 4K would be slower than `mediacodec-copy`, which already manages only a few frames per minute.
+* **Summary**: two faults, both only at 4K and above on this MediaTek TV. (1) The reported freeze is a buffer deadlock between MediaTek's tiled 4K decoder output and media_kit's default `vo=gpu` path; the ANR follows when Dart waits on mpv's stuck core. (2) The alternative `vo=mediacodec_embed` path avoids the deadlock but triggers a firmware kernel panic within minutes at 4K60. So 4K can't play on this TV either way, while 1080P60 plays on both paths.
+* **Recommendation**: option B in `PLAN.md`: a 1080P60 TV default, plus a hard cap at 1080P60 on MediaTek TV SoCs (detected through `TvBridge`), applied before the stream is picked and in the HUD's quality dialog; other TVs keep 4K. Keep `vo=gpu`.
+* **Housekeeping**: the instrumentation stays uncommitted (saved as a patch outside the repository for the `M12.5` runs); the working tree is clean. The `PiliPlus TV dev` app is still installed on `<physical-tv>` and signed in through the app's login import; it should be uninstalled when M12 is done.
+
+
+---
+
+### [2026-10-29] Milestone M12 (Task `M12.3`): Option F Added, ExoPlayer for HDR and Dolby Vision
+* **Status**: 🔄 Still awaiting the user's decision; option F added at the user's request. No code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Task M12.3: option F), `docs/tv/PROGRESS.md`.
+* **Question**: the user asked how much work a second player, ExoPlayer, would take so that HDR and Dolby Vision can play.
+* **Findings from the code**: the app already requests HDR, Dolby Vision, 4K and 8K streams (`fnval` 4048 in `lib/http/video.dart`), and the panel reports Dolby Vision, HDR10, HLG and HDR10+ (M12.1). Today mpv renders into a texture that Flutter composites in SDR, so HDR reaches the panel at best tone-mapped. Only a `SurfaceView`, which gets its own hardware layer, can carry HDR to the panel; ExoPlayer through a Flutter `Texture` would still be SDR and is in effect the `vo=mediacodec_embed` path that panicked the kernel. The player is tied to media_kit in `lib/plugin/pl_player/controller.dart` (player creation, the `edl://` merge of video and audio, mpv options) and about 15 other files use media_kit or the player directly; mpv-only features are the GLSL shaders (`超分辨率`), audio normalization (`lavfi-complex`), `video-rotate` and screenshots.
+* **Proposal**: F1, a 1–2 day spike on `<physical-tv>` (go/no-go on the kernel panic, HDR and Dolby Vision), then F2, an opt-in ExoPlayer for videos on TV only (about 9–13 days). Independent of B: B can ship first, and F2 would lift B's cap whenever ExoPlayer plays the video.
+* **Open input** (owner: user): the five-minute check with another app on the TV (for example 云视听小电视) at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-29] Milestone M12 (Task `M12.3`): Option F, Prior Work in PiliPlus Forks
+* **Status**: 🔄 Still awaiting the user's decision. Research only; no code changed.
+* **Branch**: `docs/tv-m12-device-profile`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (option F: prior work, F1 and F2 based on it, costs), `docs/tv/PROGRESS.md`.
+* **Method**: read upstream PR 2145 (`gh pr view`, `gh pr diff`); fetched the Android build file of each of the 660 upstream forks pushed to since they were made and looked for Media3 or ExoPlayer (five hits); searched repositories and code for PiliPlus derivatives with HDR, ExoPlayer or TV work; read each hit's player code.
+* **Findings** (details in `PLAN.md`, option F):
+  * Upstream PR 2145 (an HDR-only Media3 player: `PlayerView` in a platform view, `MergingMediaSource`, `COLOR_MODE_HDR`) was closed unmerged on 2026-07-02 without a comment. Upstream's HDR issues were closed as not fixable.
+  * `kkren/PiliPlus` has a Media3 option for every video on the same approach, the same thread-ripper proxy as this fork, and armeabi-v7a APKs: the closest base for F. `AvalonUltra/PiliPlus` keeps PR 2145's Kotlin merged with upstream.
+  * `yifgu/PiliPlus` plays Dolby Vision Profile 5 only through a real Dolby Vision decoder; its codec check suggests Bilibili's 杜比视界 is Profile 5, which mpv can't show correctly.
+  * `loneshu7/PiliPlusPlus` and `ws2bhhh/PiliPlus-mod` draw Media3 through a Flutter texture (no real HDR); loneshu7's has Media3 versions of audio normalization and super-resolution.
+  * `chenx-dust/PiliPlus` keeps mpv and draws `vo=mediacodec_embed` into a `SurfaceView` platform view: HDR10, not Dolby Vision Profile 5.
+  * None of them was tested on a TV, and all HDR-capable ones use Hybrid Composition for the `SurfaceView`.
+* **Consequences for option F**: F1 adapts kkren's and PR 2145's Kotlin plus yifgu's Dolby Vision decoder rule instead of starting from scratch, and also measures frame times under Hybrid Composition with danmaku on; F2 probably shrinks by 3–4 days, and the transparent-Flutter-view approach becomes the fallback if Hybrid Composition is too slow.
+* **Open input** (owner: user): unchanged, the five-minute check with another app on the TV at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-30] Milestone M12 (Task `M12.3`): Crash-Debug Side Track Merged
+* **Status**: 🔄 Still awaiting the user's decision on the fix, now with the track's evidence behind the options. No app code changed.
+* **Branch**: `debug/tv-m12-crash`
+* **Files Changed**: `[NEW] docs/tv/M12_CRASH_DEBUG.md` (plan, findings, run log), `[NEW] tool/tv_m12/*` (run tools, MediaCodec harness, probe app), `[MODIFY] docs/tv/PLAN.md` (M12: findings, root cause, options B, D, F and the new G, "done" bar), `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Method**: two device sessions on `<physical-tv>` without the app: a MediaCodec harness over `app_process`, a small probe app on a `SurfaceView` or a `TextureView`, MiXplorer's player, Just Player and mpv-android (the last two installed with the user's approval and removed afterwards). 27 numbered runs and 8 kernel panics in session 2. Everything is in [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
+* **Findings**:
+  * The panic needs 4K60 drawn to the screen by the GPU, on a warm TV, in any player. mpv, Flutter and PiliPlus are incidental. 1080p60, 4K30 and offscreen 4K60 each survived one 10-minute run in the same state, and on-screen 4K60 then panicked in about 11 s.
+  * Nothing on the video plane panicked: 4K60 AVC four times for 10 minutes, across three players, and AV1 once for 10 minutes and twice for the file's full 5:32.
+  * mpv itself can use the video plane: `vo=mediacodec_embed` into a real `SurfaceView`. It panicked in M12.2 because media_kit gives it a Flutter texture.
+  * The decoder's log line names the path: `hwRender:1, gdec:0` on the video plane, `hwRender:0, gdec:1` on the 4K GPU path, `gdec:0` with no `Detile` step at 1080p.
+  * The freeze is a fixed budget: surface slots are the decoder's buffer count plus 2, whatever the consumer's queue size. mpv-android froze in 5 of 6 runs at its defaults.
+  * Not the cause, after testing: a second decoder that the TV refuses, a media session, audio focus. Each looked like the trigger until the unchanged survivor was repeated on a warm TV and panicked too; the earlier runs had been confounded by the TV warming up.
+* **Consequences for `M12.3`**: option B stands as the recommendation, with evidence that 1080P60 holds on a warm TV. F's panic question is answered for local AVC and AV1. A new option G keeps mpv on a `SurfaceView`, with `chenx-dust/PiliPlus` as prior work. The `M12.5` bar now runs on a warm TV.
+* **Not answered**: which hardware block client `0xE000` is, and whether heat or bandwidth sets the panic off (the TV reports no real temperature). Not tested: HDR, Dolby Vision, tunneled playback, network streams on the video plane, PiliPlus itself on the video plane, the TV's own media app, the TV's picture settings, and bilibili's own 4K30 streams.
+* **Housekeeping**: the test apps and files are off the TV. `tool/tv_m12/` stays, for `M12.5` and for F1 or G, and is noted in the READMEs.
+* **Open input** (owner: user): the fix decision, and the five-minute check with another app on the TV at 4K60 and 杜比视界.
+
+---
+
+### [2026-10-30] Milestone M12 (Tasks `M12.3`–`M12.4`): Fix Decided, Option A Built, Option G Estimated
+* **Status**: `M12.3` ✅ Decided; `M12.4` 🔄 built, awaiting CI. There's no Flutter SDK on the development machine, so analyze and the tests haven't run; `tv-checks.yml` runs them on the pull request.
+* **Branch**: `fix/tv-m12-default-quality`
+* **Files Changed**: `[MODIFY] lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `README.md`, `README.en.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Decision** (the user): option A now, with a README warning; option G as a temporary fix for 4K, estimate first; option F deprioritized to a long-term plan.
+* **Option A**: `SettingBoxKey.defaultVideoQa: 116` joins `TvPlatform.defaultTvSettings`, seeded only when the key is missing. Installs that never chose a quality get 1080P60; a stored choice stays. On Android TV the value is read through `Pref.defaultVideoQa` on Wi-Fi and Ethernet. Known gap: picking 4K in the HUD still freezes, and is saved as the new default. The READMEs warn about it and give the way back.
+* **Option G estimate** (details in `PLAN.md`): 8 code files, 3 new and 5 edited, 4–7 days after reading media_kit's Android controller and chenx-dust's fork. A design with no package change looks possible, because `vo` can be passed as configuration and `onLoadHooks` run in order. A 1–2 day spike decides. The fallback, a build-time patch of `media_kit_video`, adds 1–2 days.
+* **"TV layer only"**: true today (5 upstream Dart files, 27 added lines) and for option A. Option G breaks it by a little: 2 more upstream files, both busy. Option F breaks it outright.
+* **Option F**: moved to a new M16. Its place after M15 is proposed, not confirmed.
+* **Open input** (owner: user): confirm M16's place; go-ahead for G's spike; the pull request for this branch.
