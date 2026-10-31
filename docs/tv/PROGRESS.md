@@ -116,9 +116,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G in M16, option F in M17 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ✅ Done | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart` (`25d0fa1e0`, `6004fa425`), `README.md`, `README.en.md` (`ed9bfea4d`) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
-| **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ⏳ Planned (next) | `-Pdev` build, `<physical-tv>` |
-| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ⏳ Planned | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` |
-| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ✅ Done (go) | `-Pdev` build, `<physical-tv>`, `docs/tv/PLAN.md` (`b2c806ab1`) |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
+| **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (first CI build not run yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
@@ -1344,7 +1345,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 ---
 
 ### [2026-10-31] Milestone M16 (Task `M16.4`): CI-Only Builds, PiliPlus TVP
-* **Status**: ✅ Done locally on `variant/4k-passthrough`, not pushed. The workflow is also committed on a branch off `main`, not pushed.
+* **Status**: ✅ Done on `variant/4k-passthrough`. The workflow reaches `main` through its own pull request, from `ci/tv-variant-build`.
 * **Decision** (the user): no second repository and no releases. APKs live only in the Actions run, from a real Run button, and the user accepted the one extra normal release that putting the workflow on `main` causes. This replaces the release repository, the `v*-4k` tag and `VARIANT_REPO_TOKEN` from the previous entry.
 * **Label**: `PiliPlus TVP`. The application ID stays `com.lemontea.piliplus.tv.passthrough`.
 * **Files Changed**:
@@ -1357,4 +1358,4 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Analyze: no errors or warnings, and two infos on upstream lines in `update.dart`. 144 of 144 TV tests pass. Removing the hook fails its test.
   * A release build reports `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TVP`.
 * **Not verified**: the workflow has never run, because the Run button needs the file on `main`. The release build hasn't been installed on a TV, so neither the label nor the update message has been seen there.
-* **Next** (owner: user): approve pushing this branch and the pull request that puts the workflow on `main`.
+* **Next**: run the first build from the Run button, and check that APK on `<physical-tv>`.
