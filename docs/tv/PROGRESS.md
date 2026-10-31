@@ -120,12 +120,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (tools ready; no device run yet) | `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (tools ready; no device run yet) | `<vm-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
@@ -1431,3 +1431,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * A `-Pdev` release build compiled with the patch applied: `com.lemontea.piliplus.tv.dev`, `PiliPlus TV dev`, not debuggable, with the probe in the compiled code. It was built for `<vm-tv>`'s arm64, and it hasn't been installed anywhere.
 * **Not verified**: the clocks. The probe assumes Android's key time, `Timeline.now` and `FrameTiming` share CLOCK_MONOTONIC, which only a real device can show. Until a run confirms it, `input` and `total` are unproven. `run.sh` hasn't run on a device.
 * **Next** (owner: user): the list of screens where focus jumps or the ring disappears, and the TV on for a device session.
+
+---
+
+### [2026-10-31] Milestone M13 (Task `M13.0`, Prep): `<vm-tv>` Only, and the First Bug
+* **Status**: 🔄 In progress. No run yet.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Decision** (the user): M13 runs on `<vm-tv>`. This replaces `<physical-tv>` in `M13.0`, `M13.5` and the "done" bar. The engine is the same code on both, but `<vm-tv>`'s times aren't the TV's, so these targets can't prove the lag seen on `<physical-tv>` is gone.
+* **First inventory item** (the user): on 我的 with several sections on, focus stops at the `观看记录` header and nothing below it can be reached. Not reproduced yet: it needs a login on `<vm-tv>`. The lead in `M13_BASELINE.md`, that the page's lazy `ListView` hasn't built those sections, is unconfirmed.
+* **Next**: prove the probe's clocks on `<vm-tv>`, then the runs in `M13_BASELINE.md`.
