@@ -1226,3 +1226,36 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Safety**: the guard for plane runs force-stopped the dev app on `hwRender:0` with the dev app on top, on `Detile` past the start burst, and on a 4K layer on `CLIENT`. It never fired on a real problem. No panic in this session, and no 4K60 before the user's go-ahead.
 * **Cleanup**: test clips, the config file and the work folder are off the TV; `READ_MEDIA_VIDEO` is revoked; nothing started by the session is running. `PiliPlus TV dev` stays installed with its login, for `M16.2`, with its default back at 1080P60 and AVC first. The user's normal app and MiXplorer weren't touched.
 * **Next** (owner: user): go or no-go on `M16.2`. `M12.5` is still open too.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.2`): Build
+* **Status**: `M16.2` ✅ Done. `M16.3` is next. Committed on `feat/tv-m16-video-plane`, not pushed.
+* **Files Changed**:
+  * `[NEW]` `lib/tv/tv_video_plane.dart`, `android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt`, `test/tv_video_plane_test.dart`.
+  * `[MODIFY]` `TvBridge.kt`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+  * `[MODIFY]`, upstream hooks: `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/setting/models/video_settings.dart`.
+* **What's built**:
+  * **The setting**: `4K 视频平面` in `音视频设置`, off by default, on TVs only. Its key is fork-only, so `storage_key.dart` stays upstream's.
+  * **One plane per player**: `TvVideoPlane` owns the surface reference and the fitted rect, behind a small mpv interface so the fail-closed logic is tested without libmpv. All spike logging, overrides and config are gone.
+  * **Surfaces**: the plane tracks the surface mpv is on as well as the newest one, so a new surface that arrives before the old one goes is picked up when the old one goes. Writing the tests found that bug in the spike's logic.
+  * **Failure**: a black screen with the reason and what to do: `视频平面启动失败，已停止播放`, `按确认键重试，按返回键退出`. Select in the HUD retries. It restarts the video from the beginning, because stopping clears the position. A late surface can't undo a failure; only a new load attaches.
+  * **Turning it off**: a stored quality above 1080P60 comes down to 1080P60, on both quality keys.
+  * **HUD**: on the plane, the fit dialog offers the five modes that don't crop. A stored cropping mode falls back to `自动`.
+* **Found while building**:
+  * **The player is shared between pages.** A video opened from a live room reuses that room's `vo=gpu` player, which would put a stored 4K default on the GPU path. While the setting is on, a player not on the plane now refuses a video above 1080P60, with a toast. The page stays black until the user backs out. The other way round, a live room opened from a video runs on the plane, which nobody has tried.
+  * **The crop modes can't work.** A `SurfaceView` can't be clipped, so they'd spill over the page in split-screen.
+* **Decision**: `PLAN.md`'s note said to clamp a stored 4K default wherever the plane is off. A blanket clamp would break "with the setting off, playback is unchanged" and M12's decision not to take option B, and take 4K from other TVs. So it's capped when the setting goes from on to off, and refused as above while it's on.
+* **Verification**:
+  * `flutter analyze --no-pub` on `lib/tv`, the hook files and the three test files: no issues. 136 of 136 TV tests pass (95 before, 39 in `test/tv_video_plane_test.dart`, 2 in the HUD file).
+  * **Mutation checks**: 18 single changes to `tv_video_plane.dart`, each removing one rule (the read-back, the attach flag, the pinned `hwdec`, each step of failing closed, the timer, surface tracking, the refusal, the cap, the crop filter, `ExcludeFocus`). All 18 now fail a test. The first pass missed 2: one mutation hit a doc comment, and the other was a real gap, a tall video whose width alone passes, which now has a test.
+  * **`<physical-tv>`, at 1080p, no 4K60 in this task**:
+    * Setting off: `hwRender:0`, the normal texture path, 1080P60, no errors.
+    * The setting is found and toggled by D-pad; with it on, `hwRender:1, gdec:0`.
+    * Failing the first load on purpose, in a temporary uncommitted build: no decoder opened, the failure screen showed, and `加载中…` no longer covers it. Select retried, and the video came back with `hwRender:1, gdec:0` and danmaku.
+    * The fit dialog shows `拉伸`, `自动`, `限制`, `4:3` and `16:9`, with focus on the current mode.
+* **Not done**: AV1's dropped frames need 4K60 runs, so they moved to `M16.3`, with the other checks listed there. The refusal and the turn-off cap are covered by unit tests, not yet on the device.
+* **Hooks**: 28 added and 5 removed in 3 upstream files, against the 8–14 estimated. 5 of the added lines are re-indented `VideoControllerConfiguration`; the rest are the plane's creation, the refusal and the failure handler.
+* **CI**: `tv-checks.yml` now analyzes the new hook files and runs the new test file.
+* **Cleanup**: nothing of this session is running on the TV, and the work folder is gone. `PiliPlus TV dev` holds the clean final build with its login, with the setting on and the default at 1080P60. TV patches are reverted.
+* **Next** (owner: user): go-ahead for `M16.3`, which needs 4K60 runs.

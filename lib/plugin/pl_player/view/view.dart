@@ -2024,6 +2024,9 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
             child: Obx(
               () {
                 final videoFit = plPlayerController.videoFit.value;
+                if (plPlayerController.videoPlane case final plane?) {
+                  return plane.view(videoFit, widget.alignment);
+                }
                 return Transform.flip(
                   flipX: plPlayerController.flipX.value,
                   flipY: plPlayerController.flipY.value,

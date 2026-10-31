@@ -62,7 +62,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **M11: TV Checks in CI** | Run analyze and the TV tests (SDK patches applied) on every pull request and before every release; a failure blocks the release | Fork-only workflow files in `.github/workflows/`, `docs/tv/*` (`M11.1`–`M11.3`) | None | ✅ Done (branch protection on `main` is a user action) |
 | **M12: Playback Freeze on the Physical TV** | High-quality videos play for about a second, then freeze, sometimes with `无法加载解码器 … 可能会切换至软解`; then the app freezes and crashes. Dedicated investigation in device sessions; the fix is agreed after the root cause | Device sessions over network adb; likely `lib/tv/*`, `TvBridge.kt` and the TV default settings, exact files decided in `M12.3` (`M12.1`–`M12.5`) | Device details and network adb from the user | 🔄 In progress (option A released; the device check, `M12.5`, is left) |
-| **M16: 4K on the Video Plane** | Option G of M12: mpv's `vo=mediacodec_embed` on a real `SurfaceView`, opt-in on TV, as a temporary route back to 4K. Runs before M13 | `lib/tv/*`, `TvBridge.kt`, small hooks in three upstream files; not TV-layer-only, so it gets its own branch and release (`M16.1`–`M16.3`) | `M12.4` | 🔄 In progress (`M16.1` spike passed; `M16.2` waits for the user's go-ahead) |
+| **M16: 4K on the Video Plane** | Option G of M12: mpv's `vo=mediacodec_embed` on a real `SurfaceView`, opt-in on TV, as a temporary route back to 4K. Runs before M13 | `lib/tv/*`, `TvBridge.kt`, small hooks in three upstream files; not TV-layer-only, so it gets its own branch and release (`M16.1`–`M16.3`) | `M12.4` | 🔄 In progress (`M16.1` and `M16.2` done; `M16.3`, the device pass, is next) |
 | **M13: Focus Engine, Staged and Parity-Gated** | Fix odd jumps, a lost or missing ring and D-pad lag; replace the rule chain with adapters, one reconcile loop and one scoring function with column memory | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, new `lib/tv/adapters/`, `test/tv_*.dart` (`M13.0`–`M13.6`) | M11, M16; focus-bug list from the user | ⏳ Planned |
 | **M14: Player HUD, Video** | Upstream's player layout and icons at TV size with focus labels; menus open upstream's own panels; the missing functions agreed in `M14.1` | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`M14.1`–`M14.4`) | M12, M16; button-list discussion (`M14.1`) | ⏳ Planned |
 | **M15: Player HUD, Live** | The same for the live room, where upstream's pickers are private | `lib/tv/tv_player_hud.dart` (tasks defined after M14) | M14 | ⏳ Planned (later) |
@@ -601,7 +601,7 @@
 
 ### Milestone M16: 4K on the Video Plane (Option G)
 * **Goal**: 4K plays on `<physical-tv>` through mpv, behind an opt-in TV setting. It's a temporary route: M17 decides whether a second player replaces it.
-* **Status** (2026-10-31): the `M16.1` spike passed on `<physical-tv>` with G-a, so no package change is needed. Four 10-minute 4K60 runs, about 41 minutes in all, played on the video plane on a warm TV with no panic, freeze or ANR. The spike code is uncommitted, and `M16.2` waits for the user's go-ahead. Agreed as a temporary fix by the user on 2026-10-30, and moved ahead of M13 the same day because 4K is needed sooner. It was `M12.6` until M12 was reorganized.
+* **Status** (2026-10-31): `M16.2` is built and committed on `feat/tv-m16-video-plane`, not pushed. `M16.3` is next. The `M16.1` spike passed on `<physical-tv>` with G-a, so no package change is needed: four 10-minute 4K60 runs, about 41 minutes in all, played on the video plane on a warm TV with no panic, freeze or ANR. Agreed as a temporary fix by the user on 2026-10-30, and moved ahead of M13 the same day because 4K is needed sooner. It was `M12.6` until M12 was reorganized.
 * **Why it's its own milestone**:
   * M12 can close on its own "done" bar. M13 and M14 come after M12, and they shouldn't wait for an opt-in feature.
   * A failed spike ends this work and leaves M12's result standing.
@@ -624,6 +624,7 @@
   * **Size.** MediaCodec stretches to the surface, so the widget has to give the `SurfaceView` the fitted rect for the video's aspect ratio and `videoFit`.
   * **The setting needs a place.** `lib/tv` has no settings page and upstream's `video_settings.dart` has no TV hook, so that's a third upstream file.
   * **Turning it off.** 4K is safe with the setting on and not with it off, so turning it off puts a stored quality above 1080P60 back to 1080P60.
+  * **The player is shared between pages** (found in `M16.2`). `PlPlayerController` is one instance, so a live room and a video on top of each other share one player, and `vo` stays what it was at creation. A video opened from a live room reuses that room's `vo=gpu` player, which would put a stored 4K default on the GPU path. While the setting is on, such a player refuses a video above 1080P60. The other way round, a live room opened from a video runs on the plane.
 * **Estimate** (2026-10-30, revised after the check above; `M16.1` confirmed G-a and revised the effort below). Two designs, with the same hooks in the app:
   * **G-a, no package change (works, chosen).** The app passes `vo: 'mediacodec_embed'` and `androidAttachSurfaceAfterVideoParameters: true` in `VideoControllerConfiguration`, which also stops media_kit resetting `vo=gpu` on each size change. A hook added after `VideoController.create` sets `wid` to the surface of a `SurfaceView` that the TV layer owns.
 
@@ -636,7 +637,7 @@
     So 9 code files: 3 new and 6 edited. Docs on top: this plan, `PROGRESS.md`, `ARCHITECTURE.md`, `REVIEW.md` and the READMEs.
   * **G-b, not needed: a build-time patch of `media_kit_video`.** Port chenx-dust's `feat: support PlatformView`: 9 package files, about 480 lines, on a base 20 commits behind. `tool/tv_patch.sh` would have to find git packages in the pub cache (it only patches the hosted `material_ui` there today), and every upstream bump of the media-kit ref can break the patch. It stays here only as the record of what G-a avoided.
   * **Effort, revised after the spike** (2026-10-31): the spike is done, in one evening's device session instead of 1–2 days. **3.5–5.5 days remain**: 2.5–3.5 to build and 1–2 for device sessions and docs. That makes 4–6 days in all, down from 5–8, and G-b's 1–2 days are gone. The surface lifecycle, the fail-closed path and the fitted rect already work in the spike, and about 100 of `tv_video_plane.dart`'s 380 lines are spike-only logging and settings. What remains: the setting, turning it off, the HUD, the failure screen, the items from the spike below, and the tests. The file counts above still stand. For comparison, F2 is 9–13 days after its own spike.
-  * **Scope**: an opt-in TV setting, off by default, for videos only. `vo` is fixed when the player is created, so it can't follow the quality picked in the HUD. Live rooms stay on `vo=gpu`.
+  * **Scope**: an opt-in TV setting, off by default, for videos only. `vo` is fixed when the player is created, so it can't follow the quality picked in the HUD. A player created for a live room stays on `vo=gpu`.
   * **What the spike has to clear**, in this order:
     * At 1080p, the decoder's log shows `hwRender:1, gdec:0`. No 4K60 run until it does: `hwRender:0` means the GPU is in the path, and that can panic the TV.
     * With the hook made to fail on purpose, playback stops and doesn't reach the texture.
@@ -659,7 +660,7 @@
     | 7 | Home, TV sleep and back | ✅ Pass at 1080P60. Not run at 4K, so `M16.3` runs it |
     | 8 | 4K60 AVC and AV1, 10+ minutes, warm TV | ✅ Pass: AVC and AV1 each twice, so both are **safe** by `M12_CRASH_DEBUG.md`'s verdicts on this path |
 
-  * **Lost on this path**: mpv shaders (`超分辨率`), flip, zoom and mpv screenshots. Subtitles and danmaku are Flutter widgets and stay. The HUD has to hide what doesn't work.
+  * **Lost on this path**: mpv shaders (`超分辨率`), flip, zoom, mpv screenshots and `video-rotate`. So are the fit modes that crop (`裁剪`, `等宽`, `等高`, `原始`), because a `SurfaceView` can't be clipped and would spill over the page in split-screen. Subtitles and danmaku are Flutter widgets and stay. The HUD has to hide what doesn't work.
 * **The "TV layer only" rule** (checked 2026-10-30 against `lemonteaau/PiliPlus`):
   * Today it holds: `main` changes 11 upstream-owned files, +54/−6 lines, of which 5 are Dart with 27 added lines. `REVIEW.md`'s `< 30` lines is right; `ARCHITECTURE.md`'s `< 20` is out of date.
   * Option A keeps it: one entry in `lib/tv`.
@@ -667,13 +668,16 @@
   * **F breaks it outright**: PR 2145's approach is 1,900 lines over 20 files, 529 of them in `controller.dart`, with about 15 other files using the player directly.
 * **Tasks**:
   * **Task M16.1 (`✅ Done`, passed) — Spike**: G-a in an uncommitted `-Pdev` build, against the list above. G-b wasn't needed. The results are above and in `PROGRESS.md`. The spike code stays uncommitted on `feat/tv-m16-video-plane`.
-  * **Task M16.2 (`⏳ Planned`, waits for the user's go-ahead) — Build**: the setting, the TV-owned `SurfaceView` with its lifecycle, the hooks and the tests, including the fail-closed path. The HUD hides what doesn't work on this path. From the spike:
-    * Take out the spike's config file, local-file override, codec override, frame log and stats.
-    * After a failure the page stays on `加载中…`. It has to show an error the user can act on.
-    * The fitted rect's last size and the surface reference are static in the spike; they need one owner per player, because a page pushed over another mounts a second view.
-    * A stored quality above 1080P60 is the hazard, and not only at the moment the setting is turned off: opening the app with the setting off and a stored 4K default puts 4K60 back on the GPU path. Clamp it wherever the plane is off.
-    * Look at AV1's dropped frames (about 5–7 %, against 0.05–1.6 % on AVC), for example `video-sync` on this path.
-  * **Task M16.3 (`⏳ Planned`) — Device Pass & Docs**: the bar below, on top of it Home and TV sleep at 4K60 and a part switch on a multi-part video, which the spike didn't run; the README warning, and the hook counts in `ARCHITECTURE.md` and `REVIEW.md`.
+  * **Task M16.2 (`✅ Done`) — Build**: the setting, the TV-owned `SurfaceView` with its lifecycle, the hooks and the tests, including the fail-closed path. The HUD hides what doesn't work on this path. Details in `PROGRESS.md`.
+    * **Decision on the stored 4K default**: the spike's note said to clamp it wherever the plane is off. A blanket clamp would break "with the setting off, playback is unchanged", M12's decision not to take option B, and 4K on other TVs where it works. So a stored quality above 1080P60 is capped when the setting goes from on to off, and while the setting is on a player that isn't on the plane refuses a video above 1080P60. With the setting off, nothing changes.
+    * **Actual size**: `lib/tv/tv_video_plane.dart` 435 lines, `TvVideoPlane.kt` 81, tests 588 plus 65 in the HUD test file. Upstream hooks: 28 added lines and 5 removed in 3 files, 5 of them re-indented, against the 8–14 estimated (`controller.dart` +22/−5, `view.dart` +3, `video_settings.dart` +3).
+  * **Task M16.3 (`⏳ Planned`, next) — Device Pass & Docs**: the bar below, and on top of it:
+    * Home and TV sleep at 4K60, and a part switch on a multi-part video, which the spike didn't run.
+    * AV1's dropped frames (about 5–7 %, against 0.05–1.6 % on AVC), for example `video-sync` on this path. Moved here from `M16.2` because it needs 4K60 runs.
+    * A live room opened from a video, which runs on the plane and hasn't been played there.
+    * A video above 1080P60 opened from a live room: the refusal on a real device, and whether a toast and a black page are enough.
+    * Turning the setting off with a stored 4K default.
+    * The README warning, and the hook counts in `ARCHITECTURE.md` and `REVIEW.md`.
 * **Done when**: with the setting on, 4K60 AVC and AV1 play for 10+ minutes on a warm `<physical-tv>`, inside the app, with no freeze, ANR or panic; next-video, split-screen to fullscreen, and Home and back all work at 4K60; the D-pad stays responsive; the HUD hides what doesn't work; a failed attach stops playback and never reaches the texture. With the setting off, playback is unchanged.
 
 ### Milestone M13: Focus Engine (Staged, Parity-Gated)

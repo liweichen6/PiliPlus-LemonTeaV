@@ -117,6 +117,7 @@ class TvBridge private constructor(
                 flutterEngine.dartExecutor.binaryMessenger,
                 CHANNEL_NAME,
             ).setMethodCallHandler(TvBridge(activity))
+            TvVideoPlane.register(flutterEngine)
         }
     }
 }

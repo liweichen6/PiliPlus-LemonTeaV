@@ -32,6 +32,7 @@ import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/services/thread_ripper/auto_concurrency.dart';
 import 'package:PiliPlus/services/thread_ripper/range_proxy.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/tv/tv_video_plane.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
@@ -176,6 +177,8 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   /// [videoController] instance of Player
   VideoController? get videoController => _videoController;
+
+  TvVideoPlane? videoPlane;
 
   bool isMuted = false;
 
@@ -760,6 +763,11 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
       if (_playerCount == 0) {
         return;
       }
+      if (_videoPlayerController != null &&
+          TvVideoPlane.refusesTexture(videoPlane, isLive, width, height)) {
+        dataStatus.value = .error;
+        return;
+      }
       // 配置Player 音轨、字幕等等
       await _createVideoController(dataSource, seekTo, volume, rotate);
 
@@ -876,14 +884,18 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
     assert(_videoController == null);
 
+    videoPlane = TvVideoPlane.forNewPlayer(isLive: isLive);
     _videoController = await VideoController.create(
       player,
-      configuration: VideoControllerConfiguration(
-        enableHardwareAcceleration: hwdec != null,
-        androidAttachSurfaceAfterVideoParameters: false,
-        hwdec: hwdec,
-      ),
+      configuration:
+          videoPlane?.configuration ??
+          VideoControllerConfiguration(
+            enableHardwareAcceleration: hwdec != null,
+            androidAttachSurfaceAfterVideoParameters: false,
+            hwdec: hwdec,
+          ),
     );
+    videoPlane?.attach(player, _videoController!, onFail: _onVideoPlaneFailed);
 
     if (Platform.isAndroid) {
       // Avoid sizing the surface using mpv's idle window between media loads.
@@ -895,6 +907,11 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     _startListeners(player);
 
     return player;
+  }
+
+  void _onVideoPlaneFailed() {
+    dataStatus.value = .error;
+    isBuffering.value = false;
   }
 
   late final buffer = Pref.initBuffer(_playbackSpeed.value);

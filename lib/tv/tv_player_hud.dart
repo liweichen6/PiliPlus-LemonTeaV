@@ -14,6 +14,7 @@ import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
+import 'package:PiliPlus/tv/tv_video_plane.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
@@ -325,6 +326,10 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   void _togglePlayPause() {
     _virtualSeekTarget = null;
+    if (_pl.videoPlane?.failed.value ?? false) {
+      _pl.refreshPlayer();
+      return;
+    }
     if (_pl.isLive || (widget.canPlay?.call() ?? true)) {
       if (_hasPlayer) {
         // No setState here: the player reports its new state later and
@@ -747,11 +752,14 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
 
   Future<void> _showVideoFitDialog() async {
     final currentFit = _pl.videoFit.value;
+    final fits = _pl.videoPlane == null
+        ? VideoFitType.values
+        : TvVideoPlane.supportedFits;
     await _showTvDialog((dialogContext) {
       return _TvOptionListDialog(
         title: '选择画面比例',
         items: [
-          for (final fit in VideoFitType.values)
+          for (final fit in fits)
             _TvDialogOptionItem(
               title: fit.desc,
               selected: fit == currentFit,

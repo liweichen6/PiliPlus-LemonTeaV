@@ -16,6 +16,7 @@ import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/tv/tv_player_hud.dart';
+import 'package:PiliPlus/tv/tv_video_plane.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
@@ -45,6 +46,16 @@ class FakePlayer extends Fake implements Player {
 
 class FakePlPlayerController extends Fake implements PlPlayerController {
   final FakePlayer fakePlayer = FakePlayer();
+
+  @override
+  TvVideoPlane? videoPlane;
+
+  int refreshCount = 0;
+  @override
+  Future<void>? refreshPlayer() {
+    refreshCount++;
+    return null;
+  }
 
   @override
   Player? get videoPlayerController => fakePlayer;
@@ -836,6 +847,60 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
       },
     );
+
+    group('on the video plane (M16)', () {
+      setUp(() => GStorage.setting.put(TvVideoPlane.settingKey, true));
+      tearDown(() => GStorage.setting.delete(TvVideoPlane.settingKey));
+
+      testWidgets('the fit dialog leaves out the modes that crop', (
+        tester,
+      ) async {
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..videoPlane = TvVideoPlane.forNewPlayer(isLive: false);
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('画面: 自动'));
+        await tester.pumpAndSettle();
+
+        for (final fit in TvVideoPlane.supportedFits) {
+          expect(find.text(fit.desc), findsOneWidget, reason: fit.desc);
+        }
+        for (final fit in const [
+          VideoFitType.cover,
+          VideoFitType.fitWidth,
+          VideoFitType.fitHeight,
+          VideoFitType.none,
+        ]) {
+          expect(find.text(fit.desc), findsNothing, reason: fit.desc);
+        }
+        await tester.pump(const Duration(seconds: 3));
+      });
+
+      testWidgets('Select retries after a failure instead of toggling', (
+        tester,
+      ) async {
+        final plane = TvVideoPlane.forNewPlayer(isLive: false)!;
+        final pl = FakePlPlayerController()
+          ..isFullScreen.value = true
+          ..videoPlane = plane;
+
+        await _pumpHud(tester, plPlayerController: pl);
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pl.doubleTapCenterCount, 1);
+        expect(pl.refreshCount, 0);
+
+        plane.failed.value = true;
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(pl.doubleTapCenterCount, 1);
+        expect(pl.refreshCount, 1);
+        await tester.pump(const Duration(seconds: 3));
+      });
+    });
 
     testWidgets(
       'Video fit dialog opens, autofocuses current fit, updates fit, dismisses cleanly',
