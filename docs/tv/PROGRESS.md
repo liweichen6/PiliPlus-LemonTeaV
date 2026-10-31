@@ -1153,3 +1153,14 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Correction**: earlier entries in this file say there's no Flutter SDK on the development machine. There is; it just isn't on `PATH`, and `tool/tv_patch.sh` already looks for it where it's installed. The SDK is one patch version behind what `main` now pins.
 * **Next**: `M16.1`, and `M12.5` on `v2.1.6.2-fork.5863` or later.
 * **Open input** (owner: user): confirm M17's place after M15.
+
+---
+
+### [2026-10-30] Development Setup and a Privacy Check
+* **Status**: ✅ Done. No app code changed.
+* **Branch**: `docs/tv-m16-prep`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (`M16.1`), `docs/tv/M12_CRASH_DEBUG.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/PROGRESS.md`.
+* **Flutter**: the development machine's SDK is on `3.47.9`, channel `stable`, and on `PATH`. With the TV patches applied, analyze found no issues, all 95 TV tests passed and a `-Pdev` APK built, and the patches were reverted afterwards. So analyze, the tests and device builds can run locally as well as on CI.
+* **Privacy check**: the docs, every commit unique to this fork, the pull request refs, the text of pull requests, issues and releases, and the latest release run's log were checked against Execution Rule 4. No LAN addresses, ports, serials, local paths, local usernames, tokens or keys turned up. One rule in `M12_CRASH_DEBUG.md` was reworded.
+* **Stale facts fixed**: the no-Flutter note in `M12_CRASH_DEBUG.md`, the SDK step in `M16.1`, and the pinned version in `docs/tv/README.md` and `README.en.md`.
+* **Next**: `M16.1`, and `M12.5` on `v2.1.6.2-fork.5863` or later.

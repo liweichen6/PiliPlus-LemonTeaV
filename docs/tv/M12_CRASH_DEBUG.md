@@ -188,7 +188,7 @@ Details and raw numbers are in the [Log](#log).
   * No LAN IPs, ports, absolute local paths, usernames or device serials in this file or in commits.
   * Write `<physical-tv>`, and describe test files instead of giving their paths.
   * Logs, kernel logs and bug reports stay outside the repository; only summaries go here.
-* **The user's login export is never touched.** The dev app (`PiliPlus TV dev`) keeps its imported login, so don't clear its data.
+* **The dev app's login stays.** `PiliPlus TV dev` keeps its imported login, so don't clear its data.
 * **Panic-prone runs need the user's go-ahead.** A run is panic-prone if it hardware-decodes 4K into a surface for more than about 20 s.
   * Each batch needs the go-ahead and an agreed panic budget (suggested: at most 3 panics per session).
   * A panic shuts the TV down; it doesn't come back by itself. Notify the user at once. They turn it on, re-enable wireless debugging and send the new port.
@@ -463,7 +463,7 @@ Local copies supplied by the user, kept outside the repository:
 * **Desk research** (`CD8`):
   * mpv's upstream change (Finding 6), and which mpv the app's libmpv uses.
   * No public hits for `miup_hit_panic`, `[MIUP][HIT]` or the PQ notifier names. Mapping client `0xE000` needs the TV maker's GPL kernel source for this SoC (to request or download).
-* **CD4 (barebone mpv)**: this machine has no Flutter SDK. A lighter route is the libmpv package the app's build downloads (the media_kit fork's `libmpv-android-video-build` release `20260906`, `default-armeabi-v7a.jar`, 6.4 MB, checked against the SHA-256 in the fork's `build.gradle`). It would be driven from an `app_process` harness with a small NDK shim, rendering into a `SurfaceTexture` like Flutter, so it's the exact libmpv without the app. Downloading it needs the user's approval.
+* **CD4 (barebone mpv)**: a lighter route than a full app build is the libmpv package the app's build downloads (the media_kit fork's `libmpv-android-video-build` release `20260906`, `default-armeabi-v7a.jar`, 6.4 MB, checked against the SHA-256 in the fork's `build.gradle`). It would be driven from an `app_process` harness with a small NDK shim, rendering into a `SurfaceTexture` like Flutter, so it's the exact libmpv without the app. Downloading it needs the user's approval.
 * **What this means for M12.3**:
   * Fault 1 is a firmware limit: 2 spare output buffers at 4K. Through `vo=gpu` it could only be avoided if mpv held at most 2 frames for bilibili's AVC, and no queued frame at all for AV1. mpv's display loop always queues frames, so AV1 can't work on this path, and AVC is doubtful; CD4 would confirm with mpv's own options.
   * Option B (the 1080P60 cap) stays the safe fix.
