@@ -1259,3 +1259,53 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **CI**: `tv-checks.yml` now analyzes the new hook files and runs the new test file.
 * **Cleanup**: nothing of this session is running on the TV, and the work folder is gone. `PiliPlus TV dev` holds the clean final build with its login, with the setting on and the default at 1080P60. TV patches are reverted.
 * **Next** (owner: user): go-ahead for `M16.3`, which needs 4K60 runs.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.3`): Device Pass and Docs
+* **Status**: `M16.3` ✅ Done. M16 meets its "done" bar on `<physical-tv>`, with one risk left open, below. Committed on `feat/tv-m16-video-plane`, not pushed: the pull request and release wait for the user.
+* **Files Changed**: `[MODIFY]` `lib/tv/tv_video_plane.dart`, `test/tv_video_plane_test.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Final runs** (warm TV, real streams, danmaku on, the final code plus a temporary logging patch that was never committed; `hwRender:1, gdec:0` throughout, 31 layer samples per run, all `DEVICE`, no ANR):
+
+  | Stream | Decoder buffers | Played | mpv dropped | UI fps | Frames over 16.7 ms | Frame total, p50 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `BV1kMxM6FECM`, AVC, picked in the HUD | 6 | 610 s | 125 (0.3 %) | 48.2 | 65.2 % | 20.6 ms |
+  | `BV1kMxM6FECM`, AV1 | 9 | 610 s | 59 (0.16 %) | 54.7 | 53.9 % | 17.5 ms |
+
+* **AV1's dropped frames**: the plan suggested `video-sync`, and it does nothing. Measured on the real 4K60 AV1 stream, 90 s each, by mpv's counter and by SurfaceFlinger's timestamps for the frames reaching the video layer (`dumpsys SurfaceFlinger --latency`):
+
+  | mpv option | mpv dropped | Layer fps | Intervals over 25 ms |
+  | :--- | :--- | :--- | :--- |
+  | Current (`display-resample`), two runs | 8.0 %, 5.7 % | 52.0, 52.2 | 10.3 %, 9.7 % |
+  | `video-sync=audio` | 7.2 % | 52.7 | 9.3 % |
+  | `video-latency-hacks=yes` | 7.0 % | 52.0 | 11.0 % |
+  | `framedrop=no` | 0 %, which only hides it | 54.4 | 10.3 % |
+  | `vd-queue-enable=yes`, 1 frame | 1.1 % | 55.1 | 6.8 % |
+  | The same, 2 frames | 0.2 % | 57.1 | 5.1 % |
+  | The same, 4 frames | 0.3 % | 58.7 | 2.1 % |
+
+  * 4 frames is adopted, set only on the plane path, with a test that it stays at 4 or below: frames held from this decoder can deadlock it. On AVC, 90 s each, the queue took drops from 1.0 % to 0.4 %, layer fps from 54.9 to 56.2, and long intervals from 7.5 % to 6.1 %, with no deadlock.
+  * 8 frames never ran: the hang below began first.
+* **Other checks**, all on the plane unless noted:
+  * **Home and TV sleep at 4K60**: a new decoder with `hwRender:1`, playing again within about 10 s. mpv drops 300–390 frames once while it catches up to the audio, then about 10 in the next 110 s.
+  * **Fullscreen to split-screen at 4K60**: `3840 × 2160` to `2332 × 1312`, source still 4K. The other direction ran at 1080p and 720p only.
+  * **Next-video at 4K60**: a related vertical 1080 × 1920 video, fitted correctly, and Back to the 4K video. No `native_window_api_connect` errors in any run.
+  * **Part switch**: `下一集` on a 13-part video, on a new decoder. That series tops out at 1080p, so this wasn't at 4K.
+  * **D-pad during 4K60**: four presses in about a second landed where they should.
+  * **A live room opened from a video**: 1080p at 59 fps on the plane, `DEVICE`; Back returned to the 4K video.
+  * **A 4K video opened from a live room**: refused. No new decoder, no `gdec:1`, no 4K frames. The toast explains, the rest of the page works, and Back returns to the live room, which picks up again. The toast's advice was wrong, because reopening from the live room is refused again, so it now says to go back to the home page first.
+  * **Turning the setting off with a stored 4K default**: `stored 120` is capped, and a fresh launch opens at 1080p on the texture. Run with a guard that stops the app on `gdec:1`.
+* **Open risk, a media service hang** (2026-10-31, 02:04):
+  * **Symptom**: every new video stayed on the spinner and no decoder opened. `dumpsys media.player` timed out at 10 s, and `tool/tv_codecs.sh`, with none of the app's code, hung on the codec list. So the fault was in the TV's media service, and any app starting video could have hit it. Normal after `adb reboot`, at about 0.15 s.
+  * **When**: after about 9.6 hours of uptime and dozens of runs, between two 4K AV1 runs, right after a force-stop.
+  * **Cause: unknown.** The logs and thread list show nothing conclusive. One suspicion was the `DEAD_OBJECT` line `mediaserver` logs at that moment, but it follows every run. Two launcher preview decoders were stuck on abandoned surfaces, retrying about a million times; each force-stop passes through the launcher, which starts its preview.
+  * **What was tried**: 8 force-stopped 4K AV1 cycles with the 4-frame queue, checking `media.player` after each, were all clean, and so was about 90 more minutes of testing after the reboot. That's evidence, not proof. Normal use has none of those repeated force-stops, but nothing here shows it can't happen there.
+* **Also seen**: `adbd` restarted by itself once during a 4K60 run, on a new port, while the video played on. It looked like a crash until the user confirmed the picture. A `lost` run isn't always a lost TV: check the picture and the boot reason.
+* **Verification**: `flutter analyze --no-pub` on `lib/tv`, the hook files and the three test files: no issues. 137 of 137 TV tests pass. Both new mutations to the queue rule fail a test. The clean build, with no logging, plays at 1080P60 on the texture with the setting off.
+* **Device notes**:
+  * `dumpsys -t 6 media.player` answers in about 0.15 s when healthy, so it's a cheap check for this hang between runs.
+  * `dumpsys SurfaceFlinger --latency` on the video layer works on this path and doesn't depend on mpv's counters.
+  * `pgrep -f NAME` over `adb shell` matches its own shell. Use `ps` with a bracketed pattern. An earlier "leftover sampler" came from this.
+* **Cleanup**: nothing of this session is running on the TV, and its test files are gone. `PiliPlus TV dev` holds the clean build with its login, with the setting off, 1080P60 and AVC first. `READ_MEDIA_VIDEO` is revoked. The user's normal app and MiXplorer weren't touched. TV patches are reverted.
+* **Next** (owner: user): the pull request and M16's own release.
+

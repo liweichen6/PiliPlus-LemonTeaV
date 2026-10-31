@@ -6,6 +6,7 @@
 > - **Fork Footprint vs. `lemonteaau/PiliPlus`**: 33 files touched, with **only 5 upstream Dart files in `lib/` modified (`< 30` net lines)**
 > - **Verification Status**: `flutter analyze --no-pub` reports **0 issues** across all TV modules, hooks, and tests; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes **88 / 88 tests** (~3s); all 38 SDK/pub-cache patches apply and revert cleanly via `./tool/tv_patch.sh`.
 > - **Follow-up Review (2026-10-26, Milestone M10)**: findings `R8`–`R20` and the still-open `R2` / `R3` / `R5` items were added after M9.5 and are resolved in M10 (the task is in the severity column of §3). `R1`–`R7` keep their original numbering. The `SmartDialog` update-dialog focus bug that started M10 is not an `R` item: see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.13 and invariant `C23`.
+> - **Follow-up (2026-10-31, Milestone M16)**: `TvVideoPlane` adds 3 upstream Dart files and 28 added lines (`controller.dart` +22/−5, `view.dart` +3, `video_settings.dart` +3), the first hooks in `controller.dart` and `view.dart`, two of upstream's busiest files. The TV-layer-only rule no longer holds strictly; see `PLAN.md`, M16. Figures above this line are from the original review.
 
 ---
 
@@ -15,7 +16,7 @@
 
 1. **Tier 1 — Self-Contained TV Module (`lib/tv/*` & `TvBridge.kt`, 6,402 LOC)**: Owns platform detection, Hive defaults, on-demand IME gating, 2D spatial focus traversal, zero-rebuild focus ring rendering, modal/popup/overlay-dialog (`SmartDialog`)/inline-sheet (`MiniScaffold` / `BottomSheetLayout`) focus promotion & isolation, route focus memory, and the 10-foot video player HUD.
 2. **Tier 2 — Build-Time SDK & Material Patches (`lib/scripts/tv_*.patch`, 4 patch files)**: Adapts `GestureDetector`, `RadioGroup`, and `InkResponse` under `NavigationMode.directional` at build time (`patch.ps1` in CI, `tool/tv_patch.sh` locally), keeping `git diff` across upstream UI pages at zero.
-3. **Tier 3 — Ultra-Thin Upstream Micro-Hooks (`< 30` lines across 5 Dart files + Android manifest/identity)**: Mounts `TvPlatform`, `TvNavigation`, `TvNavigationObserver`, `TvPlayerHud`, Ethernet broadband recognition, and fork release update URLs.
+3. **Tier 3 — Ultra-Thin Upstream Micro-Hooks (about 55 lines across 8 Dart files + Android manifest/identity)**: Mounts `TvPlatform`, `TvNavigation`, `TvNavigationObserver`, `TvPlayerHud`, `TvVideoPlane`, Ethernet broadband recognition, and fork release update URLs.
 
 | Dimension | Rating | Assessment Summary |
 | :--- | :---: | :--- |
@@ -25,7 +26,7 @@
 | **10-Foot Player HUD (`TvPlayerHud`)** | **A** | Full transport/episode/quality/speed/fit/danmaku OSD, hardware-decoupled virtual seek accumulator (`1x → 2x → 3x`), Hold-Select 3.0x temporary speed boost, remote hold-to-triple-like, and `PopScope` Back dismissal. |
 | **Native Bridge & Platform Layer** | **A-** | `WeakReference<Activity>` prevents Activity leaks; `_TvTextInputGateControl` reliably blocks unwanted soft-keyboard popups during D-pad traversal; minor doc/predicate nuance around non-Leanback HDMI boxes (see **R1**). |
 | **SDK & Package Patch Pipeline** | **A** | Minimal, surgical patches guarded by `NavigationMode.directional` (zero overhead in touch mode); includes an important fix for stock Flutter's `_InkResponseState._canRequestFocus` directional bug. |
-| **Test Suite & Release Hygiene** | **A** | 88 targeted TV tests (60 navigation/geometry/benchmark/inline-sheet/overlay + 28 HUD/modal/3x-speed), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
+| **Test Suite & Release Hygiene** | **A** | 137 targeted TV tests (navigation/geometry/benchmark/inline-sheet/overlay, HUD/modal/3x-speed, and 40 for the M16 video plane), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
 
 ---
 
@@ -134,5 +135,6 @@ The original review found no Critical, High, or Medium functional defects; `R1`�
 | **`lib/tv/*` & `TvBridge.kt` (Tier 1)** | **Very Low** (only imports `BottomSheetLayout` / `BottomSheetType`, `PlPlayerController`, `VideoDetailController`, `PgcIntroController`, `LiveRoomController`, `SettingBoxKey`, `VideoFitType`, `BaseQuality` / `VideoDecodeFormatType`) | Compile-time error in `flutter analyze --no-pub` or failure in the 88 TV unit/widget tests (e.g. `1acd76929` 2-line import update after upstream quality refactor). | Minimal (self-contained inside `lib/tv/`). |
 | **`lib/scripts/tv_*.patch` (Tier 2)** | **Low** (only changes when upstream bumps the pinned Flutter SDK version in `pubspec.yaml` or edits `lib/common/widgets/material/ink_well.dart`) | `./tool/tv_patch.sh apply` / `patch.ps1` exits immediately with `git apply` failure before build starts. | Re-diff the affected 20–100 line patch against the new Flutter SDK commit. |
 | **`lib/main.dart` & `player_focus.dart` (Tier 3)** | **Low** (10 lines in `main.dart`, 13 lines in `player_focus.dart`) | Standard git merge conflict localized to `MyApp._builder` or `PlayerFocus.build`, plus M6/M7 regression tests in `test/tv_navigation_test.dart`. | Trivial re-wrap of `TvNavigation` or `TvPlayerHud`. |
+| **`lib/plugin/pl_player/controller.dart`, `view/view.dart`, `lib/pages/setting/models/video_settings.dart` (Tier 3, M16)** | **Medium** (`controller.dart` is among upstream's busiest files: 22 lines there, 3 in each of the others) | A merge conflict in `_initPlayer`, `setDataSource` or `_videoWidget`. The `upstream hooks` group in `test/tv_video_plane_test.dart` fails if a hook moves or goes missing, including the one that must sit above `Transform.flip` | Re-apply the hook. Keep `videoPlane?.configuration` ahead of the texture configuration, because that order is what keeps 4K off the GPU path |
 | **Upstream source read by tests** (`lib/pages/login/view.dart` and `controller.dart`, `lib/utils/storage_key.dart`) | **Low** | The `login page QR tab` test fails if upstream reorders the login tabs or changes the index its controller polls; the seeding test fails if a seeded key is no longer declared in `SettingBoxKey`. | Update `TvNavigationObserver.loginQrTabIndex` or the seeded key. |
 | **`README.md` & `README.en.md`** | **Zero** (protected by `merge=ours` in `.gitattributes`) | Remember to run `git config merge.ours.driver true` once when syncing locally via CLI (configured automatically in GitHub Actions). | Zero during routine syncs. |

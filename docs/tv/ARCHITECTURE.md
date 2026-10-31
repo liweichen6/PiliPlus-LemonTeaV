@@ -13,6 +13,7 @@ flowchart TD
         T1B["lib/tv/tv_navigation.dart<br/>• TvFocusTraversalPolicy (2D spatial scoring, half-plane & offscreen PageView culling)<br/>• MediaQuery inner-wrapper unwrapping & popup/overlay focus layers (see T1E)<br/>• Zero-allocation O(D) stationary cache & ValueListenable focus ring<br/>• TvNavigationObserver (route focus memory + Login QR auto-tab)"]
         T1C["lib/tv/tv_player_hud.dart<br/>• 10-foot OSD overlay & D-pad transport controls<br/>• GetX controller auto-discovery (VideoDetail / PGC / Live)<br/>• Virtual seek accumulator (1x->2x->3x) & Hold-Select 3.0x speed<br/>• PopScope Android back key route interception"]
         T1D["android/app/.../TvBridge.kt<br/>• WeakReference<Activity> memory safety<br/>• Leanback & touch capability queries<br/>• Soft keyboard show/hide via InputMethodManager"]
+        T1F["lib/tv/tv_video_plane.dart & TvVideoPlane.kt<br/>• Opt-in: mpv vo=mediacodec_embed on a real SurfaceView (the TV's video plane)<br/>• Fails closed: never reaches Flutter's texture<br/>• One owner per player, surface lifecycle, fitted rect"]
         T1E["lib/tv/tv_focus_layers.dart (part of tv_navigation.dart)<br/>• _TvFocusLayerStack: detect → save trigger → promote → occlude → restore<br/>• Layer kinds: overlay dialogs outside the Navigator (SmartDialog), showMenu popup routes"]
     end
 
@@ -23,11 +24,12 @@ flowchart TD
         T2D["tool/tv_patch.sh<br/>(Reversible local developer script for macOS/Linux to apply/revert patches)"]
     end
 
-    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks & App Identity (< 20 Lines)"]
+    subgraph Tier3["Tier 3: Ultra-Thin Upstream Micro-Hooks & App Identity (about 55 Lines)"]
         T3A["android/app/.../AndroidManifest.xml, build.gradle.kts, MainActivity.kt, string.xml<br/>(applicationId: com.lemontea.piliplus.tv, label: PiliPlus TV, Leanback launcher + TvBridge)"]
         T3B["lib/main.dart (3 lines)<br/>(TvPlatform.initialize, TvNavigationObserver, TvNavigation wrapper)"]
         T3C["lib/utils/connectivity_utils.dart (1-line hook)<br/>(TvPlatform.isOnWifiOrEthernet: Ethernet counts as Wi-Fi on TV)"]
         T3D["lib/pages/video/widgets/player_focus.dart (4 lines)<br/>(Wrap PlayerFocus with TvPlayerHud on TV)"]
+        T3F["lib/plugin/pl_player/controller.dart (22 lines), view/view.dart (3 lines), lib/pages/setting/models/video_settings.dart (3 lines)<br/>(M16: create the player on the video plane, refuse 4K off it, mount the view, the setting)"]
         T3E["lib/common/constants.dart & lib/http/api.dart (2 lines)<br/>(Point sourceCodeUrl & latestApp update check to liweichen6/PiliPlus-LemonTeaV)"]
     end
 
@@ -182,11 +184,29 @@ flowchart TD
 * **`uiScale`-Aware Viewport (`R9`)**: `ScaledWidgetsFlutterBinding` lays the tree out in `physicalSize / (devicePixelRatio × uiScale)`, while `View.physicalSize` and `View.devicePixelRatio` stay the platform values. A viewport derived from them was wrong whenever `uiScale ≠ 1.0`: below `1.0`, controls outside any scrollable in the right and bottom band (the fullscreen seek bar at `0.8`) were culled as off-screen; above `1.0`, off-screen nodes counted as visible. `_TvTraversalCache.viewportRectOf` now takes the size of the root `RenderView`, the space the layout and the focus rects live in.
 * **Player HUD fixes landed in the same milestone**: `R8` (Hold-Select after D-pad moves, §2.11); `R10` (the option dialog opens scrolled to the current item: `_TvOptionListDialog` has a fixed item extent and an initial scroll offset, so a lazily built list no longer loses the current episode's `autofocus`); `R11` (the Play/Pause label follows the player status event, not the key press); `R12` (`mediaPlay` and `mediaPause` are idempotent, `mediaPlayPause` toggles); `R3` / `R18` (seek cadence, §2.7); `R19` (the HUD clock ticks at minute boundaries while the HUD stays open).
 
+### 2.14 `TvVideoPlane`: 4K on the Video Plane (M16)
+
+On `<physical-tv>` (MediaTek MT9690), 4K60 drawn to the screen by the GPU can shut the TV down, and `vo=gpu` freezes at 4K. Only the video plane survives 4K60 (`docs/tv/M12_CRASH_DEBUG.md`). `TvVideoPlane` puts mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes straight to that plane, behind the opt-in `4K 视频平面` setting (off by default, TV only).
+
+* **G-a, no package change**: media_kit always creates a `SurfaceTexture`, but with a `vo` other than `gpu` and `androidAttachSurfaceAfterVideoParameters: true` it never hands it to mpv. The plane sets `wid` and `vo` itself, to a global reference to the `SurfaceView`'s surface.
+* **Fails closed**: nothing may leave mpv on Flutter's texture, which is the path that panics the TV.
+  1. The configuration above means a hook that never runs leaves `vo=null`.
+  2. The hook reads `vo` and `wid` back, because `setOption` reports no errors.
+  3. An error, or no surface within 8 s, takes the video off (`vid=no`, `vo=null`, `wid=0`), pauses, stops, and shows what to do next. Select in the HUD retries.
+  4. A late surface can't undo a failure. Only a new load attaches.
+* **The hook never waits**: mpv events are handled one at a time and `on_load` runs inside that handler, so nothing in it may wait for an mpv reply. It can't wait for the surface either, because the view mounts only after `_initializePlayer`, which awaits a reply when the saved speed isn't 1x. With no surface yet the file loads with `vid=no`, and the surface attaches when it arrives.
+* **Surface lifecycle**: the plane tracks both the newest surface and the one mpv is on, because a page pushed over another can bring the new one first. When the surface mpv is on goes, the video comes off (`vid=no`, `vo=null`, `wid=0`) and a new surface re-attaches the running file. The same path serves Back, Home, TV sleep and first load.
+* **The player is shared**: `PlPlayerController` is one instance, so a live room and a video on top of each other share one player, and `vo` stays what it was at creation. While the setting is on, a player not on the plane refuses a video above 1080P60 (`TvVideoPlane.refusesTexture`). A live room opened from a video runs on the plane.
+* **Decode queue**: `vd-queue-enable=yes` with 4 frames puts decoding on its own thread. On the real 4K60 AV1 stream that took dropped frames from 6.6 % to 0.16 %, and on AVC from 1.6 % to 0.3 %. It stays small because frames held from this decoder can deadlock it (`M12_CRASH_DEBUG.md`, finding 1).
+* **Fitted rect**: a `SurfaceView` follows neither `FittedBox` nor `Transform.flip` and can't be clipped, so the view sits above them, computes the rect itself, and the fit modes that crop aren't offered. A stored cropping mode falls back to `自动`.
+* **Composition**: always Hybrid Composition (`initExpensiveAndroidView`). Anything else falls back to a virtual display for a `SurfaceView`, which puts the GPU back in the path. `ExcludeFocus` keeps the platform view's focus node away from the D-pad.
+* **Lost on this path**: mpv shaders (`超分辨率`), flip, zoom, mpv screenshots, `video-rotate`, and the cropping fit modes. With heavy danmaku the UI runs at about 42 fps, against 56 on the texture; the video isn't held back.
+
 ---
 
-## 3. Preserved TV Capability Invariants (C1–C23)
+## 3. Preserved TV Capability Invariants (C1–C24)
 
-The TV control layer maintains 23 verified capability invariants across navigation, widgets, modals, inline sheets, and playback (see [`docs/tv/REVIEW.md`](./REVIEW.md) for a code-level audit):
+The TV control layer maintains 24 verified capability invariants across navigation, widgets, modals, inline sheets, and playback (see [`docs/tv/REVIEW.md`](./REVIEW.md) for a code-level audit):
 
 | Invariant | Capability Description | Architectural Mechanism | Verification Test |
 | :--- | :--- | :--- | :--- |
@@ -213,6 +233,7 @@ The TV control layer maintains 23 verified capability invariants across navigati
 | **C21** | Player Hold-Select 3.0x Temporary Speed | Holding `Select`/`Enter` ($\ge 250\text{ms}$) activates 3.0x temporary playback speed (`'3.0倍速中'`), also on a HUD or Quick Strip pill that focus has left and come back to (`ExcludeFocus` pill, M10 `R8`); short press toggles play/pause. | `test/tv_player_hud_test.dart` |
 | **C22** | Inline Sheet (`MiniScaffold`) Focus Isolation & LIFO Restoration | Isolates occluded `BottomSheetType.body` layers (`评论详情`, `对话列表`, `选集`, `AI总结`), promotes focus into opening/async-loading sheets without left-pane leaks, translates pinned/floating sliver headers (`SliverPinnedHeader` / `SliverFloatingHeaderWidget`) to scroll-order positions so upward D-pad scrolling never jumps prematurely to pinned sort controls, supports embedded comment actions (`回复`/`查看对话`/`点赞`), and restores exact pre-sheet focus & scroll offset on Back. | `test/tv_navigation_test.dart` |
 | **C23** | Overlay Dialog (`SmartDialog`) Focus Promotion, Isolation & Restoration | Dialogs inserted outside the root `Navigator` (`🎉 发现新版本`, permission dialogs) take D-pad focus and the focus ring when they open, the page behind them is unfocusable and ringless, a dialog replaced by another keeps focus in the overlay, and Back or `取消` returns focus and the ring to the control that opened it. Popup routes (C18) run on the same `_TvFocusLayerStack`. | `test/tv_navigation_test.dart` (`overlay dialogs outside the Navigator (M10, SmartDialog)`, `route focus layers`) |
+| **C24** | Video Plane Fails Closed | With `4K 视频平面` on, mpv is never handed Flutter's texture: a failed attach stops playback, a player off the plane refuses a video above 1080P60, and turning the setting off caps a stored quality above 1080P60. With it off, playback is unchanged. | `test/tv_video_plane_test.dart` |
 
 ---
 
@@ -229,4 +250,4 @@ The TV control layer maintains 23 verified capability invariants across navigati
 | **Android Native Memory Safety** | Strong `Activity` reference in `TvBridge` prevented garbage collection on configuration changes. | `WeakReference<Activity>` with null-safe platform channel fallbacks. | **Zero Activity memory leaks** across orientation/display mode transitions. |
 | **Patch Closure Overhead** | Anonymous closure allocated per `GestureDetector` build in directional mode. | Static method `_handleDirectionalKeyEvent` in `tv_gesture_detector.patch`. | **Zero closure allocations** during directional widget rebuilds. |
 | **Modal Layer Focus** | Bespoke fixes per kind of layer (M6 popup promotion, M9 inline sheets) and none for overlay dialogs outside the `Navigator`: the `🎉 发现新版本` dialog's buttons were unreachable by D-pad. | One `_TvFocusLayerStack` lifecycle (detect → save trigger → promote → occlude → restore) shared by popup routes and overlay dialogs; M9 inline sheets keep their own bookkeeping (§2.13). | **Dialog buttons reachable, page behind unreachable, trigger restored**; one place to fix the next kind of layer. |
-| **Automated Test Coverage** | 15 TV navigation tests. | 88 TV tests (60 navigation/benchmarks/M6/M7/M9/M10 regressions + 28 Player HUD/dialogs/3x hold speed). | **100% TV test pass rate** with deterministic latency benchmarks. |
+| **Automated Test Coverage** | 15 TV navigation tests. | 137 TV tests (navigation/benchmarks/M6/M7/M9/M10 regressions, Player HUD/dialogs/3x hold speed, and 40 for the M16 video plane). | **100% TV test pass rate** with deterministic latency benchmarks. |

@@ -8,12 +8,13 @@
 
 ## 1. 核心设计目标
 
-1. **近零上游合并冲突（Near-Zero Merge Conflicts）**：将上游业务代码改动压缩到极致（**仅触碰 `lib/` 下 5 个文件，共计 `< 20 行`挂载代码**），确保每周自动合并 `lemonteaau/PiliPlus` 时无需人工处理冲突。
+1. **近零上游合并冲突（Near-Zero Merge Conflicts）**：将上游业务代码改动压缩到极致（**仅触碰 `lib/` 下 8 个 Dart 文件，合计约 55 行**，其中 28 行属于 M16 的视频平面），确保每周自动合并 `lemonteaau/PiliPlus` 时无需人工处理冲突。
 2. **原生级 10 英尺遥控器交互（D-Pad First Experience）**：提供 2D 空间方向键焦点寻路引擎（`TvFocusTraversalPolicy`）、零重建（Zero-Rebuild）独立重绘焦点高亮框（`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`）、离屏预渲染平滑滚动（`cacheExtent`）、保活离屏页面焦点隔离（`PageView`/`TabBarView`）、`MiniScaffold` 多层内嵌面板焦点隔离与自动晋升/还原（`评论详情` / `对话列表` / `选集` / `AI总结`）、弹窗菜单与 `SmartDialog` 覆盖层对话框（如「发现新版本」更新弹窗）的统一焦点层（打开时焦点进入、背后页面不可达、关闭后还原）、吸顶/浮动 Sliver 标题双坐标空间滚动与退出、嵌入式评论操作步进、弹窗/菜单/列表边界闭环跳出，以及支持长按确认键 `3.0x` 倍速与虚拟进度快进的 10 英尺电视播控 HUD（`TvPlayerHud`）。
 3. **框架层补丁适配（`patch.ps1` / `tool/tv_patch.sh`）**：通过构建期补丁解决 Flutter/Material 在电视端的焦点限制（`GestureDetector` 不可聚焦、`RadioGroup` 吞噬上下方向键、`InkResponse` 缺少键盘长按三连/坐标菜单触发及 `NavigationMode.directional` 下忽略 `enabled && canRequestFocus` 的缺陷），无需侵入修改 40+ 个上游业务页面。
 4. **通用安装包与多版本并存（Universal APK & Side-by-Side Coexistence）**：
    - **独立包名**：`com.lemontea.piliplus.tv`（桌面名称：**`PiliPlus TV`**），可与原版 PiliPlus（`com.example.piliplus`）及海外加速版（`com.lemontea.piliplus`）在同一台设备上并存安装。
    - **自适应运行**：在 Android TV / Leanback 设备（系统上报 `UI_MODE_TYPE_TELEVISION` 或 `FEATURE_LEANBACK`，或编译注入 `--dart-define=PILI_FORCE_TV=true`）上自动开启 TV 控制层；在安卓手机与平板上自动保持原版触控体验。
+   - **4K 视频平面（M16）**：可选的 `4K 视频平面` 设置（仅电视端，默认关闭）让 mpv 的 `vo=mediacodec_embed` 输出到真实的 `SurfaceView`，解码器直达电视的视频层，GPU 不经手。失败时一律停止播放，绝不回落到 Flutter 纹理。详见 [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.14。
    - **电视端默认设置**：每次在电视端启动，`TvPlatform` 只为**尚未设置**的项补写电视友好默认值（横屏、侧边栏、深色模式、字体 `1.2x`、默认画质 1080P60 等），不会覆盖你已修改的值。其中包括「启用键盘控制」（`keyboardControl`）：播放器 HUD 与分屏快捷控制条挂在播放页的按键处理上，而上游仅在该开关开启时才构建它，因此在电视端手动关闭它会让 HUD 与 Quick Strip 一并消失，请保持开启。
 
 ---
@@ -51,8 +52,8 @@
 ### TV 检查（`tv-checks.yml`）
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) 会在每个合并到 `main` 的 Pull Request 上以及每次发布前运行：
 1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
-2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
-3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`。
+2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/setting/models/video_settings.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/plugin/pl_player/controller.dart`、`lib/plugin/pl_player/view/view.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart`。
 
 > **仓库设置（仓库所有者操作）**：在 GitHub → **Settings** → **Branches** 中保护 `main` 分支，并将状态检查 **TV analyze and tests** 设为必需，使检查未通过的 Pull Request 无法合并。
 
@@ -74,8 +75,8 @@ git merge --no-edit upstream/main
 # 4. 重新应用补丁，执行静态分析与 TV 自动化测试验证兼容性
 ./tool/tv_patch.sh apply
 # （与 tv-checks.yml 中的命令相同）
-flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
-flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
+flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/setting/models/video_settings.dart lib/pages/video/widgets/player_focus.dart lib/plugin/pl_player/controller.dart lib/plugin/pl_player/view/view.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart
+flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart
 
 # 5. 提交或推送前还原补丁，确保 SDK 与工作区干净
 ./tool/tv_patch.sh revert

@@ -62,7 +62,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **M11: TV Checks in CI** | Run analyze and the TV tests (SDK patches applied) on every pull request and before every release; a failure blocks the release | Fork-only workflow files in `.github/workflows/`, `docs/tv/*` (`M11.1`–`M11.3`) | None | ✅ Done (branch protection on `main` is a user action) |
 | **M12: Playback Freeze on the Physical TV** | High-quality videos play for about a second, then freeze, sometimes with `无法加载解码器 … 可能会切换至软解`; then the app freezes and crashes. Dedicated investigation in device sessions; the fix is agreed after the root cause | Device sessions over network adb; likely `lib/tv/*`, `TvBridge.kt` and the TV default settings, exact files decided in `M12.3` (`M12.1`–`M12.5`) | Device details and network adb from the user | 🔄 In progress (option A released; the device check, `M12.5`, is left) |
-| **M16: 4K on the Video Plane** | Option G of M12: mpv's `vo=mediacodec_embed` on a real `SurfaceView`, opt-in on TV, as a temporary route back to 4K. Runs before M13 | `lib/tv/*`, `TvBridge.kt`, small hooks in three upstream files; not TV-layer-only, so it gets its own branch and release (`M16.1`–`M16.3`) | `M12.4` | 🔄 In progress (`M16.1` and `M16.2` done; `M16.3`, the device pass, is next) |
+| **M16: 4K on the Video Plane** | Option G of M12: mpv's `vo=mediacodec_embed` on a real `SurfaceView`, opt-in on TV, as a temporary route back to 4K. Runs before M13 | `lib/tv/*`, `TvBridge.kt`, small hooks in three upstream files; not TV-layer-only, so it gets its own branch and release (`M16.1`–`M16.3`) | `M12.4` | ✅ Built and passed its device bar on `feat/tv-m16-video-plane`; the pull request and release wait for the user |
 | **M13: Focus Engine, Staged and Parity-Gated** | Fix odd jumps, a lost or missing ring and D-pad lag; replace the rule chain with adapters, one reconcile loop and one scoring function with column memory | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, new `lib/tv/adapters/`, `test/tv_*.dart` (`M13.0`–`M13.6`) | M11, M16; focus-bug list from the user | ⏳ Planned |
 | **M14: Player HUD, Video** | Upstream's player layout and icons at TV size with focus labels; menus open upstream's own panels; the missing functions agreed in `M14.1` | `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` (`M14.1`–`M14.4`) | M12, M16; button-list discussion (`M14.1`) | ⏳ Planned |
 | **M15: Player HUD, Live** | The same for the live room, where upstream's pickers are private | `lib/tv/tv_player_hud.dart` (tasks defined after M14) | M14 | ⏳ Planned (later) |
@@ -601,7 +601,7 @@
 
 ### Milestone M16: 4K on the Video Plane (Option G)
 * **Goal**: 4K plays on `<physical-tv>` through mpv, behind an opt-in TV setting. It's a temporary route: M17 decides whether a second player replaces it.
-* **Status** (2026-10-31): `M16.2` is built and committed on `feat/tv-m16-video-plane`, not pushed. `M16.3` is next. The `M16.1` spike passed on `<physical-tv>` with G-a, so no package change is needed: four 10-minute 4K60 runs, about 41 minutes in all, played on the video plane on a warm TV with no panic, freeze or ANR. Agreed as a temporary fix by the user on 2026-10-30, and moved ahead of M13 the same day because 4K is needed sooner. It was `M12.6` until M12 was reorganized.
+* **Status** (2026-10-31): `M16.1`–`M16.3` are done on `feat/tv-m16-video-plane`, not pushed. The "done" bar below is met; the open risk is the media service hang in `M16.3`. The `M16.1` spike passed on `<physical-tv>` with G-a, so no package change is needed: four 10-minute 4K60 runs, about 41 minutes in all, played on the video plane on a warm TV with no panic, freeze or ANR. Agreed as a temporary fix by the user on 2026-10-30, and moved ahead of M13 the same day because 4K is needed sooner. It was `M12.6` until M12 was reorganized.
 * **Why it's its own milestone**:
   * M12 can close on its own "done" bar. M13 and M14 come after M12, and they shouldn't wait for an opt-in feature.
   * A failed spike ends this work and leaves M12's result standing.
@@ -671,13 +671,25 @@
   * **Task M16.2 (`✅ Done`) — Build**: the setting, the TV-owned `SurfaceView` with its lifecycle, the hooks and the tests, including the fail-closed path. The HUD hides what doesn't work on this path. Details in `PROGRESS.md`.
     * **Decision on the stored 4K default**: the spike's note said to clamp it wherever the plane is off. A blanket clamp would break "with the setting off, playback is unchanged", M12's decision not to take option B, and 4K on other TVs where it works. So a stored quality above 1080P60 is capped when the setting goes from on to off, and while the setting is on a player that isn't on the plane refuses a video above 1080P60. With the setting off, nothing changes.
     * **Actual size**: `lib/tv/tv_video_plane.dart` 435 lines, `TvVideoPlane.kt` 81, tests 588 plus 65 in the HUD test file. Upstream hooks: 28 added lines and 5 removed in 3 files, 5 of them re-indented, against the 8–14 estimated (`controller.dart` +22/−5, `view.dart` +3, `video_settings.dart` +3).
-  * **Task M16.3 (`⏳ Planned`, next) — Device Pass & Docs**: the bar below, and on top of it:
-    * Home and TV sleep at 4K60, and a part switch on a multi-part video, which the spike didn't run.
-    * AV1's dropped frames (about 5–7 %, against 0.05–1.6 % on AVC), for example `video-sync` on this path. Moved here from `M16.2` because it needs 4K60 runs.
-    * A live room opened from a video, which runs on the plane and hasn't been played there.
-    * A video above 1080P60 opened from a live room: the refusal on a real device, and whether a toast and a black page are enough.
-    * Turning the setting off with a stored 4K default.
-    * The README warning, and the hook counts in `ARCHITECTURE.md` and `REVIEW.md`.
+  * **Task M16.3 (`✅ Done`, one risk left open) — Device Pass & Docs**: everything below ran on `<physical-tv>`, details in `PROGRESS.md`.
+
+    | Check | Result |
+    | :--- | :--- |
+    | 4K60 AVC, real stream, 10+ minutes, warm TV, final code | ✅ 610 s, 0.3 % dropped, no ANR, no panic |
+    | 4K60 AV1, real stream, 10+ minutes, warm TV, final code | ✅ 610 s, 0.16 % dropped, no ANR, no panic |
+    | Home and TV sleep at 4K60 | ✅ Back within about 10 s, on a new decoder |
+    | Next-video at 4K60: related video, Back | ✅ No `-22` |
+    | Part switch on a multi-part video | ✅ At 1080p, the most that series offers |
+    | Fullscreen to split-screen at 4K60 | ✅ The other direction ran at 1080p and 720p only |
+    | D-pad during 4K60 | ✅ Four presses in about a second landed where they should |
+    | A live room opened from a video | ✅ Plays on the plane, and Back returns to the video |
+    | A video above 1080P60 opened from a live room | ✅ Refused: no decoder, no GPU path. A toast and a black player, and Back recovers. Enough for a rare path |
+    | Turning the setting off with a stored 4K default | ✅ Capped, and the next video opens at 1080P60 on the texture |
+    | AV1's dropped frames | ✅ Fixed with `vd-queue`, not `video-sync` |
+
+    * **The AV1 fix**: `vd-queue-enable=yes` with 4 frames puts decoding on its own thread. `video-sync` and `video-latency-hacks` changed nothing, and `framedrop=no` only hid the drops. Dropped frames on the real stream went from 6.6 % to 0.16 %, and on AVC from 1.6 % to 0.3 %.
+    * **Open risk, the media service hang**: after about 9.6 hours of uptime and dozens of test runs, the TV's `media.player` service stopped answering, and every new process that asked for the codec list hung, including a standalone one with none of the app's code. It took `adb reboot` to clear. The cause is unknown. It began between two 4K AV1 runs, right after a force-stop, with two launcher preview decoders stuck on abandoned surfaces. 8 force-stopped cycles with the queue on didn't bring it back, and neither did about 90 more minutes of testing after the reboot. That is evidence, not proof, so if it turns up in normal use, this is the first place to look.
+    * The README warning, `ARCHITECTURE.md` (§2.14, invariant `C24`), `REVIEW.md` and `docs/tv/README*.md` are updated.
 * **Done when**: with the setting on, 4K60 AVC and AV1 play for 10+ minutes on a warm `<physical-tv>`, inside the app, with no freeze, ANR or panic; next-video, split-screen to fullscreen, and Home and back all work at 4K60; the D-pad stays responsive; the HUD hides what doesn't work; a failed attach stops playback and never reaches the texture. With the setting off, playback is unchanged.
 
 ### Milestone M13: Focus Engine (Staged, Parity-Gated)

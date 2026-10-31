@@ -84,8 +84,10 @@ void main() {
   Future<void> settingOn() => box.put(TvVideoPlane.settingKey, true);
 
   TvVideoPlane newPlane(FakeMpv mpv) {
-    return TvVideoPlane.forNewPlayer(isLive: false)!
+    final plane = TvVideoPlane.forNewPlayer(isLive: false)!
       ..bind(mpv, videoRect, onFail: () => failCount += 1);
+    mpv.calls.clear();
+    return plane;
   }
 
   void expectStopped(FakeMpv mpv, TvVideoPlane plane) {
@@ -177,6 +179,17 @@ void main() {
 
   group('load', () {
     setUp(settingOn);
+
+    test('decodes on its own thread, with a small queue', () {
+      final mpv = FakeMpv();
+      newPlane(mpv);
+      expect(mpv.values['vd-queue-enable'], 'yes');
+      // M12: frames held from this decoder can deadlock it.
+      expect(
+        int.parse(mpv.values['vd-queue-max-samples']!),
+        lessThanOrEqualTo(4),
+      );
+    });
 
     test('with a surface attaches, wid before vo, and hwdec pinned', () {
       final mpv = FakeMpv();

@@ -73,6 +73,12 @@ class TvVideoPlane {
   static const String _vo = 'mediacodec_embed';
   static const String _hwdec = 'mediacodec';
 
+  // Decoding on its own thread: with it on mpv's main thread, 4K60 AV1 lost
+  // 5-8 % of its frames, and with 4 frames queued about 0.2 %
+  // (docs/tv/PROGRESS.md, M16.3). Queued frames are held from the decoder, so
+  // this stays small.
+  static const int _decodeQueueFrames = 4;
+
   // VideoQuality.high108060.code, and the long side of the frames it allows.
   static const int _maxTextureQa = 116;
   static const int _maxTextureSide = 1920;
@@ -130,7 +136,7 @@ class TvVideoPlane {
   ) {
     if (plane != null || isLive || !enabled) return false;
     if (math.max(width ?? 0, height ?? 0) <= _maxTextureSide) return false;
-    showToast('此播放器未使用视频平面，无法播放 4K，请退出后重新打开视频');
+    showToast('此播放器未使用视频平面，无法播放 4K，请返回首页后重新打开视频');
     return true;
   }
 
@@ -208,6 +214,9 @@ class TvVideoPlane {
     _mpv = mpv;
     _videoRect = videoRect;
     _onFail = onFail;
+    mpv
+      ..setOption('vd-queue-enable', 'yes')
+      ..setOption('vd-queue-max-samples', '$_decodeQueueFrames');
   }
 
   @visibleForTesting
