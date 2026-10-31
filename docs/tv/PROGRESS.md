@@ -116,9 +116,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G in M16, option F in M17 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ✅ Done | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart` (`25d0fa1e0`, `6004fa425`), `README.md`, `README.en.md` (`ed9bfea4d`) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ✅ Done (on `v2.1.6.2-fork.5870`) | `<physical-tv>`, `<vm-tv>`, `docs/tv/*` |
-| **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ⏳ Planned (next) | `-Pdev` build, `<physical-tv>` |
-| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ⏳ Planned | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` |
-| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ✅ Done (go) | `-Pdev` build, `<physical-tv>`, `docs/tv/PLAN.md` (`b2c806ab1`) |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
+| **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
@@ -1167,6 +1168,200 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
+### [2026-10-31] Milestone M16 (Task `M16.1`): Spike Passed, 4K60 Plays on the Video Plane Inside the App
+* **Status**: `M16.1` ✅ Done, recommendation **go**. `M16.2` hasn't started and waits for the user's go-ahead.
+* **Branch**: `feat/tv-m16-video-plane`. The spike code stays uncommitted, as the plan says: `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, one line in `TvBridge.kt`, and small hooks in `lib/plugin/pl_player/controller.dart` and `view/view.dart`. A copy is kept outside the repository with the run logs.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M16, Phase 5 roadmap, M17), `docs/tv/PROGRESS.md`.
+* **Result**: G-a works, with no change to `media_kit_video` (`85f0a69ea`, unchanged in `pubspec.lock`), so G-b isn't needed. mpv's `vo=mediacodec_embed` on a real `SurfaceView` played 4K60 AVC and AV1 inside the app on a warm `<physical-tv>` for about 41 minutes, with no panic, freeze or ANR. TV uptime ran unbroken from 6.1 to 7.8 hours. On the GPU path, 4K60 on a warm TV usually panicked within 5 minutes.
+* **Spike list, in the plan's order**:
+
+  | # | Item | Result | Evidence |
+  | :--- | :--- | :--- | :--- |
+  | 1 | `hwRender:1, gdec:0` at 1080p | ✅ Pass | `C2MtkVdecTv` logs it on the local clip and real streams; mpv reports `vo=mediacodec_embed`, `hwdec=mediacodec` and the plane's `wid`; the layer is `DEVICE` |
+  | 2 | Hook fails on purpose | ✅ Pass | A thrown error and a surface timeout, repeated on the final build: `vo=null`, `wid=0`, no decoder opened, no `Detile` lines, position empty. The toast shows in the capture from the timeout run |
+  | 3 | Next-video on one `Surface` | ✅ Pass | No `native_window_api_connect … -22`. Quality switches 1080P60 → 720P and 1080P60 → 4K on the same surface; a related video pushed over the page; Back to the first video. Each opened a new decoder with `hwRender:1`. A part switch on a multi-part video isn't run: none of the three test videos has one |
+  | 4 | Hybrid Composition frame cost, Impeller off, danmaku on | 📊 Measured | Tables below. The cost is real, and it falls on danmaku and the UI, not on the video |
+  | 5 | Above `FittedBox` and `Transform.flip` | ✅ Pass | `自动`: `0 0 3840 2160`. 4:3: `480 0 3360 2160`, centred, and the surface resized to 1440 × 1080 under a running decoder. `Transform.flip` isn't applied on this path, as planned |
+  | 6 | D-pad focus stays in Flutter; split-screen to fullscreen keeps the rect | ✅ Pass | HUD, its dialogs, the Quick Strip and the related list all take the D-pad; focus returns to the card on Back; the window keeps Android focus. Rect `2332 × 1312` in split-screen and `3840 × 2160` in fullscreen, both ways |
+  | 7 | Home, TV sleep and back | ✅ Pass at 1080P60 | mpv detached 1–2 ms after the surface went; a new surface re-attached in under 5 ms; a new decoder with `hwRender:1`; the position moved on; no ANR. 147 frames dropped catching up after Home, 35 after sleep. adb stayed connected through sleep. Not run at 4K |
+  | 8 | 4K60 AVC and AV1, 10+ minutes, warm TV | ✅ Pass | Table below |
+
+* **4K60 runs** (warm TV, danmaku on, `hwRender:1, gdec:0` in every run; 31–32 layer samples per run, all `DEVICE`; no ANR):
+
+  | Run | Stream | Decoder buffers | Played | mpv dropped | UI fps | Frames over 16.7 ms | Frame total, p50 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | d1 | `M4`, local, AVC | 6 | 610 s | 18 (0.05 %) | 52.8 | 68.0 % | 21.4 ms |
+  | d2 | `M2`, local, AV1, looped | 9 | 610 s | About 5 % (433 in the first 138 s of one pass) | 54.5 | 20.7 % | 13.1 ms |
+  | d3 | `BV1kMxM6FECM`, real stream, AVC, picked in the HUD | 6 | 628 s | 599 (1.6 %) | 45.4 | 74.5 % | 22.8 ms |
+  | d5 | `BV1kMxM6FECM`, real stream, AV1 | 9 | 630 s | 2,483 (6.6 %) | 53.7 | 59.4 % | 18.4 ms |
+
+  * By the verdicts in `M12_CRASH_DEBUG.md`, 10 minutes twice makes a path **safe**: AVC and AV1 each have two passes on this path.
+  * `Detile` logged one burst at start (40 lines on AVC, 52 on AV1), the same counts as mpv-android's safe plane runs in M12. The GPU path logged 39,644 in one run.
+  * `BV1fiHN6zEfx` opened straight into 4K on the plane too, but it resumed from history at its end, so that attempt isn't counted. Its AV1 stream is `M2`, run d2.
+  * One TV, one session. AV1's drops are mpv's counter; nobody judged the panel's smoothness by eye.
+* **Frame times at 1080p, plane against texture** (same videos and quality, 90 s each, the first 30 s skipped):
+
+  | Video | Path | UI fps | Frames over 16.7 ms | Raster, p50 | Frame total, p50 | Frame total, p90 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `BV1fiHN6zEfx`, moderate danmaku, 1080P60 | Plane | 54.7 | 26.4 % | 6.9 ms | 13.9 ms | 21.5 ms |
+  | The same | Texture | 59.3 | 13.5 % | 6.1 ms | 8.6 ms | 15.4 ms |
+  | `BV1NGZtBwELa`, heavy danmaku, 1080P | Plane | 42.3 | 85.7 % | 9.6 ms | 24.0 ms | 41.6 ms |
+  | The same | Texture | 56.1 | 26.8 % | 7.4 ms | 10.4 ms | 25.6 ms |
+
+  * Hybrid Composition adds 5–14 ms at p50. Raster itself adds only 1–2 ms, so most of it looks like frames waiting their turn. That wasn't traced. The worst case is heavy danmaku at about 42 fps.
+  * The video isn't held back: the decoder goes straight to the plane, and at 1080P60 mpv dropped 36 frames in the 90 s run.
+  * If this is too slow, the way out is the one F2 names: a transparent Flutter view over a `SurfaceView` behind it, which needs no platform view. Not tried.
+* **What the spike changed in the plan**:
+  * **The hook can't wait for the surface.** The plan said it could. With a saved speed other than 1x, `_initializePlayer` awaits an mpv reply, mpv events are handled one at a time, and the hook was holding that handler. The view mounted 0.2 s after the 8 s timeout. It failed closed, but the video would never have played. Now the hook never waits: with no surface yet, the file loads with `vid=no` and the surface attaches on arrival, through the same path as Back, Home and sleep. An 8 s timer still fails closed. Normal load, 1.5x speed and both forced failures were re-run on this build.
+  * **Failing closed is stronger than planned.** With `vo` other than `gpu` and `androidAttachSurfaceAfterVideoParameters: true`, media_kit never hands mpv the texture at all, so a hook that doesn't run leaves `vo=null`. The hook also reads `vo` and `wid` back before it lets mpv go on.
+  * **A stored 4K default is a hazard wherever the plane is off.** Picking 4K in the HUD saved it as the dev app's default, and opening the app without the plane would have put 4K60 on the GPU path. Restored and verified before the session ended. `M16.2` clamps it.
+* **Items for `M16.2`**: in `PLAN.md`, under the task. Also, after a failure the page stays on `加载中…`, and AV1's drop rate needs a look.
+* **Estimate**: 3.5–5.5 days remain, so 4–6 in all, down from 5–8. G-b's 1–2 days are gone.
+* **Not run**: Home and TV sleep at 4K; a part switch on a multi-part video; live rooms, which stay on `vo=gpu`; HDR and Dolby Vision streams. `M16.3` runs the first two.
+* **Device notes**:
+  * If the first `adb` call of a session runs inside the tool sandbox, it starts the adb server there, and every later `adb connect` fails with `No route to host`, even from outside the sandbox. Restart the server outside it.
+  * The launcher's home-screen preview also logs `hwRender:0`. A guard on that line has to check that the dev app is on top: the first version force-stopped the dev app and voided one Home test.
+  * After Home, the launcher's preview left a decoder on an abandoned surface that logs `C2BqBuffer … consecutive failures` every 5 s. It isn't the app's, and it was left alone. Its counter started before the runs, and it shows up on the texture path too, so it isn't Fault 1.
+  * `screencap` usually shows the picture on the video plane, but one early capture was black behind the danmaku, so a black capture proves nothing. The decoder's log is the evidence.
+  * The HUD's quality list differs per video. Check the highlighted row before confirming: `4K` can sit one row above the default.
+* **Safety**: the guard for plane runs force-stopped the dev app on `hwRender:0` with the dev app on top, on `Detile` past the start burst, and on a 4K layer on `CLIENT`. It never fired on a real problem. No panic in this session, and no 4K60 before the user's go-ahead.
+* **Cleanup**: test clips, the config file and the work folder are off the TV; `READ_MEDIA_VIDEO` is revoked; nothing started by the session is running. `PiliPlus TV dev` stays installed with its login, for `M16.2`, with its default back at 1080P60 and AVC first. The user's normal app and MiXplorer weren't touched.
+* **Next** (owner: user): go or no-go on `M16.2`. `M12.5` is still open too.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.2`): Build
+* **Status**: `M16.2` ✅ Done. `M16.3` is next. Committed on `feat/tv-m16-video-plane`, not pushed.
+* **Files Changed**:
+  * `[NEW]` `lib/tv/tv_video_plane.dart`, `android/app/src/main/kotlin/com/example/piliplus/TvVideoPlane.kt`, `test/tv_video_plane_test.dart`.
+  * `[MODIFY]` `TvBridge.kt`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+  * `[MODIFY]`, upstream hooks: `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/setting/models/video_settings.dart`.
+* **What's built**:
+  * **The setting**: `4K 视频平面` in `音视频设置`, off by default, on TVs only. Its key is fork-only, so `storage_key.dart` stays upstream's.
+  * **One plane per player**: `TvVideoPlane` owns the surface reference and the fitted rect, behind a small mpv interface so the fail-closed logic is tested without libmpv. All spike logging, overrides and config are gone.
+  * **Surfaces**: the plane tracks the surface mpv is on as well as the newest one, so a new surface that arrives before the old one goes is picked up when the old one goes. Writing the tests found that bug in the spike's logic.
+  * **Failure**: a black screen with the reason and what to do: `视频平面启动失败，已停止播放`, `按确认键重试，按返回键退出`. Select in the HUD retries. It restarts the video from the beginning, because stopping clears the position. A late surface can't undo a failure; only a new load attaches.
+  * **Turning it off**: a stored quality above 1080P60 comes down to 1080P60, on both quality keys.
+  * **HUD**: on the plane, the fit dialog offers the five modes that don't crop. A stored cropping mode falls back to `自动`.
+* **Found while building**:
+  * **The player is shared between pages.** A video opened from a live room reuses that room's `vo=gpu` player, which would put a stored 4K default on the GPU path. While the setting is on, a player not on the plane now refuses a video above 1080P60, with a toast. The page stays black until the user backs out. The other way round, a live room opened from a video runs on the plane, which nobody has tried.
+  * **The crop modes can't work.** A `SurfaceView` can't be clipped, so they'd spill over the page in split-screen.
+* **Decision**: `PLAN.md`'s note said to clamp a stored 4K default wherever the plane is off. A blanket clamp would break "with the setting off, playback is unchanged" and M12's decision not to take option B, and take 4K from other TVs. So it's capped when the setting goes from on to off, and refused as above while it's on.
+* **Verification**:
+  * `flutter analyze --no-pub` on `lib/tv`, the hook files and the three test files: no issues. 136 of 136 TV tests pass (95 before, 39 in `test/tv_video_plane_test.dart`, 2 in the HUD file).
+  * **Mutation checks**: 18 single changes to `tv_video_plane.dart`, each removing one rule (the read-back, the attach flag, the pinned `hwdec`, each step of failing closed, the timer, surface tracking, the refusal, the cap, the crop filter, `ExcludeFocus`). All 18 now fail a test. The first pass missed 2: one mutation hit a doc comment, and the other was a real gap, a tall video whose width alone passes, which now has a test.
+  * **`<physical-tv>`, at 1080p, no 4K60 in this task**:
+    * Setting off: `hwRender:0`, the normal texture path, 1080P60, no errors.
+    * The setting is found and toggled by D-pad; with it on, `hwRender:1, gdec:0`.
+    * Failing the first load on purpose, in a temporary uncommitted build: no decoder opened, the failure screen showed, and `加载中…` no longer covers it. Select retried, and the video came back with `hwRender:1, gdec:0` and danmaku.
+    * The fit dialog shows `拉伸`, `自动`, `限制`, `4:3` and `16:9`, with focus on the current mode.
+* **Not done**: AV1's dropped frames need 4K60 runs, so they moved to `M16.3`, with the other checks listed there. The refusal and the turn-off cap are covered by unit tests, not yet on the device.
+* **Hooks**: 28 added and 5 removed in 3 upstream files, against the 8–14 estimated. 5 of the added lines are re-indented `VideoControllerConfiguration`; the rest are the plane's creation, the refusal and the failure handler.
+* **CI**: `tv-checks.yml` now analyzes the new hook files and runs the new test file.
+* **Cleanup**: nothing of this session is running on the TV, and the work folder is gone. `PiliPlus TV dev` holds the clean final build with its login, with the setting on and the default at 1080P60. TV patches are reverted.
+* **Next** (owner: user): go-ahead for `M16.3`, which needs 4K60 runs.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.3`): Device Pass and Docs
+* **Status**: `M16.3` ✅ Done. M16 meets its "done" bar on `<physical-tv>`, with one risk left open, below. Committed on `feat/tv-m16-video-plane`, not pushed: the pull request and release wait for the user.
+* **Files Changed**: `[MODIFY]` `lib/tv/tv_video_plane.dart`, `test/tv_video_plane_test.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Final runs** (warm TV, real streams, danmaku on, the final code plus a temporary logging patch that was never committed; `hwRender:1, gdec:0` throughout, 31 layer samples per run, all `DEVICE`, no ANR):
+
+  | Stream | Decoder buffers | Played | mpv dropped | UI fps | Frames over 16.7 ms | Frame total, p50 |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `BV1kMxM6FECM`, AVC, picked in the HUD | 6 | 610 s | 125 (0.3 %) | 48.2 | 65.2 % | 20.6 ms |
+  | `BV1kMxM6FECM`, AV1 | 9 | 610 s | 59 (0.16 %) | 54.7 | 53.9 % | 17.5 ms |
+
+* **AV1's dropped frames**: the plan suggested `video-sync`, and it does nothing. Measured on the real 4K60 AV1 stream, 90 s each, by mpv's counter and by SurfaceFlinger's timestamps for the frames reaching the video layer (`dumpsys SurfaceFlinger --latency`):
+
+  | mpv option | mpv dropped | Layer fps | Intervals over 25 ms |
+  | :--- | :--- | :--- | :--- |
+  | Current (`display-resample`), two runs | 8.0 %, 5.7 % | 52.0, 52.2 | 10.3 %, 9.7 % |
+  | `video-sync=audio` | 7.2 % | 52.7 | 9.3 % |
+  | `video-latency-hacks=yes` | 7.0 % | 52.0 | 11.0 % |
+  | `framedrop=no` | 0 %, which only hides it | 54.4 | 10.3 % |
+  | `vd-queue-enable=yes`, 1 frame | 1.1 % | 55.1 | 6.8 % |
+  | The same, 2 frames | 0.2 % | 57.1 | 5.1 % |
+  | The same, 4 frames | 0.3 % | 58.7 | 2.1 % |
+
+  * 4 frames is adopted, set only on the plane path, with a test that it stays at 4 or below: frames held from this decoder can deadlock it. On AVC, 90 s each, the queue took drops from 1.0 % to 0.4 %, layer fps from 54.9 to 56.2, and long intervals from 7.5 % to 6.1 %, with no deadlock.
+  * 8 frames never ran: the hang below began first.
+* **Other checks**, all on the plane unless noted:
+  * **Home and TV sleep at 4K60**: a new decoder with `hwRender:1`, playing again within about 10 s. mpv drops 300–390 frames once while it catches up to the audio, then about 10 in the next 110 s.
+  * **Fullscreen to split-screen at 4K60**: `3840 × 2160` to `2332 × 1312`, source still 4K. The other direction ran at 1080p and 720p only.
+  * **Next-video at 4K60**: a related vertical 1080 × 1920 video, fitted correctly, and Back to the 4K video. No `native_window_api_connect` errors in any run.
+  * **Part switch**: `下一集` on a 13-part video, on a new decoder. That series tops out at 1080p, so this wasn't at 4K.
+  * **D-pad during 4K60**: four presses in about a second landed where they should.
+  * **A live room opened from a video**: 1080p at 59 fps on the plane, `DEVICE`; Back returned to the 4K video.
+  * **A 4K video opened from a live room**: refused. No new decoder, no `gdec:1`, no 4K frames. The toast explains, the rest of the page works, and Back returns to the live room, which picks up again. The toast's advice was wrong, because reopening from the live room is refused again, so it now says to go back to the home page first.
+  * **Turning the setting off with a stored 4K default**: `stored 120` is capped, and a fresh launch opens at 1080p on the texture. Run with a guard that stops the app on `gdec:1`.
+* **Open risk, a media service hang** (2026-10-31, 02:04):
+  * **Symptom**: every new video stayed on the spinner and no decoder opened. `dumpsys media.player` timed out at 10 s, and `tool/tv_codecs.sh`, with none of the app's code, hung on the codec list. So the fault was in the TV's media service, and any app starting video could have hit it. Normal after `adb reboot`, at about 0.15 s.
+  * **When**: after about 9.6 hours of uptime and dozens of runs, between two 4K AV1 runs, right after a force-stop.
+  * **Cause: unknown.** The logs and thread list show nothing conclusive. One suspicion was the `DEAD_OBJECT` line `mediaserver` logs at that moment, but it follows every run. Two launcher preview decoders were stuck on abandoned surfaces, retrying about a million times; each force-stop passes through the launcher, which starts its preview.
+  * **What was tried**: 8 force-stopped 4K AV1 cycles with the 4-frame queue, checking `media.player` after each, were all clean, and so was about 90 more minutes of testing after the reboot. That's evidence, not proof. Normal use has none of those repeated force-stops, but nothing here shows it can't happen there.
+* **Also seen**: `adbd` restarted by itself once during a 4K60 run, on a new port, while the video played on. It looked like a crash until the user confirmed the picture. A `lost` run isn't always a lost TV: check the picture and the boot reason.
+* **Verification**: `flutter analyze --no-pub` on `lib/tv`, the hook files and the three test files: no issues. 137 of 137 TV tests pass. Both new mutations to the queue rule fail a test. The clean build, with no logging, plays at 1080P60 on the texture with the setting off.
+* **Device notes**:
+  * `dumpsys -t 6 media.player` answers in about 0.15 s when healthy, so it's a cheap check for this hang between runs.
+  * `dumpsys SurfaceFlinger --latency` on the video layer works on this path and doesn't depend on mpv's counters.
+  * `pgrep -f NAME` over `adb shell` matches its own shell. Use `ps` with a bracketed pattern. An earlier "leftover sampler" came from this.
+* **Cleanup**: nothing of this session is running on the TV, and its test files are gone. `PiliPlus TV dev` holds the clean build with its login, with the setting off, 1080P60 and AVC first. `READ_MEDIA_VIDEO` is revoked. The user's normal app and MiXplorer weren't touched. TV patches are reverted.
+* **Next** (owner: user): the pull request and M16's own release.
+
+---
+
+### [2026-10-31] Milestone M16: Chinese Wording
+* **Status**: ✅ Done, not pushed.
+* **Files Changed**: `[MODIFY]` `lib/tv/tv_video_plane.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PROGRESS.md`.
+* **Change** (the user's choice): the setting is now `4K 视频直通`. `视频平面` was a literal translation of "video plane", and `视频层` was a second name for the same thing, so both are gone from the app and the READMEs. The strings are simpler too: the subtitle says `画面由电视直接显示，不经过 GPU`, and the refusal says `当前无法播放 4K，请返回首页后重新打开视频`. Earlier entries in this file keep the old wording, as a record of what shipped in each task.
+* **Not changed**: the code names (`TvVideoPlane`, the `tvVideoPlane` setting key) and "video plane" in the English engineering docs. They're for developers, and changing the key would lose the setting.
+* **Verification**: analyze and all 137 TV tests pass. Wording only; not checked on the TV.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.4`): Split Into a Variant, Parameter Doc, Decode Queue Setting
+* **Status**: ✅ Done locally on `variant/4k-passthrough` (renamed from `feat/tv-m16-video-plane`), not pushed. The first release needs the user's setup, in `4K_VARIANT.md`.
+* **Decision** (the user): M16 gets its own branch and release instead of landing on `main`, because `main` follows upstream and publishes automatically with no TV in the loop. The recommendation had been to stay on `main` with a release check; the user chose the split.
+* **Files Changed**:
+  * `[NEW]` `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-release.yml`, `tool/tv_m16/`.
+  * `[MODIFY]` `android/app/build.gradle.kts`, `lib/http/api.dart`, `lib/common/constants.dart`, `lib/tv/tv_video_plane.dart`, `lib/pages/setting/models/video_settings.dart`, `test/tv_video_plane_test.dart`, `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Two traps found before building it**:
+  * `Update.checkUpdate` takes `releases[0]` of its repository, pre-releases included, and that code is already on users' TVs. A variant release in this repository would be offered to everyone on the normal app, so releases go to `liweichen6/PiliPlus-LemonTeaV-4K`.
+  * With the same application ID, a user going back to the normal app would keep a stored 4K default on a build with no video plane, which is the path that panics `<physical-tv>`. The variant is `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TV 4K`, with its own data and its own login. `-Pdev` builds stay `PiliPlus TV dev`.
+* **Release flow**: nothing follows upstream by itself. Merge `main`, pass the device check, push, tag `v*-4k`. A push builds and runs the TV checks; only the tag publishes, and a red check publishes nothing. The workflow pushes the commit to the release repository first, because the updater compares the release's commit with the build's.
+* **The setting is on by default here**: installing the variant is the opt-in, and with it on 4K can't reach the GPU path.
+* **Parameters**: `docs/tv/PLAYBACK_PARAMETERS.md` has every option tried, with results and the method. The scripts and the logging patch moved into `tool/tv_m16/` with their private paths removed, so the runs can be repeated.
+* **`视频直通解码队列`**: of everything tried, only the decode queue changed the result, so it's the one new setting: 关闭, 1, 2 or 4 帧, default 4. Only tested sizes are offered, and a stored value that isn't one of them falls back to 4, because frames held from this decoder can deadlock it. `framedrop` and `video-latency-hacks` aren't offered: the first hides drops and the second did nothing. `vo` and `hwdec` are never offered, and there's no free-form mpv box, because either would walk around failing closed.
+* **Verification**:
+  * Analyze: no issues. 141 of 141 TV tests pass.
+  * A release build reports `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TV 4K`; a `-Pdev` build still reports `com.lemontea.piliplus.tv.dev`, `PiliPlus TV dev`.
+  * On `<physical-tv>`, no 4K60: both settings render and the new subtitle wraps cleanly; the queue dialog works by D-pad, and `2 帧` saved and showed in the subtitle before going back to `4 帧`. Focus starts on the first row of the dialog, as in upstream's other `SelectDialog`s.
+* **Not verified**: the release workflow has never run, because it needs the push, the release repository and the token. The release build hasn't been installed on a TV. The default-on path is covered by unit tests, since the dev app has the setting stored off. Queue sizes through the setting are unit-tested; the sizes themselves were measured by overriding mpv's options in the logging build.
+* **Known cost**: `PLAN.md` and `PROGRESS.md` now differ between this branch and `main`, so each merge of `main` conflicts at their ends until M16's docs reach `main`.
+* **Next** (owner: user): create the release repository, and decide on pushing this branch and sending the docs to `main`.
+
+---
+
+### [2026-10-31] Milestone M16 (Task `M16.4`): CI-Only Builds, PiliPlus TVP
+* **Status**: ✅ Done on `variant/4k-passthrough`. The workflow reaches `main` through its own pull request, from `ci/tv-variant-build`.
+* **Decision** (the user): no second repository and no releases. APKs live only in the Actions run, from a real Run button, and the user accepted the one extra normal release that putting the workflow on `main` causes. This replaces the release repository, the `v*-4k` tag and `VARIANT_REPO_TOKEN` from the previous entry.
+* **Label**: `PiliPlus TVP`. The application ID stays `com.lemontea.piliplus.tv.passthrough`.
+* **Files Changed**:
+  * `[NEW]` `.github/workflows/tv-variant-build.yml`, replacing `tv-variant-release.yml`.
+  * `[MODIFY]` `android/app/build.gradle.kts`, `lib/utils/update.dart`, `lib/tv/tv_video_plane.dart`, `test/tv_video_plane_test.dart`, `.github/workflows/tv-checks.yml`, `README.md`, `README.en.md`, `docs/tv/4K_VARIANT.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+  * `[RESTORE]` `lib/http/api.dart`, `lib/common/constants.dart`, which match `main` again.
+* **Update check**: off in this variant through one line in `Update.checkUpdate`, because the only releases it could find are the normal app's. A manual check shows `此版本需手动更新，请到 GitHub Actions 下载`, and the automatic one stays silent.
+* **Workflow**: a run on any branch but the variant's fails at once, because the Run button defaults to `main`. The build waits for the TV checks, so a red check means no APK.
+* **Verification**:
+  * Analyze: no errors or warnings, and two infos on upstream lines in `update.dart`. 144 of 144 TV tests pass. Removing the hook fails its test.
+  * A release build reports `com.lemontea.piliplus.tv.passthrough`, `PiliPlus TVP`.
+* **Not verified**: the workflow has never run, because the Run button needs the file on `main`. The release build hasn't been installed on a TV, so neither the label nor the update message has been seen there.
+* **Next**: run the first build from the Run button, and check that APK on `<physical-tv>`.
+
+---
+
 ### [2026-10-31] Milestone M12 (Task `M12.5`): Device Verification
 * **Status**: ✅ Done, so M12 is closed. No app code changed.
 * **Branch**: `docs/tv-m12-5-device-check`
@@ -1201,3 +1396,19 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * The known gap stays open: picking 4K in the HUD on `<physical-tv>` still leads to the freeze. It wasn't tried, and the README warning covers it. `variant/4k-passthrough` is the way to play 4K.
 * **Cleanup**: the test script folder is off the TV, `<vm-tv>` is stopped with its default back at 1080P 60帧, and `PiliPlus TV dev` stays installed for later work. The runs used the signed-in account, so these videos' watch positions changed.
 * **Next**: `M13.0`.
+
+---
+
+### [2026-10-31] Docs Synced Between `main` and `variant/4k-passthrough`
+* **Status**: ✅ Done. Markdown only, so no app code changed and no release follows.
+* **Branch**: `docs/tv-sync-status`
+* **Why**: M16's docs were only on the variant and M12.5's only on `main`, so each branch's `PLAN.md` and `PROGRESS.md` were out of date about the other.
+* **Now the same on both branches**: `PLAN.md`, `PROGRESS.md`, `4K_VARIANT.md` and `PLAYBACK_PARAMETERS.md`. Change them on `main` first, then merge `main` into the variant. This ends the conflicts at their ends that the first `M16.4` entry listed as a known cost.
+* **Still different, because the code is**: `README*`, `docs/tv/README*`, `ARCHITECTURE.md` and `REVIEW.md`. Each describes the code on its own branch and points to the other for M16.
+* **Stale facts fixed**:
+  * TV test counts: `main` has 95 (65 navigation, 30 HUD), not 88, and the variant has 144 (49 of them for M16), not 137.
+  * The variant's hooks now count `lib/utils/update.dart`: 9 Dart files and about 57 lines, 30 of them for M16.
+  * The variant's `ARCHITECTURE.md` still gave the normal app's ID and label.
+  * The doc index still said the variant has a release method.
+* **First CI build**: the run from the Run button, on `a4db595eb`, passed all three jobs. Its `armeabi-v7a` APK, build 5875, reports `PiliPlus TVP` and `com.lemontea.piliplus.tv.passthrough`, and it's installed on `<physical-tv>` beside the normal app. It hasn't been opened.
+* **Next**: `M13.0`. The TVP APK still needs its own login and a check on `<physical-tv>`.

@@ -182,6 +182,10 @@ flowchart TD
 * **`uiScale`-Aware Viewport (`R9`)**: `ScaledWidgetsFlutterBinding` lays the tree out in `physicalSize / (devicePixelRatio × uiScale)`, while `View.physicalSize` and `View.devicePixelRatio` stay the platform values. A viewport derived from them was wrong whenever `uiScale ≠ 1.0`: below `1.0`, controls outside any scrollable in the right and bottom band (the fullscreen seek bar at `0.8`) were culled as off-screen; above `1.0`, off-screen nodes counted as visible. `_TvTraversalCache.viewportRectOf` now takes the size of the root `RenderView`, the space the layout and the focus rects live in.
 * **Player HUD fixes landed in the same milestone**: `R8` (Hold-Select after D-pad moves, §2.11); `R10` (the option dialog opens scrolled to the current item: `_TvOptionListDialog` has a fixed item extent and an initial scroll offset, so a lazily built list no longer loses the current episode's `autofocus`); `R11` (the Play/Pause label follows the player status event, not the key press); `R12` (`mediaPlay` and `mediaPause` are idempotent, `mediaPlayPause` toggles); `R3` / `R18` (seek cadence, §2.7); `R19` (the HUD clock ticks at minute boundaries while the HUD stays open).
 
+### 2.14 `TvVideoPlane`: 4K on the Video Plane (M16)
+
+Not on `main`. It lives on `variant/4k-passthrough`, whose copy of this file has the design and invariant `C24`. See [`4K_VARIANT.md`](./4K_VARIANT.md).
+
 ---
 
 ## 3. Preserved TV Capability Invariants (C1–C23)
@@ -229,4 +233,4 @@ The TV control layer maintains 23 verified capability invariants across navigati
 | **Android Native Memory Safety** | Strong `Activity` reference in `TvBridge` prevented garbage collection on configuration changes. | `WeakReference<Activity>` with null-safe platform channel fallbacks. | **Zero Activity memory leaks** across orientation/display mode transitions. |
 | **Patch Closure Overhead** | Anonymous closure allocated per `GestureDetector` build in directional mode. | Static method `_handleDirectionalKeyEvent` in `tv_gesture_detector.patch`. | **Zero closure allocations** during directional widget rebuilds. |
 | **Modal Layer Focus** | Bespoke fixes per kind of layer (M6 popup promotion, M9 inline sheets) and none for overlay dialogs outside the `Navigator`: the `🎉 发现新版本` dialog's buttons were unreachable by D-pad. | One `_TvFocusLayerStack` lifecycle (detect → save trigger → promote → occlude → restore) shared by popup routes and overlay dialogs; M9 inline sheets keep their own bookkeeping (§2.13). | **Dialog buttons reachable, page behind unreachable, trigger restored**; one place to fix the next kind of layer. |
-| **Automated Test Coverage** | 15 TV navigation tests. | 88 TV tests (60 navigation/benchmarks/M6/M7/M9/M10 regressions + 28 Player HUD/dialogs/3x hold speed). | **100% TV test pass rate** with deterministic latency benchmarks. |
+| **Automated Test Coverage** | 15 TV navigation tests. | 95 TV tests (65 navigation/benchmarks/M6/M7/M9/M10 regressions + 30 Player HUD/dialogs/3x hold speed). | **100% TV test pass rate** with deterministic latency benchmarks. |
