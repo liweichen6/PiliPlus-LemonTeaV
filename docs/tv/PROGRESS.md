@@ -115,7 +115,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G in M16, option F in M17 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ✅ Done | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart` (`25d0fa1e0`, `6004fa425`), `README.md`, `README.en.md` (`ed9bfea4d`) |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ✅ Done (on `v2.1.6.2-fork.5870`) | `<physical-tv>`, `<vm-tv>`, `docs/tv/*` |
 | **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ⏳ Planned (next) | `-Pdev` build, `<physical-tv>` |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ⏳ Planned | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
@@ -1164,3 +1164,40 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Privacy check**: the docs, every commit unique to this fork, the pull request refs, the text of pull requests, issues and releases, and the latest release run's log were checked against Execution Rule 4. No LAN addresses, ports, serials, local paths, local usernames, tokens or keys turned up. One rule in `M12_CRASH_DEBUG.md` was reworded.
 * **Stale facts fixed**: the no-Flutter note in `M12_CRASH_DEBUG.md`, the SDK step in `M16.1`, and the pinned version in `docs/tv/README.md` and `README.en.md`.
 * **Next**: `M16.1`, and `M12.5` on `v2.1.6.2-fork.5863` or later.
+
+---
+
+### [2026-10-31] Milestone M12 (Task `M12.5`): Device Verification
+* **Status**: ✅ Done, so M12 is closed. No app code changed.
+* **Branch**: `docs/tv-m12-5-device-check`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/REVIEW.md`.
+* **Build**: `v2.1.6.2-fork.5870`, the normal app, on `<physical-tv>`, and the same release on `<vm-tv>`.
+* **Method**: each run recorded logcat and the kernel log, with a guard that would stop the app on `gdec:1`. Every 30 s a sidecar read the process, the top activity and a new screenshot. This build has no logging, so there are no dropped-frame or frame-time numbers: these runs show that playback kept going, not how smooth it was.
+* **Runs on `<physical-tv>`**:
+
+  | Video | Quality in the HUD | Time | Result |
+  | :--- | :--- | :--- | :--- |
+  | `BV1fiHN6zEfx` | 1080P60 | 650 s | ✅ Pass |
+  | `BV1NGZtBwELa` | 1080P+ | 650 s | ✅ Pass |
+  | `BV1kMxM6FECM`, a 4K60 video | 1080P60 | 650 s | ✅ Pass |
+  | `BV1fiHN6zEfx` again, after about 30 minutes of playback | 1080P60 | 650 s | ✅ Pass |
+
+  All four used `c2.mtk.av1.decoder` with `hwRender:0, gdec:0`. Each kept one process, and every screenshot differed from the others. No freeze, ANR, crash or kernel panic, and the guard never fired. The TV stayed up throughout, and `media.player` still answered at the end.
+* **The "done" bar**:
+
+  | Row | Result |
+  | :--- | :--- |
+  | Warm TV | ✅ On for about 3.6 hours before the first run. That run was the session's first playback, so `BV1fiHN6zEfx` was repeated once the TV had played for about 30 minutes |
+  | No stored quality | ⚠️ Not provable. `默认画质` read 1080P 60帧, the seeded value, but the app can't show whether that value was stored, and its data was left alone |
+  | 10+ minutes each | ✅ With D-pad seek-backs on two videos, which are shorter than that (5:31 and 3:38) |
+  | A stored 4K choice stays | ✅ On `<vm-tv>`: 4K picked in `默认画质`, and still set after a full app restart. Not tried on `<physical-tv>`, where playing it can shut the TV down |
+  | Switching at or below 1080P60 | ✅ 1080P60 → 1080P → 720P → 1080P60 on `<physical-tv>`, each with a new decoder and `gdec:0` |
+  | D-pad stays responsive | ✅ Up showed the HUD and Left seeked at once during playback |
+  | 4K stays selectable on `<vm-tv>` | ✅ In `默认画质`, which is where it was picked. `<vm-tv>` isn't signed in, so a video's own quality list stops at 1080P there. On `<physical-tv>`, signed in, the HUD list still shows `4K 超高清`, which wasn't picked |
+
+* **Worth knowing**:
+  * A HUD pick is saved as the default: after picking 720P, the next video opened at 720P. This is the same path as the known gap, where picking 4K in the HUD freezes and is saved. The test went back to 1080P60, and `默认画质` read 1080P 60帧 afterwards.
+  * One attempt at `BV1NGZtBwELa` was thrown away: a Back press with the HUD already hidden left the player, as it should. That was a test mistake, not an app fault.
+  * The known gap stays open: picking 4K in the HUD on `<physical-tv>` still leads to the freeze. It wasn't tried, and the README warning covers it. `variant/4k-passthrough` is the way to play 4K.
+* **Cleanup**: the test script folder is off the TV, `<vm-tv>` is stopped with its default back at 1080P 60帧, and `PiliPlus TV dev` stays installed for later work. The runs used the signed-in account, so these videos' watch positions changed.
+* **Next**: `M13.0`.
