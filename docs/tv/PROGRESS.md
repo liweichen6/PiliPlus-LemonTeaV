@@ -104,7 +104,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M16) — In Progress
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M17) — In Progress
 
 | Milestone | Epic | Task ID | Task Title | Status | Target / Commit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -113,10 +113,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M11: TV Checks in CI** | Epic M11.1 | `M11.3` | Verification (a Failing Test Blocks Merge and Release) & Docs | ✅ Done (branch protection on `main` is a user action) | `docs/tv/*` (`4e4284b05`, `64c0b6983`); branch protection on `main` (user) |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.1` | Device Profile (Model, SoC, RAM, Android, Decoder Capabilities) | ✅ Done | `<physical-tv>`, `tool/tv_codecs.sh` |
 | **M12: Playback Freeze on the Physical TV** | Epic M12.1 | `M12.2` | Reproduction Matrix (Quality × Codec × Hardware Decoding × Thread Ripper; Upstream APK) | ✅ Done (two device sessions; thread ripper and software decoding not run, see the session 2 entry) | `<physical-tv>` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G next, option F deferred to M16 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | 🔄 Built, awaiting CI | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `README.md`, `README.en.md` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
-| **M12: Playback Freeze on the Physical TV** | Epic M12.4 | `M12.6` | Option G, 4K on a `SurfaceView` (Spike First) | ⏳ Planned | Estimate in `docs/tv/PLAN.md`, M12.3 |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.3` | Root Cause & Fix Decision (Discussion Gate) | ✅ Decided: option A now, option G in M16, option F in M17 | `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/M12_CRASH_DEBUG.md` |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.2 | `M12.4` | Fix & Regression Tests | ✅ Done | `lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart` (`25d0fa1e0`, `6004fa425`), `README.md`, `README.en.md` (`ed9bfea4d`) |
+| **M12: Playback Freeze on the Physical TV** | Epic M12.3 | `M12.5` | Device Verification & Docs | ⏳ Planned (next) | `<physical-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
@@ -129,8 +128,11 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
-| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
-| **M16: ExoPlayer for HDR and Dolby Vision** | Epic M16.1 | `M16.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M16 |
+| **M16: 4K on the Video Plane** | Epic M16.1 | `M16.1` | Spike (Go/No-Go) | ⏳ Planned (needs the user's go-ahead) | `-Pdev` build, `<physical-tv>` |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ⏳ Planned | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` |
+| **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M17 |
 
 ---
 
@@ -1107,3 +1109,26 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **"TV layer only"**: true today (5 upstream Dart files, 27 added lines) and for option A. Option G breaks it by a little: 2 more upstream files, both busy. Option F breaks it outright.
 * **Option F**: moved to a new M16. Its place after M15 is proposed, not confirmed.
 * **Open input** (owner: user): confirm M16's place; go-ahead for G's spike; the pull request for this branch.
+
+---
+
+### [2026-10-30] Milestone M12 (Task `M12.4`): Option A Merged, M12 Reorganized, Option G Moved to M16
+* **Status**: `M12.4` ✅ Done, but option A is on `main` and not released. `M12.5` ⏳ is next and is the only M12 task left.
+* **Branch**: `docs/tv-m12-plan`
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap and ordering, M12, M14, new M16, M17), `docs/tv/PROGRESS.md`.
+* **Verification**: on `6004fa425`, `tv-checks.yml` found no analyze issues and all 95 TV tests passed. The first run failed analyze, because the new test imported `video_quality.dart`, which is a `part` of `base_quality.dart`; `6004fa425` fixed the import. Option A hasn't been checked on a device yet.
+* **Landed**: [PR 6](https://github.com/liweichen6/PiliPlus-LemonTeaV/pull/6) as one merge commit. It contains the branch of [PR 5](https://github.com/liweichen6/PiliPlus-LemonTeaV/pull/5), so both landed together, with one release run instead of one without the fix followed by a second.
+* **Release failed**: the run on `95fbbc786` stopped in `Sync upstream main`, so nothing was built and `v2.1.6.2-fork.5799` is still the latest release.
+  * Upstream's 28 new commits merged without conflicts, but GitHub refused the push to `main`. Upstream changed `.github/workflows/sync-upstream-build.yml` on 2026-10-27, and a push that changes a workflow file needs a token with workflow permission. `tv-sync-build.yml` asks for the `SYNC_TOKEN` secret, which was never set, so it falls back to `GITHUB_TOKEN`.
+  * Option A didn't cause this, and every sync fails the same way until it's fixed, the weekly run included. The last good sync, on 2026-10-26, came before upstream's change.
+  * The README on `main` already says TVs default to 1080P 60 fps, which is only true from the next release.
+* **Branches**: deleted, after checking each one is on `main`: `fix/tv-m12-default-quality`, `docs/tv-m12-device-profile`, `debug/tv-m12-crash`, and the older merged `ci/tv-checks-m11` and `docs/tv-plan-m11-m15`. The local `docs/tv-m12-device-profile` had one commit under a different hash; `git cherry` showed the same patch on `main`.
+* **Plan changes**:
+  * Option G is now its own milestone, M16, with three tasks, and `M12.6` is gone. As a task it would have held M12 open, and M13 and M14 wait for M12. A failed spike now ends M16 and leaves M12's result standing.
+  * Option F moves from M16 to M17, so G's spike comes before the work that depends on it. Earlier entries in this file that call F M16 stay as written. M13–M15 keep their numbers.
+  * M16 is proposed right after M12, and M17 after M15. Neither place is confirmed, and the numbers don't show the order.
+  * M12 went from about 80 lines to about 35. Root cause, decision, options, the "done" bar and tasks now sit at one level, and F's and G's details moved to their milestones. The refuted hypothesis, the two session summaries and the answered inputs left the plan; the session details stay in this file.
+  * Two corrections. Option G's summary said it needs a change to the media_kit fork, but the estimate's preferred design needs none. Option B's line gave the HUD gap as the reason it wasn't taken, when that gap is the result of not taking it.
+  * M14 gets the rule that a button shows by what the current player supports. It was a note under option F; M16 now needs it first.
+* **Next**: unblock the release, then `M12.5`, on a warm `<physical-tv>`, with a release build that has option A.
+* **Open input** (owner: user): a `SYNC_TOKEN` secret with workflow permission, or a pull request that merges upstream by hand; confirm the places of M16 and M17; go-ahead for M16's spike.
