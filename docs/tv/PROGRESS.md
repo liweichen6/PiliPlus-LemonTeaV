@@ -1440,4 +1440,5 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
 * **Decision** (the user): M13 runs on `<vm-tv>`. This replaces `<physical-tv>` in `M13.0`, `M13.5` and the "done" bar. The engine is the same code on both, but `<vm-tv>`'s times aren't the TV's, so these targets can't prove the lag seen on `<physical-tv>` is gone.
 * **First inventory item** (the user): on 我的 with several sections on, focus stops at the `观看记录` header and nothing below it can be reached. Not reproduced yet: it needs a login on `<vm-tv>`. The lead in `M13_BASELINE.md`, that the page's lazy `ListView` hasn't built those sections, is unconfirmed.
+* **Second inventory item** (the user): `播放全部` in 稍后再看 can't be selected. Not reproduced yet. It's a floating button, and the same one is in 收藏, so this may be a class of bugs. The lead is in `M13_BASELINE.md`, unconfirmed.
 * **Next**: prove the probe's clocks on `<vm-tv>`, then the runs in `M13_BASELINE.md`.

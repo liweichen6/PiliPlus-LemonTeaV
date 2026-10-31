@@ -118,10 +118,13 @@ The user's list so far. They expect to add more as they remember it. Each one ge
 | # | Screen | Steps | Expected | What happens | Kind | Reproduced | Cause |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 1 | 我的, with several sections on in settings (`稍后再看`, `观看记录` and so on) | Open 我的 and press Down through the sections | Focus carries on through every section, and the page scrolls to show it | Focus stops at the `观看记录` header, the page stops scrolling, and nothing below it can be reached or seen | `stuck` | Not yet. Seen on `<physical-tv>`, and needs a login on `<vm-tv>` | Unknown |
+| 2 | 稍后再看 | Open 稍后再看 and try to reach `播放全部` with the D-pad | Focus can land on `播放全部`, and Select plays the list | The button can't be selected | `stuck` | Not yet. Seen on `<physical-tv>`, and needs a login on `<vm-tv>` | Unknown |
 
 Kind is `jump`, `lost ring`, `lag` or `stuck`.
 
 **Lead on 1, not confirmed**: `lib/pages/mine/view.dart` puts each section in one vertical `ListView`, which builds lazily, and each section holds a horizontal list of cards. A section past the build range has no focus nodes, so the engine may see nothing below the header. The user's screenshots of this page also show one state with no ring at all, which may be a second symptom.
+
+**Lead on 2, not confirmed**: `播放全部` is a `FloatingActionButton` in `lib/pages/later/view.dart`, floating over the list instead of sitting beside it, so no direction may lead to it. `AnimatedSlide` also pushes it 75 % off the screen until `isPlayAll` is on, and only a swipe or a press changes that. `lib/pages/fav_detail/view.dart` has the same button, and about 20 pages under `lib/pages` use a `FloatingActionButton`, so check whether this is one bug or a whole class.
 
 ## What These Runs Can't Show
 
