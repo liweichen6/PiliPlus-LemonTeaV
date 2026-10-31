@@ -88,7 +88,7 @@ git push origin HEAD:sync/upstream
 ## 4. 本地构建 Release APK 指南
 
 ### 环境要求
-- **Flutter SDK**：需与 [`pubspec.yaml`](../../pubspec.yaml) 中锁定的版本一致（`3.47.8` stable，Dart `>=3.13.0`）。
+- **Flutter SDK**：需与 [`pubspec.yaml`](../../pubspec.yaml) 中锁定的版本一致（`3.47.9` stable，Dart `>=3.13.0`）。
 - **Java 17** 与 **Android SDK**（`compileSdk = 37`）。
 - **补丁脚本**：[`./tool/tv_patch.sh`](../../tool/tv_patch.sh)（适用于 macOS/Linux 的 Bash 脚本，与 CI 使用的 [`lib/scripts/patch.ps1`](../../lib/scripts/patch.ps1) 完全等价）。
 

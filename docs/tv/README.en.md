@@ -88,7 +88,7 @@ git push origin HEAD:sync/upstream
 ## 4. Building Release APKs Locally
 
 ### Prerequisites
-- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.47.8` stable, Dart `>=3.13.0`).
+- **Flutter SDK**: Matching the version pinned in [`pubspec.yaml`](../../pubspec.yaml) (`3.47.9` stable, Dart `>=3.13.0`).
 - **Java 17** & **Android SDK** (`compileSdk = 37`).
 - **Patch Helper**: [`./tool/tv_patch.sh`](../../tool/tv_patch.sh) (macOS/Linux bash equivalent of [`lib/scripts/patch.ps1`](../../lib/scripts/patch.ps1)).
 
