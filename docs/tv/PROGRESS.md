@@ -120,7 +120,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (tools ready; no device run yet) | `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1412,3 +1412,22 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * The doc index still said the variant has a release method.
 * **First CI build**: the run from the Run button, on `a4db595eb`, passed all three jobs. Its `armeabi-v7a` APK, build 5875, reports `PiliPlus TVP` and `com.lemontea.piliplus.tv.passthrough`, and it's installed on `<physical-tv>` beside the normal app. It hasn't been opened.
 * **Next**: `M13.0`. The TVP APK still needs its own login and a check on `<physical-tv>`.
+
+---
+
+### [2026-10-31] Milestone M13 (Task `M13.0`, Prep): D-Pad Step Tools and Protocol
+* **Status**: 🔄 In progress. The tools and the protocol are ready. Nothing has been measured on `<physical-tv>` yet, and the bug inventory waits for the user's list.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[NEW] docs/tv/M13_BASELINE.md`, `tool/tv_m13/logging.patch`, `tool/tv_m13/run.sh`, `tool/tv_m13/steps.py`; `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`. No app code changed: the probe exists only inside the patch.
+* **Decision**: `-Pdev` release plus a logging patch instead of a profile build. `--profile` inherits the `debug` build type, so it would install as a separate `.debug` app with no login. This is how M16 measured frame times, and a profile build stays available if these numbers can't say where the time goes.
+* **What the probe adds to M16's frame windows**:
+  * One line per D-pad step, split into `input`, `decide`, `ring`, `wait`, `build`, `raster` and `total`. It times the frame that shows the moved ring, not the focus change, because the ring waits a frame when a step scrolls.
+  * `engine`: the time `_onPersistentFrame` takes on every frame. M13.2 replaces that callback, and its cost has never been measured.
+* **Verification**:
+  * With the patch applied: analyze found no issues, all 95 TV tests passed, so the hooks change no behaviour, and those tests' real key handling printed 235 step lines.
+  * A throwaway test fed the probe fake frames: it skipped a frame already building when the ring moved, ignored Enter, and gave up on a key that moved nothing.
+  * `steps.py` gave the right figures on a sample log, and `run.sh` refuses Back and Select.
+  * The patch applies to `main`, and `variant/4k-passthrough` has the same `tv_navigation.dart`.
+  * A `-Pdev` release build compiled with the patch applied: `com.lemontea.piliplus.tv.dev`, `PiliPlus TV dev`, not debuggable, with the probe in the compiled code. It was built for `<vm-tv>`'s arm64, and it hasn't been installed anywhere.
+* **Not verified**: the clocks. The probe assumes Android's key time, `Timeline.now` and `FrameTiming` share CLOCK_MONOTONIC, which only a real device can show. Until a run confirms it, `input` and `total` are unproven. `run.sh` hasn't run on a device.
+* **Next** (owner: user): the list of screens where focus jumps or the ring disappears, and the TV on for a device session.

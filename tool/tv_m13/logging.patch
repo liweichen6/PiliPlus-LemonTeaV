@@ -1,0 +1,226 @@
+diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
+index 013ed9283..9b9fa9072 100644
+--- a/lib/tv/tv_navigation.dart
++++ b/lib/tv/tv_navigation.dart
+@@ -6,6 +6,7 @@ import 'package:PiliPlus/common/widgets/scaffold/bottom_sheet_layout.dart'
+     show BottomSheetLayout, BottomSheetType;
+ import 'package:PiliPlus/pages/login/controller.dart';
+ import 'package:PiliPlus/tv/tv_platform.dart';
++import 'package:PiliPlus/tv/tv_step_probe.dart';
+ import 'package:flutter/rendering.dart'
+     show
+         BoxParentData,
+@@ -2143,7 +2144,10 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
+     if (primaryFocus == null || primaryFocus.context == null) {
+       return false;
+     }
+-    return policy.inDirection(primaryFocus, intent.direction);
++    final Stopwatch timer = Stopwatch()..start();
++    final bool handled = policy.inDirection(primaryFocus, intent.direction);
++    TvStepProbe.decided(timer.elapsedMicroseconds, handled);
++    return handled;
+   }
+ }
+ 
+@@ -2158,7 +2162,10 @@ class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
+     if (primaryFocus == null || primaryFocus.context == null) {
+       return false;
+     }
+-    return policy.inDirection(primaryFocus, intent.direction);
++    final Stopwatch timer = Stopwatch()..start();
++    final bool handled = policy.inDirection(primaryFocus, intent.direction);
++    TvStepProbe.decided(timer.elapsedMicroseconds, handled);
++    return handled;
+   }
+ }
+ 
+@@ -2224,8 +2231,11 @@ class _TvNavigationState extends State<TvNavigation>
+   static _TvNavigationState? _mounted;
+   static bool _frameCallbackInstalled = false;
+ 
+-  static void _onPersistentFrame(Duration timeStamp) =>
+-      _mounted?._syncFocusRectAfterLayout(timeStamp);
++  static void _onPersistentFrame(Duration timeStamp) {
++    final Stopwatch timer = Stopwatch()..start();
++    _mounted?._syncFocusRectAfterLayout(timeStamp);
++    TvStepProbe.perFrame(timer.elapsedMicroseconds);
++  }
+ 
+   final GlobalKey _key = GlobalKey();
+   final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
+@@ -2270,6 +2280,7 @@ class _TvNavigationState extends State<TvNavigation>
+   @override
+   void initState() {
+     super.initState();
++    TvStepProbe.start();
+     WidgetsBinding.instance.addObserver(this);
+     HardwareKeyboard.instance.addHandler(_observeHardwareKeyEvent);
+     FocusManager.instance.addListener(_onFocus);
+@@ -2308,6 +2319,7 @@ class _TvNavigationState extends State<TvNavigation>
+   }
+ 
+   bool _observeHardwareKeyEvent(KeyEvent event) {
++    TvStepProbe.key(event);
+     if (!TvPlatform.isTv) return false;
+     final LogicalKeyboardKey key = event.logicalKey;
+     final bool isSelect =
+@@ -2848,6 +2860,7 @@ class _TvNavigationState extends State<TvNavigation>
+   void _updateRect(Rect? next) {
+     if (!_sameRect(next, _rectNotifier.value)) {
+       _rectNotifier.value = next;
++      TvStepProbe.ring();
+     }
+   }
+ 
+diff --git a/lib/tv/tv_step_probe.dart b/lib/tv/tv_step_probe.dart
+new file mode 100644
+index 000000000..4faa035a9
+--- /dev/null
++++ b/lib/tv/tv_step_probe.dart
+@@ -0,0 +1,146 @@
++// TEMPORARY, never committed: D-pad step and frame timing for M13.0. Applied with
++// tool/tv_m13/logging.patch, and read by tool/tv_m13/steps.py.
++// ignore_for_file: avoid_print
++import 'dart:developer' show Timeline;
++import 'dart:ui' show FramePhase, FrameTiming;
++
++import 'package:flutter/scheduler.dart' show SchedulerBinding;
++import 'package:flutter/services.dart';
++
++class _Step {
++  _Step(this.key, this.repeat, this.eventUs, this.dartUs);
++
++  final String key;
++  final bool repeat;
++  final int eventUs;
++  final int dartUs;
++  int decideUs = 0;
++  bool handled = false;
++  int? ringUs;
++}
++
++/// All times are CLOCK_MONOTONIC microseconds: `KeyEvent.timeStamp` from
++/// Android's event time, `Timeline.now` and `FrameTiming` from the engine.
++abstract final class TvStepProbe {
++  // A key that moves no ring ends here, for example at the edge of a list.
++  static const int _giveUpUs = 1000000;
++  static const int _frameBudgetUs = 16667;
++  static const int _windowUs = 10000000;
++
++  static bool _started = false;
++  static int _windowStartUs = 0;
++  static _Step? _last;
++  static final List<_Step> _steps = <_Step>[];
++  static final List<int> _build = <int>[];
++  static final List<int> _raster = <int>[];
++  static final List<int> _total = <int>[];
++  static final List<int> _perFrame = <int>[];
++
++  static void start() {
++    if (_started) return;
++    _started = true;
++    print('[m13] start now=${Timeline.now}');
++    SchedulerBinding.instance.addTimingsCallback(_onTimings);
++  }
++
++  static String? _name(LogicalKeyboardKey key) {
++    if (key == LogicalKeyboardKey.arrowUp) return 'up';
++    if (key == LogicalKeyboardKey.arrowDown) return 'down';
++    if (key == LogicalKeyboardKey.arrowLeft) return 'left';
++    if (key == LogicalKeyboardKey.arrowRight) return 'right';
++    return null;
++  }
++
++  static void key(KeyEvent event) {
++    if (event is KeyUpEvent) return;
++    final name = _name(event.logicalKey);
++    if (name == null) return;
++    final step = _Step(
++      name,
++      event is KeyRepeatEvent,
++      event.timeStamp.inMicroseconds,
++      Timeline.now,
++    );
++    _last = step;
++    _steps.add(step);
++  }
++
++  static void decided(int micros, bool handled) {
++    final step = _last;
++    if (step == null || step.decideUs != 0) return;
++    step
++      ..decideUs = micros
++      ..handled = handled;
++  }
++
++  static void ring() {
++    final step = _last;
++    if (step != null && step.ringUs == null) step.ringUs = Timeline.now;
++  }
++
++  /// The engine's own work on every frame, whether or not a key was pressed.
++  static void perFrame(int micros) => _perFrame.add(micros);
++
++  static void _onTimings(List<FrameTiming> timings) {
++    for (final t in timings) {
++      _build.add(t.buildDuration.inMicroseconds);
++      _raster.add(t.rasterDuration.inMicroseconds);
++      _total.add(t.totalSpan.inMicroseconds);
++      _steps.removeWhere((step) => _finish(step, t));
++      final int end = t.timestampInMicroseconds(FramePhase.rasterFinish);
++      if (_windowStartUs == 0) _windowStartUs = end;
++      if (end - _windowStartUs >= _windowUs) {
++        _windowStartUs = end;
++        _flush();
++      }
++    }
++  }
++
++  // The frame that shows the ring is the first one built after the ring moved.
++  static bool _finish(_Step step, FrameTiming t) {
++    final int buildStart = t.timestampInMicroseconds(FramePhase.buildStart);
++    final int rasterFinish = t.timestampInMicroseconds(FramePhase.rasterFinish);
++    final int? ring = step.ringUs;
++    if (ring == null) {
++      if (rasterFinish - step.dartUs < _giveUpUs) return false;
++      print(
++        '[m13] step key=${step.key} rep=${step.repeat ? 1 : 0} moved=0 '
++        'handled=${step.handled ? 1 : 0} decide=${step.decideUs}',
++      );
++      return true;
++    }
++    if (buildStart < ring) return false;
++    print(
++      '[m13] step key=${step.key} rep=${step.repeat ? 1 : 0} moved=1 '
++      'handled=${step.handled ? 1 : 0} '
++      'input=${step.dartUs - step.eventUs} decide=${step.decideUs} '
++      'ring=${ring - step.dartUs} wait=${buildStart - ring} '
++      'build=${t.buildDuration.inMicroseconds} '
++      'raster=${t.rasterDuration.inMicroseconds} '
++      'total=${rasterFinish - step.eventUs}',
++    );
++    return true;
++  }
++
++  static String _stats(List<int> values) {
++    final sorted = values.toList()..sort();
++    int at(double p) => sorted[((sorted.length - 1) * p).round()];
++    return 'p50=${at(.5)} p90=${at(.9)} p99=${at(.99)} max=${sorted.last}';
++  }
++
++  static void _flush() {
++    if (_total.isNotEmpty) {
++      final over = _total.where((t) => t > _frameBudgetUs).length;
++      print(
++        '[m13] frames=${_total.length} over16ms=$over '
++        'build ${_stats(_build)} raster ${_stats(_raster)} '
++        'total ${_stats(_total)}'
++        '${_perFrame.isEmpty ? '' : ' engine ${_stats(_perFrame)}'}',
++      );
++    }
++    _perFrame.clear();
++    _build.clear();
++    _raster.clear();
++    _total.clear();
++  }
++}
