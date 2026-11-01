@@ -27,6 +27,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M10`), and 23 capability invariants (`C1`–`C23`). |
 | [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant, on `variant/4k-passthrough`: what differs from `main`, how to update it from `main`, its device check, and how to build it. |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | Every mpv option tried on the video plane, with results, and which ones became settings. |
+| [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0: how to time a D-pad step, the run list, the time budget, and the focus bug inventory. |
 | [**REVIEW.md**](./REVIEW.md) | **Comprehensive Android TV Layer Code & Architecture Review**: file-by-file engineering audit, technical observations (`R1`–`R20`), and upstream sync risk matrix. |
 | [**PLAN.md**](./PLAN.md) | Complete implementation, optimization, and remediation roadmap across **Phase 1–3 → Milestone → Epic → Task**, with verification criteria and privacy rules. |
 | [**PROGRESS.md**](./PROGRESS.md) | Task-by-task execution log, commit hashes, before/after performance benchmarks, and dual-device verification results. |
@@ -137,6 +138,8 @@ Built APKs are written to `build/app/outputs/flutter-apk/`:
 
 > **Tip (Debugging Playback on a TV)**:
 > `tool/tv_m12/` holds the tools from M12's crash-debug track. `run.sh` runs one test over adb and records logcat, the kernel log and a sampler on the development machine, so they survive a kernel panic; `probe_app.sh` installs a small test app that plays a local file on a `SurfaceView` or a `TextureView`; `postpanic.sh` collects the evidence after a panic. They read `ANDROID_SERIAL`, `M12_MEDIA` and `M12_RUNS` from the environment. Some runs can shut the TV down: see [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
+>
+> `tool/tv_m13/` holds M13.0's D-pad timing tools. `logging.patch` adds per-step timing to a `-Pdev` build and is never committed applied, `run.sh` replays D-pad keys on the current screen, and `steps.py` sums up the results. See [`M13_BASELINE.md`](./M13_BASELINE.md).
 
 > **Tip (Listing a TV's Decoders)**:
 > `./tool/tv_codecs.sh` prints, over adb, every video decoder that `MediaCodecList` reports on the device (the list the app actually sees): the sizes, frame rates, performance points and profile/level pairs each one claims. No app install or root is needed; pass `all` to include audio decoders, and set `ANDROID_SERIAL` to pick the device.

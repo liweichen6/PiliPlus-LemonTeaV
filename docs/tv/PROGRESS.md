@@ -120,12 +120,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ⏳ Planned | `<physical-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (budget confirmed; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
@@ -1412,3 +1412,102 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * The doc index still said the variant has a release method.
 * **First CI build**: the run from the Run button, on `a4db595eb`, passed all three jobs. Its `armeabi-v7a` APK, build 5875, reports `PiliPlus TVP` and `com.lemontea.piliplus.tv.passthrough`, and it's installed on `<physical-tv>` beside the normal app. It hasn't been opened.
 * **Next**: `M13.0`. The TVP APK still needs its own login and a check on `<physical-tv>`.
+
+---
+
+### [2026-10-31] Milestone M13 (Task `M13.0`, Prep): D-Pad Step Tools and Protocol
+* **Status**: 🔄 In progress. The tools and the protocol are ready. Nothing has been measured on `<physical-tv>` yet, and the bug inventory waits for the user's list.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[NEW] docs/tv/M13_BASELINE.md`, `tool/tv_m13/logging.patch`, `tool/tv_m13/run.sh`, `tool/tv_m13/steps.py`; `[MODIFY] docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`. No app code changed: the probe exists only inside the patch.
+* **Decision**: `-Pdev` release plus a logging patch instead of a profile build. `--profile` inherits the `debug` build type, so it would install as a separate `.debug` app with no login. This is how M16 measured frame times, and a profile build stays available if these numbers can't say where the time goes.
+* **What the probe adds to M16's frame windows**:
+  * One line per D-pad step, split into `input`, `decide`, `ring`, `wait`, `build`, `raster` and `total`. It times the frame that shows the moved ring, not the focus change, because the ring waits a frame when a step scrolls.
+  * `engine`: the time `_onPersistentFrame` takes on every frame. M13.2 replaces that callback, and its cost has never been measured.
+* **Verification**:
+  * With the patch applied: analyze found no issues, all 95 TV tests passed, so the hooks change no behaviour, and those tests' real key handling printed 235 step lines.
+  * A throwaway test fed the probe fake frames: it skipped a frame already building when the ring moved, ignored Enter, and gave up on a key that moved nothing.
+  * `steps.py` gave the right figures on a sample log, and `run.sh` refuses Back and Select.
+  * The patch applies to `main`, and `variant/4k-passthrough` has the same `tv_navigation.dart`.
+  * A `-Pdev` release build compiled with the patch applied: `com.lemontea.piliplus.tv.dev`, `PiliPlus TV dev`, not debuggable, with the probe in the compiled code. It was built for `<vm-tv>`'s arm64, and it hasn't been installed anywhere.
+* **Not verified**: the clocks. The probe assumes Android's key time, `Timeline.now` and `FrameTiming` share CLOCK_MONOTONIC, which only a real device can show. Until a run confirms it, `input` and `total` are unproven. `run.sh` hasn't run on a device.
+* **Next** (owner: user): the list of screens where focus jumps or the ring disappears, and the TV on for a device session.
+
+---
+
+### [2026-10-31] Milestone M13 (Task `M13.0`, Prep): `<vm-tv>` Only, and the First Bug
+* **Status**: 🔄 In progress. No run yet.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `docs/tv/README.md`, `docs/tv/README.en.md`.
+* **Decision** (the user): M13 runs on `<vm-tv>`. This replaces `<physical-tv>` in `M13.0`, `M13.5` and the "done" bar. The engine is the same code on both, but `<vm-tv>`'s times aren't the TV's, so these targets can't prove the lag seen on `<physical-tv>` is gone.
+* **First inventory item** (the user): on 我的 with several sections on, focus stops at the `观看记录` header and nothing below it can be reached. Not reproduced yet: it needs a login on `<vm-tv>`. The lead in `M13_BASELINE.md`, that the page's lazy `ListView` hasn't built those sections, is unconfirmed.
+* **Second inventory item** (the user): `播放全部` in 稍后再看 can't be selected. Not reproduced yet. It's a floating button, and the same one is in 收藏, so this may be a class of bugs. The lead is in `M13_BASELINE.md`, unconfirmed.
+* **Next**: prove the probe's clocks on `<vm-tv>`, then the runs in `M13_BASELINE.md`.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0`): Runs, Bug Causes and a Proposed Budget
+* **Status**: 🔄 In progress. The six runs and the inventory's causes are done on `<vm-tv>`. The budget waits for the user, and more bugs may follow. `M13.1` hasn't started.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`, `tool/tv_m13/logging.patch`. No app code changed.
+* **Probe**:
+  * The first `input` read about 66 s, the device's uptime. Android's key time arrives in milliseconds, in a field Dart reads as microseconds, so the patch now multiplies it by 1000. `input` can read up to 1 ms long.
+  * A new `[m13] clock` line proves the clocks: `Timeline.now` taken just after a frame's `buildFinish` was always positive, 15 µs to 23 ms after it, over about 9,400 frames.
+  * `run.sh` worked on the device, and needs `ANDROID_SERIAL` and `M12_RUNS`.
+  * Blind spot: `moved=0 handled=1` means focus moved but the ring's rect didn't. None of the six runs had one, so no step is missing from the times.
+* **Decision**: measured without a profile build, because these numbers do say where the time goes.
+* **Runs**: the table is in `M13_BASELINE.md`.
+  * `decide` is 0.5–6 % of `total` on most runs, and at most about 10 % on the comments run's 29 plain steps. Its worst p90 is 2.27 ms.
+  * `_onPersistentFrame` costs 0.02 ms a frame, so M13.2 is justified by correctness, not speed.
+  * On steps that scroll, `ring` is 17–21 % of `total`, mostly the one-frame wait by design since M7.
+  * `raster` is the emulator's software GPU: 1.2 ms on the first frame after idle, and 33–48 ms on any frame after that.
+  * `<vm-tv>`'s software GPU understates the engine's share compared with a real GPU, and it can't show the TV's CPU. `decide` would have to run about 7 times slower than here to fill a frame by itself.
+* **Changes to the protocol**: runs 3 and 4 use `down down down up up up`, because `right` moves nothing there and `left` leaves the list. The first attempt at run 3 was thrown away for that reason. `开启硬解` was off for the playing runs, because the emulator's H.264 decoder never outputs a frame, so they used software decoding on a software GPU.
+* **Inventory**, all reproduced on `<vm-tv>` after the user's QR login:
+  * Bug 1: `_ensureVisibleInUserScrollables` reveals the same leaf in every scrollable, so an outer list never scrolls for a card inside a horizontal list. A throwaway build that passes each level its own child fixed it on the device. The lazy-build lead was wrong.
+  * Bug 2: a class. The rules only accept a target outside the focused list, and a floating control sits over it. Reproduced in 稍后再看, on the comments reply button and on WebDAV save, and four layouts failed a 1,500-key test on the real engine. Sixteen more pages share the layout and weren't tested on the device. A throwaway change reached `播放全部`, but only from the end of the list, so it proves the cause and isn't the fix. The `AnimatedSlide` lead was wrong.
+  * Bug 3, new: the `⋮` on video cards can't be reached, because it's a `Stack` sibling of the card.
+  * Bug 4, new: Up from a right-column `×` in 稍后再看 lands in the left column.
+* **Not the engine, so items of their own**: painting on `<physical-tv>`, which `<vm-tv>` can't measure; playback while the D-pad is in use, `total` 108–156 ms here on software decoding; and an ANR, where a stuck player blocked Android's main thread inside `libmpv` when leaving it.
+* **Budget**: the proposal is in `M13_BASELINE.md`. The first proposal fails four of the six runs because of `raster`, so it stays the goal for `<physical-tv>`, and M13.5's gate on `<vm-tv>` moves to the parts the engine controls.
+* **Verification**:
+  * With the patch applied, analyze gives the same 41 `info` lines as without it, none in the TV code, and all 95 TV tests pass. The `analyze found no issues` in the earlier entry left those out.
+  * The patch applies to this branch, and `main` and `variant/4k-passthrough` have the same `tv_navigation.dart`.
+  * Both diagnostic changes passed the 95 TV tests. They and the scratch tests aren't on any branch.
+* **Not verified**: anything on `<physical-tv>`, by the user's decision; the sixteen other floating-control pages and the other pages that share bug 1's path, on the device.
+* **Cleanup**: `<vm-tv>` is stopped, with the clean probe build installed, and `开启硬解` and `我的页卡片` are back as they were. `PiliPlus TV dev` stays signed in for M13.3 and M13.5. No video was played while signed in, and nothing in the account's lists was changed.
+* **Next** (owner: user): confirm the budget, decide whether bug 1's fix lands ahead of M13.3, and add any more bugs. `M13.1` waits for the go-ahead.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0`): Bench on `<physical-tv>`, Budget Adjusted
+* **Status**: 🔄 In progress. The six runs are done on `<physical-tv>` too. The adjusted budget waits for the user, and `M13.1` hasn't started.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): bench `<physical-tv>` and adjust the budget. This is one exception to M13 running on `<vm-tv>`, and the work itself stays there.
+* **Setup**: the same clean probe, built for `armeabi-v7a` as `-Pdev` and not debuggable. It installed over `PiliPlus TV dev`, and the normal app wasn't touched. `默认画质` read `1080P 60帧` before any video played, and a log guard adapted from `tool/tv_m16/run.sh` watched for `gdec:1` and `Detile`. It never fired. The playing runs used a video with about 1,900 danmaku, on hardware decoding, signed out, so no watch history changed.
+* **What this changes**: the earlier entry today said M13's case is the bugs, not speed. That came from `<vm-tv>`, and the TV corrects it.
+  * `decide` is 8–18 % of a step, against 0.5–6 %, and 3.4–4.6 times slower idle, or 10–12 times while a video plays. Its worst p99 is 20.59 ms, more than a frame by itself.
+  * On the comments list, where every step scrolls, `decide` and the ring path together are 45–53 % of a step. `ring` is 31 ms there.
+  * The per-frame callback is still only 0.08 ms, so that part holds: replacing it brings no speed.
+  * `raster` isn't the bottleneck `<vm-tv>` suggested, at 4–10 ms against 33–48 ms, but the home grid's 15.3 ms is a real item.
+* **Budget**: the goal stays `work` p90 at or under 16.7 ms and `total` p90 at or under 33.3 ms. The gate moves to `<physical-tv>` and to what the engine controls, in `M13_BASELINE.md`. Four of its limits fail today, so they ask for a faster engine. One, `total` p90 at or under 55 ms on scrolling comments, needs the ring to move in the frame that scrolls, and nobody has shown that yet. It falls back to 72 ms if M13.2 can't do it.
+* **Consequence**: M13.5 and the "done" bar in `PLAN.md` now check the budget on `<physical-tv>`, so M13.5 needs one more bench. `decide` p90 at or under 1.75 ms on `<vm-tv>` is the stand-in for day-to-day work.
+* **Not the engine, so items of their own**: painting the home grid, and video and danmaku on the UI thread. The ANR from `<vm-tv>` didn't happen on `<physical-tv>`.
+* **Separate finding**: a thread in the TV's codec service had been retrying since about 13 minutes after the TV started, so `run.sh`'s `C2BqBuffer failures` count isn't from these runs. Its cause is unknown, and it isn't the M16.3 hang.
+* **Verification**: the clocks hold on the TV, positive over 20,841 frames. There was no ANR, no guard trip and no `moved=0 handled=1` in the six runs.
+* **Not verified**:
+  * One bench in one session, so nothing shows how much these numbers vary between days.
+  * The playing resolution wasn't read directly. The default was `1080P 60帧`, no `gdec:1` appeared, and no 4K layer was listed.
+  * The probe can't split `ring` past `decide` into the wait and that frame's work.
+  * Whether the dev app's process had exited: `pidof` still returned a line straight after the force-stop, and the TV stopped answering `adb` once asleep. It was no longer on top.
+* **Cleanup**: the dev app is force-stopped, and the test folder is off the TV. `PiliPlus TV dev` stays installed with the probe build. The TV was put to sleep with `KEYCODE_SLEEP` (`mWakefulness=Asleep`), and `adb` is disconnected.
+* **Next** (owner: user): confirm the budget, including the extra bench before M13.5, and decide on landing and on bug 1's fix. `M13.1` waits for the go-ahead.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0`): Done
+* **Status**: ✅ Done. The inventory stays open for bugs the user remembers.
+* **Branch**: `feat/tv-m13-baseline`, not pushed.
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): the adjusted budget in `M13_BASELINE.md` stands. So the gate for M13.5 is on `<physical-tv>`, one more bench comes before M13.5, and the 55 ms limit on scrolling comments falls back to 72 ms only if M13.2 can't move the ring in the frame that scrolls.
+* **Next** (owner: user): whether to land this branch, which publishes a public release because `tool/tv_m13/` isn't Markdown; whether bug 1's fix lands ahead of M13.3; and the go-ahead for `M13.1`.
