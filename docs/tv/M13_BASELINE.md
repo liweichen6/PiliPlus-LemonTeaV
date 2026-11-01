@@ -194,7 +194,7 @@ The user's list so far. They expect to add more as they remember it. Each one ge
 
 | # | Screen | Steps | Expected | What happens | Kind | Reproduced | Cause |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | 我的, with several sections on in `我的页卡片` (`稍后再看`, `观看记录` and so on) | Open 我的 and press Down through the sections | Focus carries on through every section, and the page scrolls to show it | Down from the `观看记录` header moves focus off screen: the ring disappears, the page stops scrolling, and nothing below it can be reached or seen | `stuck`, `lost ring` | Yes, on `<vm-tv>` | `_ensureVisibleInUserScrollables` reveals the same leaf in every scrollable, so the outer list never scrolls |
+| 1 | 我的, with several sections on in `我的页卡片` (`稍后再看`, `观看记录` and so on) | Open 我的 and press Down through the sections | Focus carries on through every section, and the page scrolls to show it | Down from the `观看记录` header moves focus off screen: the ring disappears, the page stops scrolling, and nothing below it can be reached or seen | `stuck`, `lost ring` | Yes, on `<vm-tv>`. Fixed in `M13.0a` | `_ensureVisibleInUserScrollables` reveals the same leaf in every scrollable, so the outer list never scrolls |
 | 2 | 稍后再看, and pages with other floating controls | Try to reach `播放全部` from every card and `×` next to it, at the top and at the end of the list | Focus can land on `播放全部`, and Select plays the list | No key reaches it | `stuck` | Yes, on `<vm-tv>`, and on two more pages | The rules only accept a target outside the focused list, and a floating control sits over it |
 | 3 | Video cards, such as the related list | Focus a card and press Right | Focus can land on the card's `⋮` | Right does nothing (`moved=0 handled=0`) | `stuck` | Yes, on `<vm-tv>`, in the related list. Found in M13.0 | The `⋮` is a `Stack` sibling of the card, so no rule offers it |
 | 4 | 稍后再看 | Focus a `×` in the right column and press Up | Focus stays in its column | Focus lands on the left-column card of the same row | `jump` | Yes, twice, on `<vm-tv>`. Found in M13.0 | The rule compares the `×` with card centres, and that card's centre is above it |
@@ -203,29 +203,32 @@ Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 1 and 2 were proven with thr
 
 **Bug 1**: `lib/pages/mine/view.dart` puts each section's horizontal list inside one vertical `ListView`. `_ensureVisibleInUserScrollables` walks up the scrollables, but passes the focused card to each one. `ensureVisible` then measures against the card's nearest viewport, the horizontal list, so the outer list gets the wrong offset and stays where it is. Focus goes off screen, `_computeFocusedRect` hides the ring, and `inDirection` pulls the off-screen rect back to the list's edge, so Down only bounces between cards in that row. The lead about lazy building was wrong: the section was built, and the page just didn't scroll to it.
 
-The fix is to pass each level its own child, as `Scrollable.ensureVisible` does. It's about six lines in `_ensureVisibleInUserScrollables`, none of them in the rule chain, and it's task `M13.0a` in `PLAN.md`:
+The fix passes each level its own child, as `Scrollable.ensureVisible` does. It's about six lines in `_ensureVisibleInUserScrollables`, none of them in the rule chain, and it's task `M13.0a` in `PLAN.md`:
 
 ```diff
 +    BuildContext current = context;
 +    RenderObject? firstTarget;
      ScrollableState? scrollable = Scrollable.maybeOf(context);
      while (scrollable != null) {
++      final RenderObject? target = current.findRenderObject();
        if (_canUserScroll(scrollable)) {
 -        final RenderObject? target = context.findRenderObject();
-+        final RenderObject? target = current.findRenderObject();
          ...
            scrollable.position.ensureVisible(
              ...
              alignmentPolicy: alignmentPolicy,
 +            targetRenderObject: firstTarget,
            );
-+          firstTarget ??= target;
          ...
+       }
++      firstTarget ??= target;
        final BuildContext scrollableContext = scrollable.context;
 +      current = scrollableContext;
 ```
 
-With this change alone, a widget test of the layout brought every section into view, and all 95 TV tests passed. On `<vm-tv>`, Down reached every section with the ring visible, but that build also carried the diagnostic change for bug 2, so `M13.0a` needs its own device pass. Other vertical pages with horizontal lists share this path (`live`, `pgc`, `search_panel`, the video introduction), and they weren't tested on the device.
+`firstTarget` is recorded on every level, as in `Scrollable.ensureVisible`, including a level the user can't scroll. This file's first version of the diff recorded it only on levels the user can scroll. With a `NeverScrollable` list inside a scrolling one, the outer list then revealed the whole inner list, and the first row went 600 px off screen in a widget test. Without any fix, that layout only drifts by the height of what sits above the inner list. A test now covers it.
+
+`M13.0a` passed on `<vm-tv>` with this change alone, on 我的 and on the other pages on this path. The results are in `PROGRESS.md`.
 
 **Bug 2**: `_findVerticalCandidate` looks inside the focused list first. Once that runs out, it needs a target at or past the list's bottom edge, and a floating control sits inside that edge. Going right needs a target past the focused rect's right edge, and cards run to the edge of the screen. Letting a control over the list count as below it put the ring on `播放全部` on the device, and all 95 TV tests passed. That proves the cause but isn't the fix, because the button could only be reached from the end of a 48-item list. The `AnimatedSlide` lead wasn't the cause: `enablePlayAll` defaults to on, and the button was fully on screen.
 

@@ -712,10 +712,12 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     Duration duration = Duration.zero,
     Curve curve = Curves.ease,
   }) {
+    BuildContext current = context;
+    RenderObject? firstTarget;
     ScrollableState? scrollable = Scrollable.maybeOf(context);
     while (scrollable != null) {
+      final RenderObject? target = current.findRenderObject();
       if (_canUserScroll(scrollable)) {
-        final RenderObject? target = context.findRenderObject();
         if (target != null && target.attached) {
           double? pinnedSliverPrecedingExtent;
           final RenderObject? scrollableRo = scrollable.context
@@ -755,6 +757,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             duration: duration,
             curve: curve,
             alignmentPolicy: alignmentPolicy,
+            targetRenderObject: firstTarget,
           );
           if (pinnedSliverPrecedingExtent != null &&
               scrollable.position.hasPixels &&
@@ -777,7 +780,9 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           }
         }
       }
+      firstTarget ??= target;
       final BuildContext scrollableContext = scrollable.context;
+      current = scrollableContext;
       scrollable = scrollableContext.mounted
           ? Scrollable.maybeOf(scrollableContext)
           : null;

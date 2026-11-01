@@ -4968,6 +4968,174 @@ void main() {
         expect(firstInTall, equals(tallCardNode));
       },
     );
+
+    testWidgets(
+      'Down and Up walk every section of a vertical list of horizontal lists '
+      'with focus on screen (M13.0a, bug 1)',
+      (tester) async {
+        const int sections = 6;
+        const int cardsPerSection = 8;
+        final headers = List.generate(
+          sections,
+          (s) => FocusNode(debugLabel: 'header_$s'),
+        );
+        final cards = List.generate(
+          sections,
+          (s) => List.generate(
+            cardsPerSection,
+            (c) => FocusNode(debugLabel: 'card_${s}_$c'),
+          ),
+        );
+        final outer = ScrollController();
+        addTearDown(() {
+          outer.dispose();
+          for (final node in [...headers, ...cards.expand((row) => row)]) {
+            node.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                // The layout of lib/pages/mine/view.dart.
+                body: ListView(
+                  controller: outer,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    for (int s = 0; s < sections; s++)
+                      Column(
+                        children: [
+                          ListTile(
+                            focusNode: headers[s],
+                            onTap: () {},
+                            title: Text('section $s'),
+                          ),
+                          SizedBox(
+                            height: 180,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                              itemCount: cardsPerSection,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 14),
+                              itemBuilder: (_, c) => SizedBox(
+                                width: 180,
+                                child: InkWell(
+                                  focusNode: cards[s][c],
+                                  onTap: () {},
+                                  child: Text('card $s $c'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        headers[0].requestFocus();
+        await tester.pumpAndSettle();
+
+        // A header is row 2s and its cards are row 2s + 1.
+        int focusedRow() {
+          final FocusNode node = FocusManager.instance.primaryFocus!;
+          final int header = headers.indexOf(node);
+          if (header != -1) return header * 2;
+          return cards.indexWhere((row) => row.contains(node)) * 2 + 1;
+        }
+
+        Future<void> expectStep(
+          LogicalKeyboardKey key,
+          int expectedRow,
+        ) async {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          final FocusNode node = FocusManager.instance.primaryFocus!;
+          expect(focusedRow(), expectedRow, reason: '$node');
+          _expectOnScreen(tester, node);
+          _expectRingOn(tester, node);
+        }
+
+        const int lastRow = sections * 2 - 1;
+        for (int row = 1; row <= lastRow; row++) {
+          await expectStep(LogicalKeyboardKey.arrowDown, row);
+        }
+        expect(outer.offset, outer.position.maxScrollExtent);
+        expect(outer.offset, greaterThan(0.0));
+
+        for (int row = lastRow - 1; row >= 0; row--) {
+          await expectStep(LogicalKeyboardKey.arrowUp, row);
+        }
+        expect(outer.offset, 0.0);
+      },
+    );
+
+    testWidgets(
+      'a card in a list that cannot scroll is still revealed by the list '
+      'around it (M13.0a)',
+      (tester) async {
+        final title = FocusNode(debugLabel: 'title');
+        final rows = List.generate(
+          12,
+          (i) => FocusNode(debugLabel: 'row_$i'),
+        );
+        final outer = ScrollController();
+        addTearDown(() {
+          outer.dispose();
+          title.dispose();
+          for (final node in rows) {
+            node.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: TvNavigation(
+              child: Scaffold(
+                body: ListView(
+                  controller: outer,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    ListTile(focusNode: title, onTap: () {}),
+                    ListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        for (final node in rows)
+                          SizedBox(
+                            height: 100,
+                            child: InkWell(
+                              focusNode: node,
+                              onTap: () {},
+                              child: Text('${node.debugLabel}'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        title.requestFocus();
+        await tester.pumpAndSettle();
+
+        for (final node in rows) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expect(node.hasPrimaryFocus, isTrue);
+          _expectOnScreen(tester, node);
+          _expectRingOn(tester, node);
+        }
+        expect(outer.offset, greaterThan(0.0));
+      },
+    );
   });
 
   group('viewport follows the scaled root view (M10, R9)', () {
@@ -6421,6 +6589,15 @@ void _expectRingOn(WidgetTester tester, FocusNode node) {
   expect(rect.top, closeTo(node.rect.top, 0.5));
   expect(rect.right, closeTo(node.rect.right, 0.5));
   expect(rect.bottom, closeTo(node.rect.bottom, 0.5));
+}
+
+void _expectOnScreen(WidgetTester tester, FocusNode node) {
+  final Rect screen = tester.getRect(find.byType(TvNavigation));
+  expect(
+    screen.expandToInclude(node.rect),
+    screen,
+    reason: '$node is off screen at ${node.rect}',
+  );
 }
 
 class _KeepAliveTestPage extends StatefulWidget {

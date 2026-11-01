@@ -121,7 +121,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1523,3 +1523,28 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Decision** (the user): bug 1's fix gets its own task between `M13.0` and `M13.1`. Until now it was only described, in `M13_BASELINE.md`, so nothing scheduled it. It's `M13.0a` because about 40 lines in these docs name `M13.1`–`M13.6`, and a letter keeps all of them correct.
 * **Correction**: `M13_BASELINE.md` said the fix was proven on the device. The device build also carried the diagnostic change for bug 2, so only a widget test and the 95 TV tests cover the fix alone. `M13.0a` has its own device pass, and the change is now written out in that file, because the scratch builds aren't on any branch.
 * **Next** (owner: user): the go-ahead for `M13.0a`. `M13.1` follows it.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0a`): Bug 1 Fixed
+* **Status**: ✅ Done. Down reaches every section of 我的 with the ring visible, Up comes back the same way, and all TV tests pass.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The Fix**: in `_ensureVisibleInUserScrollables`, each scrollable reveals its own child, with the focused card as the rect inside it, as `Scrollable.ensureVisible` does.
+* **Changed From the Written Diff**: `M13_BASELINE.md` recorded `firstTarget` only on levels the user can scroll. A test of a `NeverScrollable` list inside a scrolling one showed that was worse than no fix: the first row went 600 px off screen, where the old code drifts 56 px at the sixth row. `firstTarget` is now recorded on every level, and the diff in that file matches.
+* **Tests**: 97 TV tests pass, the 95 plus two new ones, and the TV analyze step finds no issues. Without the change, the section walk fails at `card_2_0` and the `NeverScrollable` test at `row_5`.
+* **Device Pass** on `<vm-tv>`, in a `-Pdev` release build with this change alone:
+  * 我的, with all four `我的页卡片` sections on: Down went from `观看记录` through `稍后再看` to `我的订阅` with the ring visible, Up came back to the top, and Down left a section correctly after scrolling it sideways. The setting is back to `我的收藏`, and it held after a restart.
+  * `live`, `pgc` (`番剧`, `影视` and the timeline row, which has a `NeverScrollable` `TabBarView` between its two lists), `search_panel` and the pgc introduction: Down and Up kept focus on screen with the ring visible, and sideways rows scrolled.
+  * The ugc introduction: Down and Up work, but the video used has no staff row and no parts, so its horizontal rows weren't reached.
+  * The user page wasn't on the list. It was added because its collapsing header is the riskiest nesting for this change. Down collapses the header correctly.
+  * No ANR or crash from the app in the log for the whole run.
+* **Compared With `origin/main`** (same keys, same device, on the user page and `影视`):
+  * `影视`: Up from `查看更多` into `最近追剧` left that row above the top of the screen, with only a sliver of ring showing. That's bug 1's symptom on `pgc`, and with the fix the row scrolls into view.
+  * The user page: going back up, the header stopped a little short of fully open, and with the fix it opens fully.
+* **Seen on the Way, on Both Builds and Not Fixed**. They aren't in the bug inventory, which is the user's list, so it's their call whether to add them:
+  * The user page: Up from the first `查看更多` does nothing, however often it's pressed, so the tabs and `编辑资料` can't be reached by going back up. It's a `stuck` bug in the rule chain.
+  * `pgc`: Up into a row can land on a card cut off by the right edge of the screen, and the row doesn't scroll, so the ring runs off the edge. Right scrolls such a row correctly.
+  * Up doesn't always return to the card Down left. That's the missing column memory, which is M13.4's.
+* **Effect on the Account**: the two playing checks ran with `开启硬解` off, and it's back on. One opened a show from the top instead of its saved position, so that episode's position went from 35:19 to 1:39, and the show moved to the front of `最近追剧`. The other, a video from `观看记录`, may have moved too. The search history was empty, and is empty again after the one entry this run added.
+* **Next** (owner: user): the go-ahead to land this. It changes app code, so landing it publishes a public release, which also carries whatever upstream commits the build syncs in. `M13.1` follows it.
