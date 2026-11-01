@@ -120,7 +120,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (budget confirmed; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1507,7 +1508,18 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ### [2026-11-01] Milestone M13 (Task `M13.0`): Done
 * **Status**: ✅ Done. The inventory stays open for bugs the user remembers.
-* **Branch**: `feat/tv-m13-baseline`, not pushed.
+* **Branch**: `feat/tv-m13-baseline`, merged in PR 13.
 * **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
 * **Decision** (the user): the adjusted budget in `M13_BASELINE.md` stands. So the gate for M13.5 is on `<physical-tv>`, one more bench comes before M13.5, and the 55 ms limit on scrolling comments falls back to 72 ms only if M13.2 can't move the ring in the frame that scrolls.
-* **Next** (owner: user): whether to land this branch, which publishes a public release because `tool/tv_m13/` isn't Markdown; whether bug 1's fix lands ahead of M13.3; and the go-ahead for `M13.1`.
+* **Next**: landing and bug 1's fix, both in the next entry.
+
+---
+
+### [2026-11-01] Milestone M13: `M13.0` Landed, and `M13.0a` Added for Bug 1
+* **Status**: ✅ Done. Markdown only, so no app code changed and no release follows.
+* **Branch**: `docs/tv-m13-0a-task`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Landed**: PR 13 merged, and `v2.1.6.2-fork.5889` is published. The run passed its TV checks. Its first step synced upstream, so the release also carries five upstream commits, none in `lib/tv/` or the TV tests: it ships upstream's app changes, not M13's. The second run, queued by that sync's push, published nothing.
+* **Decision** (the user): bug 1's fix gets its own task between `M13.0` and `M13.1`. Until now it was only described, in `M13_BASELINE.md`, so nothing scheduled it. It's `M13.0a` because about 40 lines in these docs name `M13.1`–`M13.6`, and a letter keeps all of them correct.
+* **Correction**: `M13_BASELINE.md` said the fix was proven on the device. The device build also carried the diagnostic change for bug 2, so only a widget test and the 95 TV tests cover the fix alone. `M13.0a` has its own device pass, and the change is now written out in that file, because the scratch builds aren't on any branch.
+* **Next** (owner: user): the go-ahead for `M13.0a`. `M13.1` follows it.
