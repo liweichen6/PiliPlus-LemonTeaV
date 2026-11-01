@@ -74,10 +74,10 @@ index 013ed9283..9b9fa9072 100644
  
 diff --git a/lib/tv/tv_step_probe.dart b/lib/tv/tv_step_probe.dart
 new file mode 100644
-index 000000000..4faa035a9
+index 000000000..e1b8c47f5
 --- /dev/null
 +++ b/lib/tv/tv_step_probe.dart
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,175 @@
 +// TEMPORARY, never committed: D-pad step and frame timing for M13.0. Applied with
 +// tool/tv_m13/logging.patch, and read by tool/tv_m13/steps.py.
 +// ignore_for_file: avoid_print
@@ -99,8 +99,11 @@ index 000000000..4faa035a9
 +  int? ringUs;
 +}
 +
-+/// All times are CLOCK_MONOTONIC microseconds: `KeyEvent.timeStamp` from
-+/// Android's event time, `Timeline.now` and `FrameTiming` from the engine.
++/// All times are CLOCK_MONOTONIC microseconds: Android's event time, and
++/// `Timeline.now` and `FrameTiming` from the engine. Android's embedder sends
++/// `getEventTime()` in milliseconds in the field Dart reads as microseconds, so
++/// `KeyEvent.timeStamp.inMicroseconds` is a count of milliseconds, and `input`
++/// can be up to 1 ms too long.
 +abstract final class TvStepProbe {
 +  // A key that moves no ring ends here, for example at the edge of a list.
 +  static const int _giveUpUs = 1000000;
@@ -115,6 +118,9 @@ index 000000000..4faa035a9
 +  static final List<int> _raster = <int>[];
 +  static final List<int> _total = <int>[];
 +  static final List<int> _perFrame = <int>[];
++  // Timeline.now, taken in each frame's persistent callback.
++  static final List<int> _frameNow = <int>[];
++  static final List<int> _clockAfter = <int>[];
 +
 +  static void start() {
 +    if (_started) return;
@@ -138,7 +144,7 @@ index 000000000..4faa035a9
 +    final step = _Step(
 +      name,
 +      event is KeyRepeatEvent,
-+      event.timeStamp.inMicroseconds,
++      event.timeStamp.inMicroseconds * 1000,
 +      Timeline.now,
 +    );
 +    _last = step;
@@ -159,10 +165,25 @@ index 000000000..4faa035a9
 +  }
 +
 +  /// The engine's own work on every frame, whether or not a key was pressed.
-+  static void perFrame(int micros) => _perFrame.add(micros);
++  static void perFrame(int micros) {
++    _perFrame.add(micros);
++    _frameNow.add(Timeline.now);
++  }
++
++  // The clock check. The engine records buildFinish when the scene is rendered,
++  // and the persistent callback runs just after that, so a sample minus its own
++  // frame's buildFinish has to be small and positive if Timeline.now and
++  // FrameTiming share a clock.
++  static void _checkClock(FrameTiming t) {
++    final int start = t.timestampInMicroseconds(FramePhase.buildStart);
++    final int finish = t.timestampInMicroseconds(FramePhase.buildFinish);
++    _frameNow.removeWhere((now) => now < start);
++    if (_frameNow.isNotEmpty) _clockAfter.add(_frameNow.removeAt(0) - finish);
++  }
 +
 +  static void _onTimings(List<FrameTiming> timings) {
 +    for (final t in timings) {
++      _checkClock(t);
 +      _build.add(t.buildDuration.inMicroseconds);
 +      _raster.add(t.rasterDuration.inMicroseconds);
 +      _total.add(t.totalSpan.inMicroseconds);
@@ -217,7 +238,15 @@ index 000000000..4faa035a9
 +        'total ${_stats(_total)}'
 +        '${_perFrame.isEmpty ? '' : ' engine ${_stats(_perFrame)}'}',
 +      );
++      if (_clockAfter.isNotEmpty) {
++        final int least = _clockAfter.reduce((a, b) => a < b ? a : b);
++        print(
++          '[m13] clock frames=${_clockAfter.length} min=$least '
++          '${_stats(_clockAfter)}',
++        );
++      }
 +    }
++    _clockAfter.clear();
 +    _perFrame.clear();
 +    _build.clear();
 +    _raster.clear();
