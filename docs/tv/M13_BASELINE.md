@@ -44,7 +44,7 @@ Then undo both before committing. The probe must never ship:
 git apply -R tool/tv_m13/logging.patch
 ```
 
-The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. It works on `main` and on `variant/4k-passthrough`, which have the same `tv_navigation.dart`.
+The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. `M13.1` changed that file's imports, so the patch was regenerated then, with the same hooks. It applies to the `tv_navigation.dart` it's committed with, and a branch without `M13.1`, such as `variant/4k-passthrough`, needs the version before it.
 
 ## What a Step Shows
 
@@ -194,38 +194,44 @@ The user's list so far. They expect to add more as they remember it. Each one ge
 
 | # | Screen | Steps | Expected | What happens | Kind | Reproduced | Cause |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | 我的, with several sections on in `我的页卡片` (`稍后再看`, `观看记录` and so on) | Open 我的 and press Down through the sections | Focus carries on through every section, and the page scrolls to show it | Down from the `观看记录` header moves focus off screen: the ring disappears, the page stops scrolling, and nothing below it can be reached or seen | `stuck`, `lost ring` | Yes, on `<vm-tv>` | `_ensureVisibleInUserScrollables` reveals the same leaf in every scrollable, so the outer list never scrolls |
+| 1 | 我的, with several sections on in `我的页卡片` (`稍后再看`, `观看记录` and so on) | Open 我的 and press Down through the sections | Focus carries on through every section, and the page scrolls to show it | Down from the `观看记录` header moves focus off screen: the ring disappears, the page stops scrolling, and nothing below it can be reached or seen | `stuck`, `lost ring` | Yes, on `<vm-tv>`. Fixed in `M13.0a` | `_ensureVisibleInUserScrollables` reveals the same leaf in every scrollable, so the outer list never scrolls |
 | 2 | 稍后再看, and pages with other floating controls | Try to reach `播放全部` from every card and `×` next to it, at the top and at the end of the list | Focus can land on `播放全部`, and Select plays the list | No key reaches it | `stuck` | Yes, on `<vm-tv>`, and on two more pages | The rules only accept a target outside the focused list, and a floating control sits over it |
 | 3 | Video cards, such as the related list | Focus a card and press Right | Focus can land on the card's `⋮` | Right does nothing (`moved=0 handled=0`) | `stuck` | Yes, on `<vm-tv>`, in the related list. Found in M13.0 | The `⋮` is a `Stack` sibling of the card, so no rule offers it |
 | 4 | 稍后再看 | Focus a `×` in the right column and press Up | Focus stays in its column | Focus lands on the left-column card of the same row | `jump` | Yes, twice, on `<vm-tv>`. Found in M13.0 | The rule compares the `×` with card centres, and that card's centre is above it |
+| 5 | Horizontal rows, such as `最近追剧` in `pgc` | Focus `查看更多` under a row and press Up | Focus lands on a card, and the row scrolls to show all of it | Focus lands on a card cut off by the right edge, the row stays where it is, and the ring runs off the screen | `lost ring` | Yes, on `<vm-tv>`. Found in M13.0a, fixed in `M13.0b` | A move reveals the card with one policy, and that policy checks only one end of a row. It's task `M13.0b` |
+| 6 | User page | Press Down into a tab's content, then Up to its first row, and press Up again | Focus reaches the tabs and `编辑资料` | Up does nothing, however often it's pressed, and only Back leaves | `stuck` | Yes, on `<vm-tv>`. Found in M13.0a | `_findVerticalCandidate` only accepts a target whose list is above the focused one, and the outer list wraps it |
+| 7 | Side rail on 我的, with several sections on | With a section scrolled sideways and the page scrolled down, press Left to the rail, then Up from `首页` | Focus moves one item at a time, to search and then the bell | Up lands on the avatar, and Down from the avatar lands on `首页`, so search and the bell can't be reached until the page moves | `jump`, `stuck` | Yes, on `<vm-tv>`, on the `M13.0a` and `M13.0b` builds. Found in M13.0b | Not known. Only the key run below is proven |
 
 Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 1 and 2 were proven with throwaway builds on `<vm-tv>`. Those builds aren't on any branch, and M13.0 changes no app code.
 
 **Bug 1**: `lib/pages/mine/view.dart` puts each section's horizontal list inside one vertical `ListView`. `_ensureVisibleInUserScrollables` walks up the scrollables, but passes the focused card to each one. `ensureVisible` then measures against the card's nearest viewport, the horizontal list, so the outer list gets the wrong offset and stays where it is. Focus goes off screen, `_computeFocusedRect` hides the ring, and `inDirection` pulls the off-screen rect back to the list's edge, so Down only bounces between cards in that row. The lead about lazy building was wrong: the section was built, and the page just didn't scroll to it.
 
-The fix is to pass each level its own child, as `Scrollable.ensureVisible` does. It's about six lines in `_ensureVisibleInUserScrollables`, none of them in the rule chain, and it's task `M13.0a` in `PLAN.md`:
+The fix passes each level its own child, as `Scrollable.ensureVisible` does. It's about six lines in `_ensureVisibleInUserScrollables`, none of them in the rule chain, and it's task `M13.0a` in `PLAN.md`:
 
 ```diff
 +    BuildContext current = context;
 +    RenderObject? firstTarget;
      ScrollableState? scrollable = Scrollable.maybeOf(context);
      while (scrollable != null) {
++      final RenderObject? target = current.findRenderObject();
        if (_canUserScroll(scrollable)) {
 -        final RenderObject? target = context.findRenderObject();
-+        final RenderObject? target = current.findRenderObject();
          ...
            scrollable.position.ensureVisible(
              ...
              alignmentPolicy: alignmentPolicy,
 +            targetRenderObject: firstTarget,
            );
-+          firstTarget ??= target;
          ...
+       }
++      firstTarget ??= target;
        final BuildContext scrollableContext = scrollable.context;
 +      current = scrollableContext;
 ```
 
-With this change alone, a widget test of the layout brought every section into view, and all 95 TV tests passed. On `<vm-tv>`, Down reached every section with the ring visible, but that build also carried the diagnostic change for bug 2, so `M13.0a` needs its own device pass. Other vertical pages with horizontal lists share this path (`live`, `pgc`, `search_panel`, the video introduction), and they weren't tested on the device.
+`firstTarget` is recorded on every level, as in `Scrollable.ensureVisible`, including a level the user can't scroll. This file's first version of the diff recorded it only on levels the user can scroll. With a `NeverScrollable` list inside a scrolling one, the outer list then revealed the whole inner list, and the first row went 600 px off screen in a widget test. Without any fix, that layout only drifts by the height of what sits above the inner list. A test now covers it.
+
+`M13.0a` passed on `<vm-tv>` with this change alone, on 我的 and on the other pages on this path. The results are in `PROGRESS.md`.
 
 **Bug 2**: `_findVerticalCandidate` looks inside the focused list first. Once that runs out, it needs a target at or past the list's bottom edge, and a floating control sits inside that edge. Going right needs a target past the focused rect's right edge, and cards run to the edge of the screen. Letting a control over the list count as below it put the ring on `播放全部` on the device, and all 95 TV tests passed. That proves the cause but isn't the fix, because the button could only be reached from the end of a 48-item list. The `AnimatedSlide` lead wasn't the cause: `enablePlayAll` defaults to on, and the button was fully on screen.
 
@@ -239,6 +245,12 @@ With this change alone, a widget test of the layout brought every section into v
 **Bug 3**: `lib/common/widgets/video_card/video_card_h.dart` puts the `⋮` beside the card's `InkWell` in a `Stack`, and `video_card_v.dart` does the same. The embedded-action rules only look at a card's children, and `_filterOutEmbeddedSecondaryActions` drops small buttons that sit inside a larger candidate. A 1,500-key test reached a `⋮` that's a child of the card, and not one that's a sibling. The diagnostic change for bug 2 doesn't help, so this is a separate cause.
 
 **Bug 4**: going up, `_findVerticalCandidate` takes any target whose centre is above the focused rect's top. A `×` sits at the bottom of its row, so the neighbouring card in the same row counts as the row above.
+
+**Bug 5**: `_focusNode` picks one alignment policy from the direction, `keepVisibleAtStart` for Up and `keepVisibleAtEnd` for Down, and passes it to every list level. That suits a list running along the move. A row runs across it, so Up corrects only a card cut off at the row's start, and Down only one cut off at its end. The later reveal for both ends is skipped, because `consumePolicyScrolledNode` says the policy already scrolled. It's on both builds, so `M13.0a` didn't cause it, and it's outside the rule chain, so it doesn't wait for the new engine: it's task `M13.0b` in `PLAN.md`. The fix runs a second reveal on Up and Down, for horizontal lists only, with the policy for the other end. Left and Right don't get one, because the list running across those moves is vertical, and the pinned-header and tall-card handling there depends on its one policy.
+
+**Bug 6**: read from the code, not yet proven with a test. Past the focused list, `_findVerticalCandidate` keeps a target in another scrollable only if that scrollable's rect is above the focused one. The tabs and `编辑资料` are in the `ExtendedNestedScrollView` around the focused list, whose rect runs to the bottom of the screen, so they're dropped and Up has no target. It's on both builds. It's in the rule chain that M13.4 replaces, and a patch would touch every nested page, including the video page, so it's left for M13.4, with a recorded path in M13.3.
+
+**Bug 7**: the cause isn't known. This run shows it, from a fresh start with all four `我的页卡片` sections on and focus on the 我的 rail item: Select, Right, Down ×9, Up ×9, Down ×5, Right ×5, Up, Down, Down ×3, Right, Up, Left ×5, then Up from `动态` to `首页`, and Up again. It's the same on the `M13.0a` and `M13.0b` builds. The steps in the table are a summary of that run, and they haven't been tried on their own. With no section scrolled sideways, the rail walks correctly on the `M13.0a` build, and a scrolled row on `影视` doesn't trigger it, so a scrolled row alone isn't the cause. `origin/main` couldn't be compared, because bug 1 stops it reaching that page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that hasn't been tested. It gets a recorded path in M13.3, and the fix belongs in M13.4 unless the cause turns out to be outside the rule chain.
 
 ## What These Runs Can't Show
 
