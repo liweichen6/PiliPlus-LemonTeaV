@@ -122,7 +122,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1552,9 +1552,27 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
-### [2026-11-01] Milestone M13: Bugs 5 and 6 Added, and `M13.0b` Started
-* **Status**: 🔄 In progress.
+### [2026-11-01] Milestone M13: Bugs 5 and 6 Added, and `M13.0b` Planned
+* **Status**: ✅ Done. Docs only.
 * **Branch**: `fix/tv-m13-0a-scroll-levels`, so `M13.0a` and `M13.0b` land together in one release.
 * **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
 * **Decision** (the user): the two bugs seen during `M13.0a` go into the plan. The cut-off card is bug 5, fixed now as `M13.0b`, because its cause is outside the rule chain. The stuck Up on the user page is bug 6, with a recorded path in M13.3 and the fix in M13.4, because it's in the rule chain M13.4 replaces.
-* **Next**: the fix for bug 5.
+* **Next**: `M13.0b`, in the next entry.
+
+---
+
+### [2026-11-02] Milestone M13 (Task `M13.0b`): Bug 5 Fixed
+* **Status**: ✅ Done. Up and Down land on a fully visible card in rows, bug 1's walk through 我的 still passes, and all TV tests pass.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The Fix**: after a move's reveal, `_focusNode` runs a second one on Up and Down with the policy for the other end, and `_ensureVisibleInUserScrollables` has a new `onlyAxis` argument that limits it to horizontal lists. Vertical lists keep their one policy, so the pinned-header and tall-card handling doesn't change.
+* **Tests**: 99 TV tests pass, the 97 plus two new ones, and the TV analyze step finds no issues. Without the change, Up leaves the card 140 px past the right edge, and Down leaves one 100 px past the left edge.
+* **Device Pass** on `<vm-tv>`, in a `-Pdev` release build with `M13.0a` and this change:
+  * `影视`: Up from `查看更多` lands on a card that used to stay cut off, and the row scrolls to show all of it, with the whole ring on screen.
+  * 我的, with all four `我的页卡片` sections on: the same keys as bug 1's walk give the same path both ways. After a row was scrolled sideways, Down onto a card cut off on the left scrolled the row back to show it. The setting is back to `我的收藏`, read back on the settings row.
+  * `番剧`, with its timeline row, and `search_panel`, 18 and 30 steps: the ring stayed fully on screen at every step.
+  * No ANR or crash from the app in the log. No video was played, and the search history is empty again after the one entry this run added.
+* **Seen on the Way, Not Fixed, and Not in the Inventory**: the side rail on 我的 can skip two items. After a row is scrolled sideways, and with the page scrolled down, Up from `首页` lands on the avatar and Down from the avatar lands on `首页`, so search and the bell can't be reached until the page moves. Steps: with all four sections on, scroll `观看记录` sideways, go down to `稍后再看`, and press Left to the rail.
+  * The same keys do the same on the `M13.0a` build, so `M13.0b` didn't cause it. With the row not scrolled, the rail walks correctly on that build, and a scrolled row on `影视` doesn't trigger it, so the trigger isn't understood.
+  * It hasn't been compared with `origin/main`, because bug 1 stops that build reaching the page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that's read from the code and not tested.
+* **Next** (owner: user): the go-ahead to land `M13.0a` and `M13.0b`. It changes app code, so landing it publishes a public release, which also carries whatever upstream commits the build syncs in. `M13.1` follows it.

@@ -5136,6 +5136,82 @@ void main() {
         expect(outer.offset, greaterThan(0.0));
       },
     );
+
+    testWidgets(
+      'Up onto a card cut off by the right edge scrolls the row to show it '
+      '(M13.0b, bug 5)',
+      (tester) async {
+        final button = FocusNode(debugLabel: 'button');
+        final cards = List.generate(
+          6,
+          (i) => FocusNode(debugLabel: 'card_$i'),
+        );
+        final row = ScrollController();
+        addTearDown(() {
+          row.dispose();
+          button.dispose();
+          for (final node in cards) {
+            node.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          _cardRowWithButton(
+            row: row,
+            cards: cards,
+            button: button,
+            buttonBelowRow: true,
+          ),
+        );
+        button.requestFocus();
+        await tester.pumpAndSettle();
+        expect(cards[2].rect.right, greaterThan(800.0));
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(cards[2].hasPrimaryFocus, isTrue);
+        _expectOnScreen(tester, cards[2]);
+        _expectRingOn(tester, cards[2]);
+      },
+    );
+
+    testWidgets(
+      'Down onto a card cut off by the left edge scrolls the row to show it '
+      '(M13.0b, bug 5)',
+      (tester) async {
+        final button = FocusNode(debugLabel: 'button');
+        final cards = List.generate(
+          6,
+          (i) => FocusNode(debugLabel: 'card_$i'),
+        );
+        final row = ScrollController(initialScrollOffset: 100.0);
+        addTearDown(() {
+          row.dispose();
+          button.dispose();
+          for (final node in cards) {
+            node.dispose();
+          }
+        });
+
+        await tester.pumpWidget(
+          _cardRowWithButton(
+            row: row,
+            cards: cards,
+            button: button,
+            buttonBelowRow: false,
+          ),
+        );
+        button.requestFocus();
+        await tester.pumpAndSettle();
+        expect(cards[0].rect.left, lessThan(0.0));
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(cards[0].hasPrimaryFocus, isTrue);
+        _expectOnScreen(tester, cards[0]);
+        _expectRingOn(tester, cards[0]);
+      },
+    );
   });
 
   group('viewport follows the scaled root view (M10, R9)', () {
@@ -6597,6 +6673,60 @@ void _expectOnScreen(WidgetTester tester, FocusNode node) {
     screen.expandToInclude(node.rect),
     screen,
     reason: '$node is off screen at ${node.rect}',
+  );
+}
+
+// A horizontal row of 300 px cards in a vertical list, with a button above or
+// below it, as 查看更多 sits by a row in lib/pages/pgc/view.dart. The button
+// lines up with the row's end when it's below, and its start when it's above.
+Widget _cardRowWithButton({
+  required ScrollController row,
+  required List<FocusNode> cards,
+  required FocusNode button,
+  required bool buttonBelowRow,
+}) {
+  final Widget buttonRow = Align(
+    alignment: buttonBelowRow ? Alignment.centerRight : Alignment.centerLeft,
+    child: SizedBox(
+      width: 100,
+      height: 60,
+      child: InkWell(
+        focusNode: button,
+        onTap: () {},
+        child: const Text('button'),
+      ),
+    ),
+  );
+  return MaterialApp(
+    home: TvNavigation(
+      child: Scaffold(
+        body: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            if (!buttonBelowRow) buttonRow,
+            SizedBox(
+              height: 200,
+              child: ListView.separated(
+                controller: row,
+                scrollDirection: Axis.horizontal,
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: cards.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 20),
+                itemBuilder: (_, i) => SizedBox(
+                  width: 300,
+                  child: InkWell(
+                    focusNode: cards[i],
+                    onTap: () {},
+                    child: Text('card $i'),
+                  ),
+                ),
+              ),
+            ),
+            if (buttonBelowRow) buttonRow,
+          ],
+        ),
+      ),
+    ),
   );
 }
 

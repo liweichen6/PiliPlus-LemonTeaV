@@ -711,13 +711,15 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     double alignment = 0.0,
     Duration duration = Duration.zero,
     Curve curve = Curves.ease,
+    Axis? onlyAxis,
   }) {
     BuildContext current = context;
     RenderObject? firstTarget;
     ScrollableState? scrollable = Scrollable.maybeOf(context);
     while (scrollable != null) {
       final RenderObject? target = current.findRenderObject();
-      if (_canUserScroll(scrollable)) {
+      if (_canUserScroll(scrollable) &&
+          (onlyAxis == null || scrollable.position.axis == onlyAxis)) {
         if (target != null && target.attached) {
           double? pinnedSliverPrecedingExtent;
           final RenderObject? scrollableRo = scrollable.context
@@ -1432,6 +1434,21 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       },
     );
+    // A row runs across an Up or Down move, so the policy above checks only
+    // one of its ends, and the card can be cut off at the other.
+    final BuildContext? context = node.context;
+    if (context != null &&
+        context.mounted &&
+        (direction == TraversalDirection.up ||
+            direction == TraversalDirection.down)) {
+      _ensureVisibleInUserScrollables(
+        context,
+        alignmentPolicy: direction == TraversalDirection.up
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        onlyAxis: Axis.horizontal,
+      );
+    }
     final double afterScroll = _sumUserScrollPixels(node.context);
     if ((afterScroll - beforeScroll).abs() > 0.5) {
       _frameState.didScrollInLastFocus = true;
