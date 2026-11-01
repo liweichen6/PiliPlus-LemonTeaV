@@ -124,6 +124,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
@@ -1631,3 +1632,35 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Upstream's `MiniScaffold` trips a debug-only assert when a sheet replaces an open one. It doesn't exist in a release build.
 * **Device Pass** on `<vm-tv>`: 20 home and 4 settings runs, D-pad keys plus Select on the rail, the gear and a settings pane, with a screenshot before each. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe.
 * **Next**: `M13.2`, on the user's go-ahead. It reworks the sheets' lifecycle, and the 99 tests don't pin those opening and closing states, so the trace's sheet scenes should become real tests first. Landing `M13.0a`, `M13.0b` and `M13.1` is the user's call.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.1a`): Tests for What the Adapters Carry
+* **Status**: ✅ Done. 119 TV tests pass, the 99 plus 20 new ones, and the TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-1-adapters-654465`.
+* **Files Changed**: `[MODIFY] test/tv_navigation_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): the paths `M13.1` found the tests couldn't see get real tests before `M13.2`, because that task reworks the sheets' lifecycle.
+* **The Tests**, in the group `paths the adapters carry (M13.1a)`, which CI runs with no workflow change:
+
+| Path | Tests |
+| :--- | :--- |
+| `ListTile` trailing controls, material and upstream | Right onto a button and back, Right onto a switch and back, and Up and Down staying on the tiles: 6 tests |
+| A `⋮` over a card | Up and Down land on the card, also from a narrow control right above the `⋮` |
+| A player bar slid out of its box | A list inside it stays out of reach until it slides back |
+| The login QR tab | Controller registered first, or a frame late, or never, and another route leaves the tab alone |
+| Inline sheets | Takes focus while opening, opened late from outside it, gives focus back as it starts closing, takes no keys while closing, closed while still opening, trigger gone with something left in the body, and with nothing left |
+
+* **Checks**:
+  * 25 of the 29 mutants from `M13.1` now fail a test, up from 14. The two tests that first missed theirs show why such a check matters. A full-width card hides the `⋮` rule, because the card under it is the nearer centre anyway. And `isAnimatingOpen` turned out to keep a late sheet from waiting out the 12-frame empty probe, about 200 ms, which an ordinary open never shows.
+  * All 119 also pass on the engine from before `M13.1`, so they pin existing behavior and not something the refactor introduced.
+  * No line of an existing test changed: the diff to the test file only adds lines.
+* **Still Invisible**, the same four as in `M13.1`:
+  * `no enclosing active sheet`: the guard only matters for a replaced sheet whose record has no trigger, and from the code the node it would save is gone by then.
+  * `all subtrees requestable`: only changes cost, because the probe after it finds nothing either.
+  * `trigger not remembered`: `_onFocus` already remembers that node, and the layer stack restores it anyway.
+  * `drop the InkResponse check`: dead code, listed in `M13.1`.
+* **Not Pinned, on Purpose**:
+  * Right onto a `⋮`: that's bug 3, so the expected path belongs to M13.3 and the fix to M13.4.
+  * One sheet replacing an open one: upstream's `MiniScaffold` trips a debug-only assert there, so a widget test fails on the assert. The trace in `M13.1` covered it and matched. `M13.2` should watch this path, because it has no test.
+* **Device Pass**: none needed. No app code changed.
+* **Next**: `M13.2`, on the user's go-ahead. Landing `M13.0a`, `M13.0b`, `M13.1` and `M13.1a` is the user's call.

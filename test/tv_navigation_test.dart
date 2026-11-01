@@ -1,11 +1,14 @@
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
+    as custom_list_tile;
 import 'package:PiliPlus/common/widgets/radio_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/sliver/sliver_floating_header.dart';
 import 'package:PiliPlus/common/widgets/sliver/sliver_pinned_header.dart';
 import 'package:PiliPlus/models/common/theme/theme_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
+import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
@@ -6647,6 +6650,703 @@ void main() {
       },
     );
   });
+
+  // M13.1's mutation pass found these paths could break with every other test
+  // still passing. Each test here fails when its path is broken.
+  group('paths the adapters carry (M13.1a)', () {
+    setUp(() {
+      TvPlatform.setTvModeForTesting(true);
+    });
+
+    tearDown(() {
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+    }
+
+    Widget tvApp(Widget body) => MaterialApp(
+      builder: (context, child) => TvNavigation(child: child!),
+      home: Scaffold(body: body),
+    );
+
+    // Upstream keeps its own copy of ListTile, so a tile is either class.
+    final Map<String, Widget Function(FocusNode, Widget)> tiles =
+        <String, Widget Function(FocusNode, Widget)>{
+          'material': (node, trailing) => ListTile(
+            focusNode: node,
+            onTap: () {},
+            title: const Text('tile'),
+            trailing: trailing,
+          ),
+          'upstream': (node, trailing) => custom_list_tile.ListTile(
+            focusNode: node,
+            onTap: () {},
+            title: const Text('tile'),
+            trailing: trailing,
+          ),
+        };
+
+    for (final MapEntry(key: name, value: tile) in tiles.entries) {
+      testWidgets(
+        'Right steps from a $name ListTile onto its trailing button, and Left steps back',
+        (tester) async {
+          final tileNode = FocusNode(debugLabel: 'tile');
+          final buttonNode = FocusNode(debugLabel: 'button');
+          addTearDown(() {
+            tileNode.dispose();
+            buttonNode.dispose();
+          });
+
+          await tester.pumpWidget(
+            tvApp(
+              Column(
+                children: [
+                  tile(
+                    tileNode,
+                    IconButton(
+                      focusNode: buttonNode,
+                      onPressed: () {},
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          tileNode.requestFocus();
+          await tester.pumpAndSettle();
+          expect(tileNode.hasPrimaryFocus, isTrue);
+
+          await press(tester, LogicalKeyboardKey.arrowRight);
+          expect(buttonNode.hasPrimaryFocus, isTrue);
+
+          await press(tester, LogicalKeyboardKey.arrowLeft);
+          expect(tileNode.hasPrimaryFocus, isTrue);
+        },
+      );
+
+      testWidgets(
+        'Right steps from a $name ListTile onto its trailing switch, and Left steps back',
+        (tester) async {
+          final tileNode = FocusNode(debugLabel: 'tile');
+          final switchNode = FocusNode(debugLabel: 'switch');
+          addTearDown(() {
+            tileNode.dispose();
+            switchNode.dispose();
+          });
+
+          await tester.pumpWidget(
+            tvApp(
+              Column(
+                children: [
+                  tile(
+                    tileNode,
+                    Switch(
+                      focusNode: switchNode,
+                      value: false,
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          tileNode.requestFocus();
+          await tester.pumpAndSettle();
+
+          await press(tester, LogicalKeyboardKey.arrowRight);
+          expect(switchNode.hasFocus, isTrue);
+
+          await press(tester, LogicalKeyboardKey.arrowLeft);
+          expect(tileNode.hasPrimaryFocus, isTrue);
+        },
+      );
+
+      testWidgets(
+        'Up and Down step between $name ListTiles, not onto their trailing controls',
+        (tester) async {
+          final tileNodes = List<FocusNode>.generate(
+            3,
+            (i) => FocusNode(debugLabel: 'tile_$i'),
+          );
+          final switchNodes = List<FocusNode>.generate(
+            3,
+            (i) => FocusNode(debugLabel: 'switch_$i'),
+          );
+          addTearDown(() {
+            for (final FocusNode node in [...tileNodes, ...switchNodes]) {
+              node.dispose();
+            }
+          });
+
+          await tester.pumpWidget(
+            tvApp(
+              ListView(
+                children: [
+                  for (int i = 0; i < 3; i++)
+                    tile(
+                      tileNodes[i],
+                      Switch(
+                        focusNode: switchNodes[i],
+                        value: true,
+                        onChanged: (_) {},
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+          tileNodes[0].requestFocus();
+          await tester.pumpAndSettle();
+
+          await press(tester, LogicalKeyboardKey.arrowDown);
+          expect(tileNodes[1].hasPrimaryFocus, isTrue);
+          await press(tester, LogicalKeyboardKey.arrowDown);
+          expect(tileNodes[2].hasPrimaryFocus, isTrue);
+          await press(tester, LogicalKeyboardKey.arrowUp);
+          expect(tileNodes[1].hasPrimaryFocus, isTrue);
+        },
+      );
+    }
+
+    testWidgets('Up and Down land on a card, not on the ⋮ laid over it', (
+      tester,
+    ) async {
+      final cards = List<FocusNode>.generate(
+        3,
+        (i) => FocusNode(debugLabel: 'card_$i'),
+      );
+      final menus = List<FocusNode>.generate(
+        3,
+        (i) => FocusNode(debugLabel: 'menu_$i'),
+      );
+      addTearDown(() {
+        for (final FocusNode node in [...cards, ...menus]) {
+          node.dispose();
+        }
+      });
+
+      await tester.pumpWidget(
+        tvApp(
+          ListView(
+            children: [
+              for (int i = 0; i < 3; i++)
+                SizedBox(
+                  height: 90,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: InkWell(
+                          focusNode: cards[i],
+                          onTap: () {},
+                          child: const Text('card'),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: IconButton(
+                          focusNode: menus[i],
+                          onPressed: () {},
+                          icon: const Icon(Icons.more_vert),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      cards[0].requestFocus();
+      await tester.pumpAndSettle();
+
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(cards[1].hasPrimaryFocus, isTrue);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(cards[2].hasPrimaryFocus, isTrue);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(cards[1].hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('Down from a control right above a ⋮ lands on the card under it', (
+      tester,
+    ) async {
+      final topNode = FocusNode(debugLabel: 'top');
+      final cardNode = FocusNode(debugLabel: 'card');
+      final menuNode = FocusNode(debugLabel: 'menu');
+      addTearDown(() {
+        topNode.dispose();
+        cardNode.dispose();
+        menuNode.dispose();
+      });
+
+      await tester.pumpWidget(
+        tvApp(
+          ListView(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: IconButton(
+                    focusNode: topNode,
+                    onPressed: () {},
+                    icon: const Icon(Icons.search),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 90,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: InkWell(
+                        focusNode: cardNode,
+                        onTap: () {},
+                        child: const Text('card'),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: IconButton(
+                        focusNode: menuNode,
+                        onPressed: () {},
+                        icon: const Icon(Icons.more_vert),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      topNode.requestFocus();
+      await tester.pumpAndSettle();
+
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(cardNode.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets(
+      'a list in a player bar that slid out of its box stays out of reach until it slides back',
+      (tester) async {
+        final quickNode = FocusNode(debugLabel: 'quick');
+        final belowNode = FocusNode(debugLabel: 'below');
+        final barNodes = List<FocusNode>.generate(
+          3,
+          (i) => FocusNode(debugLabel: 'bar_$i'),
+        );
+        final slide = AnimationController(
+          vsync: tester,
+          duration: const Duration(milliseconds: 200),
+        );
+        addTearDown(() {
+          slide.dispose();
+          for (final FocusNode node in [quickNode, belowNode, ...barNodes]) {
+            node.dispose();
+          }
+        });
+
+        // AppBarAni's bottom bar: slid down by 1.2 of its height, so it stays
+        // on screen but leaves the clip of the player box.
+        await tester.pumpWidget(
+          tvApp(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRect(
+                  child: SizedBox(
+                    height: 240,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          top: 60,
+                          left: 8,
+                          width: 140,
+                          height: 44,
+                          child: ElevatedButton(
+                            focusNode: quickNode,
+                            onPressed: () {},
+                            child: const Text('quick'),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 48,
+                          child: SlideTransition(
+                            position: slide.drive(
+                              Tween<Offset>(
+                                begin: const Offset(0, 1.2),
+                                end: Offset.zero,
+                              ),
+                            ),
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                for (final FocusNode node in barNodes)
+                                  SizedBox(
+                                    width: 120,
+                                    child: ElevatedButton(
+                                      focusNode: node,
+                                      onPressed: () {},
+                                      child: const Text('bar'),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  focusNode: belowNode,
+                  onPressed: () {},
+                  child: const Text('below'),
+                ),
+              ],
+            ),
+          ),
+        );
+        quickNode.requestFocus();
+        await tester.pumpAndSettle();
+
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(belowNode.hasPrimaryFocus, isTrue);
+
+        slide.forward();
+        await tester.pumpAndSettle();
+        quickNode.requestFocus();
+        await tester.pumpAndSettle();
+
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(barNodes[0].hasPrimaryFocus, isTrue);
+      },
+    );
+
+    group('the login page opens on its QR tab', () {
+      final navigator = GlobalKey<NavigatorState>();
+
+      Future<void> pumpLoginApp(WidgetTester tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigator,
+            navigatorObservers: [TvNavigationObserver()],
+            builder: (context, child) => TvNavigation(child: child!),
+            routes: {
+              '/loginPage': (_) => const Scaffold(body: Text('login')),
+              '/other': (_) => const Scaffold(body: Text('other')),
+            },
+            home: const Scaffold(body: Text('home')),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      int currentTab() =>
+          Get.find<LoginPageController>().tabController.index;
+
+      testWidgets('with its controller already registered', (tester) async {
+        addTearDown(Get.reset);
+        await pumpLoginApp(tester);
+        Get.put<LoginPageController>(_FakeLoginController());
+
+        navigator.currentState!.pushNamed('/loginPage');
+        await tester.pumpAndSettle();
+
+        expect(currentTab(), TvNavigationObserver.loginQrTabIndex);
+      });
+
+      testWidgets('with its controller registered a frame late', (
+        tester,
+      ) async {
+        addTearDown(Get.reset);
+        await pumpLoginApp(tester);
+
+        navigator.currentState!.pushNamed('/loginPage');
+        await tester.pump();
+        Get.put<LoginPageController>(_FakeLoginController());
+        await tester.pumpAndSettle();
+
+        expect(currentTab(), TvNavigationObserver.loginQrTabIndex);
+      });
+
+      testWidgets('and gives up quietly without a controller', (tester) async {
+        await pumpLoginApp(tester);
+
+        navigator.currentState!.pushNamed('/loginPage');
+        await tester.pumpAndSettle();
+
+        expect(find.text('login'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('and another route leaves the tab alone', (tester) async {
+        addTearDown(Get.reset);
+        await pumpLoginApp(tester);
+        Get.put<LoginPageController>(_FakeLoginController());
+
+        navigator.currentState!.pushNamed('/other');
+        await tester.pumpAndSettle();
+
+        expect(currentTab(), 0);
+      });
+    });
+
+    group('an inline sheet', () {
+      late FocusNode leftNode;
+      late FocusNode triggerNode;
+      late FocusNode otherNode;
+      late FocusNode inSheetNode;
+      late GlobalKey<MiniScaffoldState> scaffold;
+      late ValueNotifier<bool> showTrigger;
+      late AnimationController sheetAnimation;
+
+      setUp(() {
+        leftNode = FocusNode(debugLabel: 'left');
+        triggerNode = FocusNode(debugLabel: 'trigger');
+        otherNode = FocusNode(debugLabel: 'other');
+        inSheetNode = FocusNode(debugLabel: 'in_sheet');
+        scaffold = GlobalKey<MiniScaffoldState>();
+        showTrigger = ValueNotifier<bool>(true);
+        addTearDown(() {
+          leftNode.dispose();
+          triggerNode.dispose();
+          otherNode.dispose();
+          inSheetNode.dispose();
+          showTrigger.dispose();
+        });
+      });
+
+      void showSheet() {
+        scaffold.currentState!.showBottomSheet(
+          (_) => ColoredBox(
+            color: Colors.black,
+            child: InkWell(
+              focusNode: inSheetNode,
+              onTap: () {},
+              child: const SizedBox(height: 300, child: Text('in sheet')),
+            ),
+          ),
+          constraints: const BoxConstraints(),
+          transitionAnimationController: sheetAnimation,
+        );
+      }
+
+      // The video page's shape: a left column whose button opens the sheet
+      // after a request, and a MiniScaffold whose body holds a control that
+      // opens it at once.
+      Future<void> pumpSheetPage(
+        WidgetTester tester, {
+        bool otherInBody = true,
+      }) async {
+        tester.view.physicalSize = const Size(960, 540);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        sheetAnimation = AnimationController(
+          vsync: tester,
+          duration: const Duration(milliseconds: 240),
+          reverseDuration: const Duration(milliseconds: 240),
+        );
+        addTearDown(sheetAnimation.dispose);
+
+        await tester.pumpWidget(
+          GetMaterialApp(
+            builder: (context, child) => TvNavigation(child: child!),
+            home: Scaffold(
+              body: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 400,
+                    child: ElevatedButton(
+                      focusNode: leftNode,
+                      onPressed: () => Future<void>.delayed(
+                        const Duration(milliseconds: 120),
+                        showSheet,
+                      ),
+                      child: const Text('left'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 500,
+                    height: 540,
+                    child: MiniScaffold(
+                      key: scaffold,
+                      body: Column(
+                        children: [
+                          ValueListenableBuilder<bool>(
+                            valueListenable: showTrigger,
+                            builder: (context, bool show, _) => show
+                                ? InkWell(
+                                    focusNode: triggerNode,
+                                    autofocus: true,
+                                    onTap: showSheet,
+                                    child: const SizedBox(
+                                      height: 60,
+                                      child: Text('trigger'),
+                                    ),
+                                  )
+                                : const SizedBox(height: 60),
+                          ),
+                          if (otherInBody)
+                            InkWell(
+                              focusNode: otherNode,
+                              onTap: () {},
+                              child: const SizedBox(
+                                height: 60,
+                                child: Text('other'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(triggerNode.hasPrimaryFocus, isTrue);
+      }
+
+      Future<void> openSheet(WidgetTester tester) async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(inSheetNode.hasPrimaryFocus, isTrue);
+      }
+
+      Future<void> frames(WidgetTester tester, int count) async {
+        for (int i = 0; i < count; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+      }
+
+      testWidgets('takes focus while it is still opening', (tester) async {
+        await pumpSheetPage(tester);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await frames(tester, 6);
+
+        expect(sheetAnimation.status, AnimationStatus.forward);
+        expect(inSheetNode.hasPrimaryFocus, isTrue);
+
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('opened late by a control outside it takes focus at once', (
+        tester,
+      ) async {
+        await pumpSheetPage(tester);
+        leftNode.requestFocus();
+        await tester.pumpAndSettle();
+
+        // The sheet appears 120 ms in, about 8 frames, and is 240 ms long. An
+        // empty probe would hold focus on the button for 12 frames more.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await frames(tester, 12);
+
+        expect(sheetAnimation.status, AnimationStatus.forward);
+        expect(inSheetNode.hasPrimaryFocus, isTrue);
+
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('gives focus back the moment it starts closing', (
+        tester,
+      ) async {
+        await pumpSheetPage(tester);
+        await openSheet(tester);
+
+        await tester.binding.handlePopRoute();
+        await frames(tester, 4);
+
+        expect(sheetAnimation.status, AnimationStatus.reverse);
+        expect(find.text('in sheet'), findsOneWidget);
+        expect(triggerNode.hasPrimaryFocus, isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(inSheetNode),
+          isFalse,
+        );
+
+        await tester.pumpAndSettle();
+        expect(find.text('in sheet'), findsNothing);
+        expect(triggerNode.hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('takes no keys while it closes', (tester) async {
+        await pumpSheetPage(tester);
+        await openSheet(tester);
+
+        await tester.binding.handlePopRoute();
+        await frames(tester, 4);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await frames(tester, 2);
+
+        expect(sheetAnimation.status, AnimationStatus.reverse);
+        expect(otherNode.hasPrimaryFocus, isTrue);
+
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('closed while still opening gives focus back', (
+        tester,
+      ) async {
+        await pumpSheetPage(tester);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await frames(tester, 6);
+        expect(sheetAnimation.status, AnimationStatus.forward);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        expect(find.text('in sheet'), findsNothing);
+        expect(triggerNode.hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('whose trigger is gone gives focus to its own body', (
+        tester,
+      ) async {
+        await pumpSheetPage(tester);
+        await openSheet(tester);
+
+        showTrigger.value = false;
+        await frames(tester, 4);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        expect(otherNode.hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('with nothing left in its body gives focus to the page', (
+        tester,
+      ) async {
+        await pumpSheetPage(tester, otherInBody: false);
+        await openSheet(tester);
+
+        showTrigger.value = false;
+        await frames(tester, 4);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        expect(leftNode.hasPrimaryFocus, isTrue);
+      });
+    });
+  });
 }
 
 // The ring is the last CustomPaint under TvNavigation; its painter exposes the
@@ -6803,4 +7503,10 @@ class _VisitCountingElement extends StatelessElement {
     (widget as _VisitCountingWidget).counter.visits++;
     super.visitChildren(visitor);
   }
+}
+
+/// A login controller that doesn't ask the network for a QR code.
+class _FakeLoginController extends LoginPageController {
+  @override
+  Future<void> refreshQRCode() async {}
 }
