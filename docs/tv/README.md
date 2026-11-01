@@ -26,6 +26,7 @@
 | [**ARCHITECTURE.md**](./ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**（`lib/tv/*`、`lib/scripts/tv_*.patch`、`TvBridge.kt`）、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M10`）与 23 项 TV 功能不变量（`C1`–`C23`）。 |
 | [**4K_VARIANT.md**](./4K_VARIANT.md) | 视频直通版本（`variant/4k-passthrough` 分支）：与 `main` 的区别、如何从 `main` 更新、设备检查和构建方法。 |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | 视频直通路径上测试过的全部 mpv 参数、结果，以及哪些做成了设置。 |
+| [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0：测量 D-pad 每一步耗时的方法、测试清单、时间预算和焦点问题清单。 |
 | [**REVIEW.md**](./REVIEW.md) | **TV 控制层全面代码与架构审查报告**：模块逐文件深度评估、边界条件与代码卫生审查结论（`R1`–`R20`）及上游合并风险矩阵。 |
 | [**PLAN.md**](./PLAN.md) | 按 **阶段（Phase 1–3）→ 里程碑（Milestone）→ 史诗（Epic）→ 任务（Task）** 组织的完整实施、优化与回归修复路线图。 |
 | [**PROGRESS.md**](./PROGRESS.md) | 任务级执行日志、提交哈希、优化前后性能基准对比与真机/模拟器双端验证记录。 |
@@ -136,6 +137,8 @@ flutter build apk --release --split-per-abi \
 
 > **提示（在电视上调试播放问题）**：
 > `tool/tv_m12/` 存放 M12 崩溃调试用到的工具。`run.sh` 通过 adb 运行一次测试，并把 logcat、内核日志和采样数据保存到开发机上，因此内核崩溃后日志不会丢失；`probe_app.sh` 安装一个小型测试应用，用 `SurfaceView` 或 `TextureView` 播放本地文件；`postpanic.sh` 在内核崩溃后收集证据。这些工具从环境变量 `ANDROID_SERIAL`、`M12_MEDIA` 和 `M12_RUNS` 读取配置。部分测试可能导致电视关机，详见 [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md)。
+>
+> `tool/tv_m13/` 存放 M13.0 的 D-pad 测量工具。`logging.patch` 为 `-Pdev` 构建加入每一步的耗时日志（切勿提交），`run.sh` 在当前画面上回放方向键，`steps.py` 汇总结果。详见 [`M13_BASELINE.md`](./M13_BASELINE.md)。
 
 > **提示（查看电视支持的解码器）**：
 > `./tool/tv_codecs.sh` 通过 adb 打印设备上 `MediaCodecList` 报告的全部视频解码器（应用实际能看到的列表）：各解码器声明的分辨率、帧率、性能点与 profile/level。无需安装应用或 root；加 `all` 参数同时列出音频解码器，用 `ANDROID_SERIAL` 指定设备。
