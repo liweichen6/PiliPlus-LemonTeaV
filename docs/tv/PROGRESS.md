@@ -120,7 +120,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (runs and causes done; the budget, set from a `<physical-tv>` bench, waits for the user) | `<vm-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (budget confirmed; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1502,3 +1502,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Whether the dev app's process had exited: `pidof` still returned a line straight after the force-stop, and the TV stopped answering `adb` once asleep. It was no longer on top.
 * **Cleanup**: the dev app is force-stopped, and the test folder is off the TV. `PiliPlus TV dev` stays installed with the probe build. The TV was put to sleep with `KEYCODE_SLEEP` (`mWakefulness=Asleep`), and `adb` is disconnected.
 * **Next** (owner: user): confirm the budget, including the extra bench before M13.5, and decide on landing and on bug 1's fix. `M13.1` waits for the go-ahead.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0`): Done
+* **Status**: ✅ Done. The inventory stays open for bugs the user remembers.
+* **Branch**: `feat/tv-m13-baseline`, not pushed.
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): the adjusted budget in `M13_BASELINE.md` stands. So the gate for M13.5 is on `<physical-tv>`, one more bench comes before M13.5, and the 55 ms limit on scrolling comments falls back to 72 ms only if M13.2 can't move the ring in the frame that scrolls.
+* **Next** (owner: user): whether to land this branch, which publishes a public release because `tool/tv_m13/` isn't Markdown; whether bug 1's fix lands ahead of M13.3; and the go-ahead for `M13.1`.

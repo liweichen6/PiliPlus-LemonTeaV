@@ -1,6 +1,6 @@
 # M13.0: D-Pad Baseline and Focus Bug Inventory
 
-**Status**: the six runs are done on `<vm-tv>` and on `<physical-tv>`, and the inventory's causes are done on `<vm-tv>`. The budget below comes from the `<physical-tv>` bench and waits for the user's OK. The inventory stays open for bugs they remember.
+**Status**: ✅ Done. The six runs are done on `<vm-tv>` and on `<physical-tv>`, the inventory's causes are done on `<vm-tv>`, and the user confirmed the budget below on 2026-11-01. The inventory stays open for bugs they remember.
 
 M13 rebuilds the focus engine, but nobody has timed a D-pad step on a TV. The only figure, about 3.2 ms per step, came from a development Mac. So this task answers one question first: **how much of the lag is the engine's?** Anything that turns out to be something else, such as rendering, heavy upstream widgets or video decoding, becomes its own item instead of being folded into M13.
 
@@ -105,7 +105,7 @@ Device rules that matter here:
 
 ## The Budget
 
-The budget is the time limit on one D-pad step. M13.5 won't switch to the new scorer unless it holds, so it decides whether the new engine ships. These limits come from the `<physical-tv>` bench, at the user's request, and wait for their OK.
+The budget is the time limit on one D-pad step. M13.5 won't switch to the new scorer unless it holds, so it decides whether the new engine ships. These limits come from the `<physical-tv>` bench, and the user confirmed them on 2026-11-01.
 
 **The goal** stays: `work` p90 at or under 16.7 ms and `total` p90 at or under 33.3 ms. A step can't end within one frame of the key press, because it has to wait for the next vsync, so `total` allows two frames, leaving out the panel's own delay. Today settings and the paused detail page meet the `work` half, and no run meets the `total` half. It can't be the gate, because on home `raster` alone takes 15.3 ms, and while a video plays `input` and `raster` each reach about 19 ms at p90. Neither is the engine's.
 
