@@ -123,7 +123,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
-| **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
@@ -1577,3 +1577,57 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * It hasn't been compared with `origin/main`, because bug 1 stops that build reaching the page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that's read from the code and not tested.
 * **Decision** (the user): `M13.1` starts now, on top of `M13.0a` and `M13.0b`, before they land.
 * **Next**: `M13.1`. Landing `M13.0a` and `M13.0b` is the user's call. It changes app code, so it publishes a public release, which also carries whatever upstream commits the build syncs in.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.1`): Adapters
+* **Status**: ✅ Done. All 99 TV tests pass unchanged, the TV analyze step finds no issues, and a D-pad step runs no more instructions than before.
+* **Branch**: `claude/tv-m13-1-adapters-654465`, on top of `fix/tv-m13-0a-scroll-levels`.
+* **Files Changed**: `[NEW] lib/tv/adapters/` (eight files); `[MODIFY] lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. Nothing in `test/` changed.
+* **The Move**: `tv_navigation.dart` and `tv_focus_layers.dart` now import only `tv_adapters.dart` and `tv_platform.dart` from this project, and no code in them names an upstream class. An upstream rename now breaks one adapter, not the engine. The two files went from 4,173 lines to 3,586.
+
+| Adapter | Source | Contributes |
+| :--- | :--- | :--- |
+| `TvSheetAdapter` | `MiniScaffold` / `BottomSheetLayout` | What to hide (`hides`), and reads of a layout and its sheet for the lifecycle the engine still keeps |
+| `TvCardAdapter` | Comment and video cards and their embedded actions | Groups (`isGroup`, `isAction`) and roles (`isSecondaryIn`, `isMicroAction`) |
+| `TvListTileAdapter` | `ListTile` trailing controls, in both classes | Groups (`isGroup`) and roles (`isSecondaryIn`) |
+| `TvPopupAdapter` | Popup routes and overlay dialogs | Layers (`layerProviders`) |
+| `TvPlayerHudAdapter` | Upstream's player bars, which `AppBarAni` slides away | What to hide (`isSlidAway`) |
+| `TvLoginAdapter` | The login QR tab | `didPushRoute` |
+
+* **The Contract**: `tv_focus_adapter.dart` holds `TvFocusAdapter`, the layer interfaces and three focus-tree helpers the engine and adapters share. It imports only Flutter, and no adapter imports the engine, so there's no import cycle.
+* **Design Note, the Hot Paths**: `hides` and `isGroup` run per ancestor per candidate, and `isSecondaryIn` per pair of candidates, so the engine calls the `const` adapters by name and never loops over a list. They're `final class`es with `vm:prefer-inline` on what the walk calls. Only the cold `layerProviders` and `didPushRoute` go through `tvFocusAdapters`. A new source that fits rows, cards, actions, sheets or layers changes an adapter and not the engine. One that needs a new concept still needs an engine change until M13.4's scorer.
+* **Left Where It Is**:
+  * The inline sheets' lifecycle stays in `_TvNavigationState` for `M13.2`, reading layouts and sheets through `TvSheetAdapter`.
+  * The rule chain stays for `M13.4`. It now reads rows, cards and actions. The engine still tests `InkResponse`, `IconButton` and `TextField` to see whether a control is enabled, which is Flutter and not upstream.
+  * `Wrap` as a group, and the pinned sliver header handling, are Flutter types outside the six sources.
+  * `tv_player_hud.dart` keeps its calls into upstream's player, because M14 owns that file and the plan keeps `M13.1` off it. So `TvPlayerHudAdapter` is small: the slide check is all the engine knew about the player.
+* **Names for M13.5**: `ARCHITECTURE.md` and `REVIEW.md` keep the old names until that task's docs pass. `_TvFocusLayer` and `_TvFocusLayerProvider` lost their underscores and moved to `tv_focus_adapter.dart`. `_OverlayFocusLayer`, `_RouteFocusLayer` and `_RouteFocusLayerProvider` moved to `tv_popup_adapter.dart`. `_inspectBottomSheetNode` is `TvSheetAdapter.inspect`, and `_subtreeHasRequestableFocus` is `hasRequestableFocus`. `enclosingListTile`, `enclosingInkResponse` and `enclosingButton` are `enclosingRow`, `enclosingCard` and `enclosingAction`.
+* **`logging.patch`**: regenerated, because its context held the removed imports. It has the same six hooks, and the probe file is byte for byte the same.
+* **Tests**: 99 TV tests pass with no change to `test/`, and the TV analyze step finds no issues.
+* **What the 99 Tests Don't See**: 29 mutants, each breaking one adapter contribution. 14 fail the tests. The other 15 pass all 99: the tile group in either class, the trailing role, sheets' opening and closing states, the body-slot fallback, micro actions, the slid-away check and the login switch. Passing tests prove little on those paths.
+* **Differential Trace**: to cover those, a throwaway test drove seeded keys through tiles, cards, slid-away bars, sheets frame by frame, popups, overlay dialogs and the login tab, and logged focus, ring and scroll offsets at every step. Base and branch match on all 68,759 lines. It catches 11 of the 15 mutants. Of the other four, one is dead code and one only changes cost (see below); `trigger not remembered` changes nothing because `_onFocus` already remembers that node; and `no enclosing active sheet` only matters when a replaced sheet's record has no trigger. That last one wasn't exercised, and its code moved verbatim. The test isn't committed.
+* **Speed, Machine Code**: the same `--split-debug-info` build of both, disassembled, instructions and direct calls:
+
+| Function | Instructions | Direct calls | Notes |
+| :--- | :--- | :--- | :--- |
+| `evaluateNode`'s walk | 1,377 → 1,348 | 43 → 43 | No adapter code left out of line |
+| `_findVerticalCandidate` | 927 → 927 | 49 → 49 | |
+| `_filterOutEmbeddedSecondaryActions` | 376 → 376 | 30 → 30 | |
+| `_isEmbeddedSecondaryOf` | 73 → 71 | 5 → 5 | |
+| `inDirection`'s closure | 719 → 788 | 60 → 63 | `_isEmbeddedSecondaryOf` now inlines here: one call fewer on the path, with its body in line |
+| `_findHorizontalCandidate` | 475 → 541 | 64 → 67 | The same |
+
+  No new loop and no new call on the path. On the per-frame path `_discover` gains five instructions, for its new argument.
+* **Speed, Timing** on `<vm-tv>`, `decide` in ms, with the same keys, alternating builds in A-B-B-A order:
+  * Home, 8 runs and 991 steps on the final build: mean 0.945 → 0.938, p50 0.92 → 0.94, p90 1.32 → 1.28 (permutation test on run means, p = 0.77).
+  * Settings, 音视频设置, 4 runs and 675 steps: mean 0.80 → 0.80, p50 0.78 → 0.79, p90 1.12 → 1.06.
+  * Per frame, `engine` p50 over 20 home runs: 19.4 → 19.9 µs (p = 0.81). It follows the time of the session, not the build.
+  * The settings runs and the per-frame comparison used builds from before the last change, which only made a role a `bool` instead of an enum. That first version read 5 % slower on home over 12 runs (0.923 → 0.972, p = 0.25). It wasn't proven, but it added a compare per pair of candidates, so it went.
+  * Not timed: comments and the video page, which would need a video playing. They rest on the machine code. `<physical-tv>` wasn't used, so the budget's real check is still M13.5's bench.
+* **Seen on the Way and Not Fixed**:
+  * `_isPrimaryContainer` carries `w is InkResponse` from two copies of the old code. It can't be true: a focus node's context is a `Focus`, and `InkResponse` sits above it. Removing it changes nothing in the tests or the trace.
+  * `TvNavigationObserver.didPush` still calls `ModalRoute.of(current.context!)`, the dependency on the focused widget that `R13` removed elsewhere.
+  * Upstream's `MiniScaffold` trips a debug-only assert when a sheet replaces an open one. It doesn't exist in a release build.
+* **Device Pass** on `<vm-tv>`: 20 home and 4 settings runs, D-pad keys plus Select on the rail, the gear and a settings pane, with a screenshot before each. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe.
+* **Next**: `M13.2`, on the user's go-ahead. It reworks the sheets' lifecycle, and the 99 tests don't pin those opening and closing states, so the trace's sheet scenes should become real tests first. Landing `M13.0a`, `M13.0b` and `M13.1` is the user's call.
