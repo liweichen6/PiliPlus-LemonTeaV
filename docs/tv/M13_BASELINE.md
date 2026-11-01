@@ -1,14 +1,14 @@
 # M13.0: D-Pad Baseline and Focus Bug Inventory
 
-**Status**: the six runs and the inventory's causes are done, on `<vm-tv>`. The budget below is a proposal that waits for the user, and the inventory stays open for bugs they remember.
+**Status**: the six runs are done on `<vm-tv>` and on `<physical-tv>`, and the inventory's causes are done on `<vm-tv>`. The budget below comes from the `<physical-tv>` bench and waits for the user's OK. The inventory stays open for bugs they remember.
 
 M13 rebuilds the focus engine, but nobody has timed a D-pad step on a TV. The only figure, about 3.2 ms per step, came from a development Mac. So this task answers one question first: **how much of the lag is the engine's?** Anything that turns out to be something else, such as rendering, heavy upstream widgets or video decoding, becomes its own item instead of being folded into M13.
 
 ## The Device
 
-**`<vm-tv>`** (the user's decision, 2026-10-31). The focus engine is the same code on any device, so the bug inventory, the recorded paths and the scorer can all be worked out there. `<physical-tv>` isn't needed for M13. Three limits follow:
+**`<vm-tv>`** (the user's decision, 2026-10-31). The focus engine is the same code on any device, so the bug inventory, the recorded paths and the scorer can all be worked out there. `<physical-tv>` had one bench on 2026-11-01, at the user's request, to set the budget on real hardware. Three limits follow for `<vm-tv>`:
 
-* **Its times aren't the TV's.** It's an emulator on the development machine, with a different CPU and GPU. Use its numbers to compare builds and to see each part's share of a step. They can't show how a step feels on `<physical-tv>`, and its `raster` says nothing about that TV's GPU.
+* **Its times aren't the TV's, and neither are its shares.** It's an emulator on the development machine, with a different CPU and GPU. Use its numbers to compare builds. The bench showed they also understate the engine's share of a step, so only `<physical-tv>` can judge speed.
 * **`PiliPlus TV dev` is signed in there**, since the user's QR login during M13.0. So playing a video changes that account's watch history, and Select on a `×` in 稍后再看 removes the video from the real list. Stay on arrow keys in those lists. A new login is the user's to do.
 * **Hardware decoding doesn't work there.** The emulator's H.264 decoder takes the video and never outputs a frame, so the player stays on 加载中, and leaving it can freeze the app (see the ANR under Results). Turn `开启硬解` off for a playing run, and back on afterwards.
 
@@ -89,7 +89,7 @@ Home and settings have no video behind them, so "while a video plays" only appli
 
 Device rules that matter here:
 
-* If a run ever moves to `<physical-tv>`, read `默认画质` first and stay at or below 1080P60. 4K on this path can shut that TV down.
+* On `<physical-tv>`, read `默认画质` first and stay at or below 1080P60. 4K on this path can shut that TV down. Build with `--target-platform android-arm`, because that TV is 32-bit. `PiliPlus TV dev` isn't signed in there. Put it to sleep last, because it stops answering `adb` while it's asleep.
 * Keys only, never a swipe. `run.sh` refuses Back and Select.
 * A D-pad press scrolls the page, so a run may reach the end of a list. Those keys log `moved=0`, which is why the key lists go both ways.
 
@@ -105,25 +105,68 @@ Device rules that matter here:
 
 ## The Budget
 
-The budget is the time limit on one D-pad step. M13.5 won't switch to the new scorer unless it holds on `<vm-tv>`, so it decides whether the new engine ships.
+The budget is the time limit on one D-pad step. M13.5 won't switch to the new scorer unless it holds, so it decides whether the new engine ships. These limits come from the `<physical-tv>` bench, at the user's request, and wait for their OK.
 
-The plan's target is a step within one frame, which is 16.7 ms at 60 Hz. A step can't end within one frame of the key press, because it has to wait for the next vsync. So the first proposal was `work` p90 at or under 16.7 ms and `total` p90 at or under 33.3 ms: two frames from key to pixels, leaving out the panel's own delay.
+**The goal** stays: `work` p90 at or under 16.7 ms and `total` p90 at or under 33.3 ms. A step can't end within one frame of the key press, because it has to wait for the next vsync, so `total` allows two frames, leaving out the panel's own delay. Today settings and the paused detail page meet the `work` half, and no run meets the `total` half. It can't be the gate, because on home `raster` alone takes 15.3 ms, and while a video plays `input` and `raster` each reach about 19 ms at p90. Neither is the engine's.
 
-The runs show that can't be the gate on `<vm-tv>`. Four of the six runs miss it today, because of the emulator's `raster`, so it would block a new engine for something the engine doesn't do. The proposal, for the user to confirm, keeps those two figures as the goal for `<physical-tv>`, and gates M13.5 on the parts the engine controls:
+**The gate** for M13.5 covers what the engine controls, on `<physical-tv>`:
 
-| Measure | Runs | Limit | Today |
-| :--- | :--- | :--- | :--- |
-| `decide`, p90 | Idle | 2.5 ms, 15 % of a frame | 0.98–2.27 ms |
-| `decide`, p99 | All six | 5 ms | 1.38–4.46 ms |
-| `engine`, p90 | All six | 0.1 ms | 0.1 ms or less |
-| `total`, p90, steps that don't scroll | Idle | 33.3 ms | 22.0–23.8 ms |
-| `ring`, p50, steps that scroll | Idle | One frame, 16.7 ms | 12.1–14.5 ms |
+| Measure | Runs | Limit | Today | Holds today |
+| :--- | :--- | :--- | :--- | :--- |
+| `decide`, p90 | Home, settings, both paused runs | 6 ms | 2.89–7.65 ms | All but comments paused |
+| `decide`, p99 | All six | 16.7 ms, one frame | 3.33–20.59 ms | All but comments playing |
+| `engine`, p50 | All six | 0.1 ms | 0.07–0.09 ms | Yes |
+| `work`, p90 | Settings, both paused runs | 16.7 ms | 8.7, 14.0, 17.8 ms | All but comments paused |
+| `total`, p90, steps that don't scroll | Settings, detail paused | 35 ms | 30.9, 34.7 ms | Yes |
+| `total`, p90, steps that scroll | Comments paused | 55 ms | 70.3 ms | No |
 
-These limits sit just above today's figures, so they stop the new engine from getting slower. They don't ask it to get faster, because the runs show little speed to win. Passing them proves the new engine isn't slower on `<vm-tv>`, not that a step meets the goal on `<physical-tv>`.
+Four of these limits fail today, so they ask the new engine to be faster, not just no slower. `decide` at 6 ms leaves room for `build` and `raster` inside one frame on comments, which also brings `work` under 16.7 ms there. The last limit is the one nobody has shown can be reached: it needs the ring to move in the frame that scrolls, which it has deliberately not done since M7. If M13.2 can't do that, the limit falls back to 72 ms, no worse than today.
+
+Home and the playing runs are outside the `work` and `total` limits until their own items below are fixed.
+
+M13.5 needs one more bench on `<physical-tv>`, with the same six runs and the rules above. The day-to-day work stays on `<vm-tv>`, where idle `decide` runs 3.4–4.6 times faster than on the TV, so `decide` p90 at or under 1.75 ms there is a fair stand-in. It isn't while a video plays, when the ratio is 10–12.
+
+## Results, on `<physical-tv>`
+
+One bench on 2026-11-01, on a warm TV with normal thermal status, at the 1080P 60帧 default, signed out, and with the same clean probe as `<vm-tv>`. Hardware decoding worked, on a video with about 1,900 danmaku. There was no `gdec:1`, ANR or `moved=0 handled=1`. All times are in ms. The clocks hold here too: a sample taken just after `buildFinish` was always positive, 98 µs to 10.7 ms after it, over 20,841 frames.
+
+| Run | Steps | `decide` p50 / p90 / p99 | Engine per frame p50 | `raster` p50 / p90 | `input` p50 / p90 | `work` p90 | `total` p50 / p90 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 154 | 2.84 / 3.48 / 4.21 | 0.08 | 15.3 / 17.0 | 5.3 / 6.1 | 21.3 | 37.4 / 41.9 |
+| `m13-settings` | 212 | 2.44 / 2.89 / 3.33 | 0.07 | 3.7 / 4.5 | 5.2 / 6.0 | 8.7 | 28.8 / 34.4 |
+| `m13-detail-idle` | 209 | 5.02 / 5.83 / 6.28 | 0.08 | 6.0 / 6.9 | 5.7 / 6.7 | 14.0 | 27.7 / 34.7 |
+| `m13-detail-play` | 192 | 5.08 / 8.24 / 11.02 | 0.08 | 9.5 / 18.4 | 9.3 / 18.8 | 27.7 | 34.2 / 54.1 |
+| `m13-comments-idle` | 207 | 6.64 / 7.65 / 8.65 | 0.09 | 6.3 / 8.3 | 5.6 / 7.0 | 17.8 | 54.7 / 70.3 |
+| `m13-comments-play` | 185 | 9.40 / 13.94 / 20.59 | 0.09 | 9.0 / 18.8 | 9.6 / 16.7 | 33.8 | 66.7 / 90.8 |
+
+Each part's share of `total`, in percent:
+
+| Run | `input` | `decide` | `ring` past `decide` | `wait` | `build` | `raster` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 15 | 8 | 2 | 28 | 4 | 42 |
+| `m13-settings` | 21 | 10 | 8 | 40 | 6 | 15 |
+| `m13-detail-idle` | 21 | 18 | 3 | 30 | 5 | 22 |
+| `m13-detail-play` | 29 | 16 | 4 | 9 | 8 | 30 |
+| `m13-comments-idle` | 11 | 12 | 41 | 19 | 4 | 12 |
+| `m13-comments-play` | 15 | 15 | 30 | 15 | 5 | 16 |
+
+**The engine's share**: `decide` is 8–18 % of a step, against 0.5–6 % on `<vm-tv>`. On the worst step it takes more than a frame by itself. Where a step scrolls, the ring path is the larger part: with `decide`, it's 45–53 % of a step on comments, against 10–21 % on the four runs that barely scroll. The per-frame cost is still only 0.08 ms. So M13 does have a speed case, in `decide` and in the ring path, but not in the per-frame callback.
+
+**Steps that scroll**: a step counts when `ring` runs at least 3 ms past `decide`. That's every comment step and 35 of the settings steps. `ring` runs 10.5 ms past `decide` on settings, and 21–25 ms on comments. The probe can't split that further: part is the wait for the frame, and the rest is that frame's work, which on comments includes laying out upstream's cards.
+
+**Against `<vm-tv>`**: idle `decide` takes 3.4–4.6 times as long here, and 10–12 times as long while a video plays. `raster` goes the other way: the emulator's 33–48 ms is 4–10 ms on this GPU, and 15 ms on the home grid.
+
+**Not the engine, so its own items**:
+
+* Painting the home grid: `raster` takes 15.3 ms, 42 % of a step, and 59.5 % of that run's frames are over 16.7 ms. Settings, mostly text, takes 3.7 ms. This alone keeps home over the goal.
+* Video and danmaku on the UI thread: `input` reaches 17–19 ms at p90 and 27–40 ms at p99, and `raster` 18–19 ms at p90. `decide` also runs up to 1.4 times slower. The UI still holds 57–58 fps.
+* An ANR, from `<vm-tv>`: leaving a video stuck on 加载中 froze the app, with Android's main thread running Dart and blocked inside `libmpv`. Dart shares that thread with input, so any blocking mpv call also stops the D-pad. It didn't happen on `<physical-tv>`, where hardware decoding works.
+
+**Not from these runs**: `run.sh`'s `C2BqBuffer failures` count comes from a thread in the TV's codec service, which had been retrying since about 13 minutes after the TV started, 9.4 hours before the bench. It used 6 % of one core, and `dumpsys media.player` answered in 0.14 s, so it isn't the M16.3 hang. Its cause is unknown. The TV's load average of about 20 is kernel threads waiting, and the CPU was 88 % idle in the one sample taken.
 
 ## Results, on `<vm-tv>`
 
-These times compare builds and show each part's share. They aren't the TV's times. All are in ms. A plain step is one that doesn't scroll.
+These times compare builds. They aren't the TV's times. All are in ms. A plain step is one that doesn't scroll.
 
 **Probe**: the key time arrived in milliseconds, in a field Dart reads as microseconds, so `logging.patch` now multiplies it by 1000 (`input` can read up to 1 ms long). `Timeline.now` taken just after each frame's `buildFinish` was always positive, 15 µs to 23 ms after it over about 9,400 frames, so the clocks agree. A `[m13] clock` line reports this. `moved=0 handled=1` means focus moved but the ring's rect didn't, because the list scrolled under it or the ring was already hidden. None of the six runs had one.
 
@@ -138,13 +181,12 @@ These times compare builds and show each part's share. They aren't the TV's time
 | `m13-comments-idle` | 1.87 / 2.27 | 0.02 | 43.2 | 68.7 / 77.6 | 23.8 | 14.5 |
 | `m13-comments-play` | 0.79 / 1.37 | 0.02 | 72.2 | 155.9 / 187.3 | 178.5 | 27.4 |
 
-**The engine's share**: `decide` is 0.5–6 % of `total` on most runs, and at most about 10 % on the 29 plain steps of the comments run. On scrolling steps `ring`, including its one-frame wait by design, is 17–21 % of `total`. The per-frame cost is 0.02 ms, so M13.2 is justified by correctness, not speed. `<vm-tv>`'s software GPU inflates `raster`, so the share on a real GPU would be larger. `decide` would have to run about 7 times slower than here to fill a frame by itself, and `<vm-tv>` can't show whether the TV's CPU does.
+**The engine's share here**: `decide` is 0.5–6 % of `total` on most runs, and at most about 10 % on the 29 plain steps of the comments run. On scrolling steps `ring`, including its one-frame wait by design, is 17–21 % of `total`. The per-frame cost is 0.02 ms. This understates the engine, because the emulator's CPU is faster and its software GPU inflates `raster`, so use the `<physical-tv>` results for the answer.
 
-**Not the engine, so its own items**:
+**Limits of these numbers**:
 
-* `raster` on `<vm-tv>`: 33–48 ms on any frame right after another frame, against 1.2 ms after idle. It's the software GPU, and painting on `<physical-tv>` remains unmeasured.
-* Playing video on `<vm-tv>`: `total` 108–156 ms and `input` p99 up to 34 ms, on software decoding and a software GPU.
-* An ANR: leaving a video stuck on 加载中 froze the app, with Android's main thread running Dart and blocked inside `libmpv`. Dart shares that thread with input, so any blocking mpv call also stops the D-pad.
+* `raster`: 33–48 ms on any frame right after another frame, against 1.2 ms after idle. That's the software GPU.
+* Playing video: `total` 108–156 ms and `input` p99 up to 34 ms, on software decoding and a software GPU.
 
 ## Bug Inventory
 
@@ -179,5 +221,6 @@ Passing each level its own child, as `Scrollable.ensureVisible` does, fixed it o
 ## What These Runs Can't Show
 
 * The panel's own delay. `total` ends when the frame is rasterized, not when it's lit.
+* The remote's own delay. `total` starts at Android's key event.
 * A held key. `run.sh` sends separate presses. Held keys repeat no faster than one step per 45 ms and one per frame, by design (`_kDirectionalRepeatMinIntervalMs`).
 * Any comparison with `adb`'s own speed. `input keyevent` takes a few hundred ms per key, which sets the pace of a run, not the time of a step.

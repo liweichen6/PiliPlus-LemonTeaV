@@ -120,7 +120,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.2` | Setting, `SurfaceView`, Hooks & Tests | ✅ Done | `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `test/tv_video_plane_test.dart` (`04c52812b`) |
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (runs and causes done on `<vm-tv>`; the budget waits for the user) | `<vm-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | 🔄 In progress (runs and causes done; the budget, set from a `<physical-tv>` bench, waits for the user) | `<vm-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1476,3 +1476,29 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Not verified**: anything on `<physical-tv>`, by the user's decision; the sixteen other floating-control pages and the other pages that share bug 1's path, on the device.
 * **Cleanup**: `<vm-tv>` is stopped, with the clean probe build installed, and `开启硬解` and `我的页卡片` are back as they were. `PiliPlus TV dev` stays signed in for M13.3 and M13.5. No video was played while signed in, and nothing in the account's lists was changed.
 * **Next** (owner: user): confirm the budget, decide whether bug 1's fix lands ahead of M13.3, and add any more bugs. `M13.1` waits for the go-ahead.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.0`): Bench on `<physical-tv>`, Budget Adjusted
+* **Status**: 🔄 In progress. The six runs are done on `<physical-tv>` too. The adjusted budget waits for the user, and `M13.1` hasn't started.
+* **Branch**: `feat/tv-m13-baseline`
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): bench `<physical-tv>` and adjust the budget. This is one exception to M13 running on `<vm-tv>`, and the work itself stays there.
+* **Setup**: the same clean probe, built for `armeabi-v7a` as `-Pdev` and not debuggable. It installed over `PiliPlus TV dev`, and the normal app wasn't touched. `默认画质` read `1080P 60帧` before any video played, and a log guard adapted from `tool/tv_m16/run.sh` watched for `gdec:1` and `Detile`. It never fired. The playing runs used a video with about 1,900 danmaku, on hardware decoding, signed out, so no watch history changed.
+* **What this changes**: the earlier entry today said M13's case is the bugs, not speed. That came from `<vm-tv>`, and the TV corrects it.
+  * `decide` is 8–18 % of a step, against 0.5–6 %, and 3.4–4.6 times slower idle, or 10–12 times while a video plays. Its worst p99 is 20.59 ms, more than a frame by itself.
+  * On the comments list, where every step scrolls, `decide` and the ring path together are 45–53 % of a step. `ring` is 31 ms there.
+  * The per-frame callback is still only 0.08 ms, so that part holds: replacing it brings no speed.
+  * `raster` isn't the bottleneck `<vm-tv>` suggested, at 4–10 ms against 33–48 ms, but the home grid's 15.3 ms is a real item.
+* **Budget**: the goal stays `work` p90 at or under 16.7 ms and `total` p90 at or under 33.3 ms. The gate moves to `<physical-tv>` and to what the engine controls, in `M13_BASELINE.md`. Four of its limits fail today, so they ask for a faster engine. One, `total` p90 at or under 55 ms on scrolling comments, needs the ring to move in the frame that scrolls, and nobody has shown that yet. It falls back to 72 ms if M13.2 can't do it.
+* **Consequence**: M13.5 and the "done" bar in `PLAN.md` now check the budget on `<physical-tv>`, so M13.5 needs one more bench. `decide` p90 at or under 1.75 ms on `<vm-tv>` is the stand-in for day-to-day work.
+* **Not the engine, so items of their own**: painting the home grid, and video and danmaku on the UI thread. The ANR from `<vm-tv>` didn't happen on `<physical-tv>`.
+* **Separate finding**: a thread in the TV's codec service had been retrying since about 13 minutes after the TV started, so `run.sh`'s `C2BqBuffer failures` count isn't from these runs. Its cause is unknown, and it isn't the M16.3 hang.
+* **Verification**: the clocks hold on the TV, positive over 20,841 frames. There was no ANR, no guard trip and no `moved=0 handled=1` in the six runs.
+* **Not verified**:
+  * One bench in one session, so nothing shows how much these numbers vary between days.
+  * The playing resolution wasn't read directly. The default was `1080P 60帧`, no `gdec:1` appeared, and no 4K layer was listed.
+  * The probe can't split `ring` past `decide` into the wait and that frame's work.
+  * Whether the dev app's process had exited: `pidof` still returned a line straight after the force-stop, and the TV stopped answering `adb` once asleep. It was no longer on top.
+* **Cleanup**: the dev app is force-stopped, and the test folder is off the TV. `PiliPlus TV dev` stays installed with the probe build. The TV was put to sleep with `KEYCODE_SLEEP` (`mWakefulness=Asleep`), and `adb` is disconnected.
+* **Next** (owner: user): confirm the budget, including the extra bench before M13.5, and decide on landing and on bug 1's fix. `M13.1` waits for the go-ahead.
