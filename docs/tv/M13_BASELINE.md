@@ -203,7 +203,29 @@ Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 1 and 2 were proven with thr
 
 **Bug 1**: `lib/pages/mine/view.dart` puts each section's horizontal list inside one vertical `ListView`. `_ensureVisibleInUserScrollables` walks up the scrollables, but passes the focused card to each one. `ensureVisible` then measures against the card's nearest viewport, the horizontal list, so the outer list gets the wrong offset and stays where it is. Focus goes off screen, `_computeFocusedRect` hides the ring, and `inDirection` pulls the off-screen rect back to the list's edge, so Down only bounces between cards in that row. The lead about lazy building was wrong: the section was built, and the page just didn't scroll to it.
 
-Passing each level its own child, as `Scrollable.ensureVisible` does, fixed it on the device: Down reached every section with the ring visible, and all 95 TV tests passed. About six lines change, none of them in the rule chain. Other vertical pages with horizontal lists share this path (`live`, `pgc`, `search_panel`, the video introduction), but they weren't tested on the device.
+The fix is to pass each level its own child, as `Scrollable.ensureVisible` does. It's about six lines in `_ensureVisibleInUserScrollables`, none of them in the rule chain, and it's task `M13.0a` in `PLAN.md`:
+
+```diff
++    BuildContext current = context;
++    RenderObject? firstTarget;
+     ScrollableState? scrollable = Scrollable.maybeOf(context);
+     while (scrollable != null) {
+       if (_canUserScroll(scrollable)) {
+-        final RenderObject? target = context.findRenderObject();
++        final RenderObject? target = current.findRenderObject();
+         ...
+           scrollable.position.ensureVisible(
+             ...
+             alignmentPolicy: alignmentPolicy,
++            targetRenderObject: firstTarget,
+           );
++          firstTarget ??= target;
+         ...
+       final BuildContext scrollableContext = scrollable.context;
++      current = scrollableContext;
+```
+
+With this change alone, a widget test of the layout brought every section into view, and all 95 TV tests passed. On `<vm-tv>`, Down reached every section with the ring visible, but that build also carried the diagnostic change for bug 2, so `M13.0a` needs its own device pass. Other vertical pages with horizontal lists share this path (`live`, `pgc`, `search_panel`, the video introduction), and they weren't tested on the device.
 
 **Bug 2**: `_findVerticalCandidate` looks inside the focused list first. Once that runs out, it needs a target at or past the list's bottom edge, and a floating control sits inside that edge. Going right needs a target past the focused rect's right edge, and cards run to the edge of the screen. Letting a control over the list count as below it put the ring on `播放全部` on the device, and all 95 TV tests passed. That proves the cause but isn't the fix, because the button could only be reached from the end of a 48-item list. The `AnimatedSlide` lead wasn't the cause: `enablePlayAll` defaults to on, and the button was fully on screen.
 
