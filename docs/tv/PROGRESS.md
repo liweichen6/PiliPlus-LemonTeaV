@@ -122,6 +122,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
@@ -1542,9 +1543,18 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Compared With `origin/main`** (same keys, same device, on the user page and `影视`):
   * `影视`: Up from `查看更多` into `最近追剧` left that row above the top of the screen, with only a sliver of ring showing. That's bug 1's symptom on `pgc`, and with the fix the row scrolls into view.
   * The user page: going back up, the header stopped a little short of fully open, and with the fix it opens fully.
-* **Seen on the Way, on Both Builds and Not Fixed**. They aren't in the bug inventory, which is the user's list, so it's their call whether to add them:
-  * The user page: Up from the first `查看更多` does nothing, however often it's pressed, so the tabs and `编辑资料` can't be reached by going back up. It's a `stuck` bug in the rule chain.
-  * `pgc`: Up into a row can land on a card cut off by the right edge of the screen, and the row doesn't scroll, so the ring runs off the edge. Right scrolls such a row correctly.
+* **Seen on the Way, on Both Builds and Not Fixed Here**:
+  * `pgc`: Up into a row can land on a card cut off by the right edge of the screen, and the row doesn't scroll, so the ring runs off the edge. Right scrolls such a row correctly. It's bug 5, in `M13.0b`.
+  * The user page: Up from the first `查看更多` does nothing, however often it's pressed, so the tabs and `编辑资料` can't be reached by going back up. It's bug 6, a `stuck` bug in the rule chain, for M13.3 and M13.4.
   * Up doesn't always return to the card Down left. That's the missing column memory, which is M13.4's.
 * **Effect on the Account**: the two playing checks ran with `开启硬解` off, and it's back on. One opened a show from the top instead of its saved position, so that episode's position went from 35:19 to 1:39, and the show moved to the front of `最近追剧`. The other, a video from `观看记录`, may have moved too. The search history was empty, and is empty again after the one entry this run added.
-* **Next** (owner: user): the go-ahead to land this. It changes app code, so landing it publishes a public release, which also carries whatever upstream commits the build syncs in. `M13.1` follows it.
+* **Next**: `M13.0b`, in the next entry.
+
+---
+
+### [2026-11-01] Milestone M13: Bugs 5 and 6 Added, and `M13.0b` Started
+* **Status**: 🔄 In progress.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`, so `M13.0a` and `M13.0b` land together in one release.
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Decision** (the user): the two bugs seen during `M13.0a` go into the plan. The cut-off card is bug 5, fixed now as `M13.0b`, because its cause is outside the rule chain. The stuck Up on the user page is bug 6, with a recorded path in M13.3 and the fix in M13.4, because it's in the rule chain M13.4 replaces.
+* **Next**: the fix for bug 5.

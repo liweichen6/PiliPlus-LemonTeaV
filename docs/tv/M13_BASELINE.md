@@ -198,6 +198,8 @@ The user's list so far. They expect to add more as they remember it. Each one ge
 | 2 | 稍后再看, and pages with other floating controls | Try to reach `播放全部` from every card and `×` next to it, at the top and at the end of the list | Focus can land on `播放全部`, and Select plays the list | No key reaches it | `stuck` | Yes, on `<vm-tv>`, and on two more pages | The rules only accept a target outside the focused list, and a floating control sits over it |
 | 3 | Video cards, such as the related list | Focus a card and press Right | Focus can land on the card's `⋮` | Right does nothing (`moved=0 handled=0`) | `stuck` | Yes, on `<vm-tv>`, in the related list. Found in M13.0 | The `⋮` is a `Stack` sibling of the card, so no rule offers it |
 | 4 | 稍后再看 | Focus a `×` in the right column and press Up | Focus stays in its column | Focus lands on the left-column card of the same row | `jump` | Yes, twice, on `<vm-tv>`. Found in M13.0 | The rule compares the `×` with card centres, and that card's centre is above it |
+| 5 | Horizontal rows, such as `最近追剧` in `pgc` | Focus `查看更多` under a row and press Up | Focus lands on a card, and the row scrolls to show all of it | Focus lands on a card cut off by the right edge, the row stays where it is, and the ring runs off the screen | `lost ring` | Yes, on `<vm-tv>`. Found in M13.0a | A move reveals the card with one policy, and that policy checks only one end of a row. It's task `M13.0b` |
+| 6 | User page | Press Down into a tab's content, then Up to its first row, and press Up again | Focus reaches the tabs and `编辑资料` | Up does nothing, however often it's pressed, and only Back leaves | `stuck` | Yes, on `<vm-tv>`. Found in M13.0a | `_findVerticalCandidate` only accepts a target whose list is above the focused one, and the outer list wraps it |
 
 Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 1 and 2 were proven with throwaway builds on `<vm-tv>`. Those builds aren't on any branch, and M13.0 changes no app code.
 
@@ -242,6 +244,10 @@ The fix passes each level its own child, as `Scrollable.ensureVisible` does. It'
 **Bug 3**: `lib/common/widgets/video_card/video_card_h.dart` puts the `⋮` beside the card's `InkWell` in a `Stack`, and `video_card_v.dart` does the same. The embedded-action rules only look at a card's children, and `_filterOutEmbeddedSecondaryActions` drops small buttons that sit inside a larger candidate. A 1,500-key test reached a `⋮` that's a child of the card, and not one that's a sibling. The diagnostic change for bug 2 doesn't help, so this is a separate cause.
 
 **Bug 4**: going up, `_findVerticalCandidate` takes any target whose centre is above the focused rect's top. A `×` sits at the bottom of its row, so the neighbouring card in the same row counts as the row above.
+
+**Bug 5**: `_focusNode` picks one alignment policy from the direction, `keepVisibleAtStart` for Up and `keepVisibleAtEnd` for Down, and passes it to every list level. That suits a list running along the move. A row runs across it, so Up corrects only a card cut off at the row's start, and Down only one cut off at its end. The later reveal for both ends is skipped, because `consumePolicyScrolledNode` says the policy already scrolled. It's on both builds, so `M13.0a` didn't cause it, and it's outside the rule chain, so it doesn't wait for the new engine: it's task `M13.0b` in `PLAN.md`.
+
+**Bug 6**: read from the code, not yet proven with a test. Past the focused list, `_findVerticalCandidate` keeps a target in another scrollable only if that scrollable's rect is above the focused one. The tabs and `编辑资料` are in the `ExtendedNestedScrollView` around the focused list, whose rect runs to the bottom of the screen, so they're dropped and Up has no target. It's on both builds. It's in the rule chain that M13.4 replaces, and a patch would touch every nested page, including the video page, so it's left for M13.4, with a recorded path in M13.3.
 
 ## What These Runs Can't Show
 
