@@ -1577,7 +1577,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * The same keys do the same on the `M13.0a` build, so `M13.0b` didn't cause it. With the row not scrolled, the rail walks correctly on that build, and a scrolled row on `影视` doesn't trigger it, so the trigger isn't understood.
   * It hasn't been compared with `origin/main`, because bug 1 stops that build reaching the page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that's read from the code and not tested.
 * **Decision** (the user): `M13.1` starts now, on top of `M13.0a` and `M13.0b`, before they land.
-* **Next**: `M13.1`. Landing `M13.0a` and `M13.0b` is the user's call. It changes app code, so it publishes a public release, which also carries whatever upstream commits the build syncs in.
+* **Next**: `M13.1`.
 
 ---
 
@@ -1631,7 +1631,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * `TvNavigationObserver.didPush` still calls `ModalRoute.of(current.context!)`, the dependency on the focused widget that `R13` removed elsewhere.
   * Upstream's `MiniScaffold` trips a debug-only assert when a sheet replaces an open one. It doesn't exist in a release build.
 * **Device Pass** on `<vm-tv>`: 20 home and 4 settings runs, D-pad keys plus Select on the rail, the gear and a settings pane, with a screenshot before each. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe.
-* **Next**: `M13.2`, on the user's go-ahead. It reworks the sheets' lifecycle, and the 99 tests don't pin those opening and closing states, so the trace's sheet scenes should become real tests first. Landing `M13.0a`, `M13.0b` and `M13.1` is the user's call.
+* **Next**: `M13.2`, on the user's go-ahead. It reworks the sheets' lifecycle, and the 99 tests don't pin those opening and closing states, so the trace's sheet scenes should become real tests first.
 
 ---
 
@@ -1663,4 +1663,4 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Right onto a `⋮`: that's bug 3, so the expected path belongs to M13.3 and the fix to M13.4.
   * One sheet replacing an open one: upstream's `MiniScaffold` trips a debug-only assert there, so a widget test fails on the assert. The trace in `M13.1` covered it and matched. `M13.2` should watch this path, because it has no test.
 * **Device Pass**: none needed. No app code changed.
-* **Next**: `M13.2`, on the user's go-ahead. Landing `M13.0a`, `M13.0b`, `M13.1` and `M13.1a` is the user's call.
+* **Next**: `M13.2`, on the user's go-ahead.
