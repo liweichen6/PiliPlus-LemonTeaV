@@ -7,7 +7,7 @@
 > - **Verification Status**: `flutter analyze --no-pub` reports **0 issues** across all TV modules, hooks, and tests; `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart` passes **88 / 88 tests** (~3s); all 38 SDK/pub-cache patches apply and revert cleanly via `./tool/tv_patch.sh`.
 > - **Follow-up Review (2026-10-26, Milestone M10)**: findings `R8`–`R20` and the still-open `R2` / `R3` / `R5` items were added after M9.5 and are resolved in M10 (the task is in the severity column of §3). `R1`–`R7` keep their original numbering. The `SmartDialog` update-dialog focus bug that started M10 is not an `R` item: see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2.13 and invariant `C23`.
 > - **Device Verification (2026-10-31, Milestone M12.5)**: option A passed on `<physical-tv>` with `v2.1.6.2-fork.5870`: 10+ minutes of each agreed test video at 1080P60 or the best quality below it, with no freeze, ANR or kernel panic. Picking 4K in the HUD still freezes on that TV, as the README warns. Details and limits are in `PROGRESS.md`.
-> - **Follow-up (2026-10-31, Milestone M16)**: `TvVideoPlane` lives on `variant/4k-passthrough`, not on `main`, so the figures in this copy don't include it. There it adds 4 upstream Dart files and 30 added lines, and that branch's `REVIEW.md` covers them. See [`4K_VARIANT.md`](./4K_VARIANT.md).
+> - **Follow-up (2026-10-31 / 2026-11-02, Milestone M16)**: `TvVideoPlane` lives on `variant/4k-passthrough`, not on `main`, so the figures in this copy don't include it. There it adds 5 upstream Dart files and 31 added lines, and that branch's `REVIEW.md` covers them. See [`4K_VARIANT.md`](./4K_VARIANT.md).
 
 ---
 
