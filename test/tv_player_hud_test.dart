@@ -338,6 +338,7 @@ Widget _buildTestApp({
   FakeUgcIntroController? introController,
   Widget? child,
   VoidCallback? onSendDanmaku,
+  VoidCallback? onRefresh,
   NavigatorObserver? observer,
 }) {
   return MaterialApp(
@@ -358,6 +359,7 @@ Widget _buildTestApp({
           plPlayerController: plPlayerController,
           introController: introController,
           onSendDanmaku: onSendDanmaku ?? () {},
+          onRefresh: onRefresh,
           child: child ?? Container(color: Colors.black),
         ),
       ),
@@ -371,6 +373,7 @@ Future<void> _pumpHud(
   FakeUgcIntroController? introController,
   Widget? child,
   VoidCallback? onSendDanmaku,
+  VoidCallback? onRefresh,
   NavigatorObserver? observer,
 }) async {
   tester.view.physicalSize = const Size(1920, 1080);
@@ -383,6 +386,7 @@ Future<void> _pumpHud(
       introController: introController,
       child: child,
       onSendDanmaku: onSendDanmaku,
+      onRefresh: onRefresh,
       observer: observer,
     ),
   );
@@ -857,7 +861,7 @@ void main() {
       ) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
-          ..videoPlane = TvVideoPlane.forNewPlayer(isLive: false);
+          ..videoPlane = TvVideoPlane.forNewPlayer();
 
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -882,7 +886,7 @@ void main() {
       testWidgets('Select retries after a failure instead of toggling', (
         tester,
       ) async {
-        final plane = TvVideoPlane.forNewPlayer(isLive: false)!;
+        final plane = TvVideoPlane.forNewPlayer()!;
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
           ..videoPlane = plane;
@@ -898,6 +902,30 @@ void main() {
         await tester.pumpAndSettle();
         expect(pl.doubleTapCenterCount, 1);
         expect(pl.refreshCount, 1);
+        await tester.pump(const Duration(seconds: 3));
+      });
+
+      testWidgets('Select uses onRefresh after a live plane failure', (
+        tester,
+      ) async {
+        final plane = TvVideoPlane.forNewPlayer()!;
+        final pl = FakePlPlayerController()
+          ..isLive = true
+          ..isFullScreen.value = true
+          ..videoPlane = plane;
+        int liveRefreshCount = 0;
+
+        await _pumpHud(
+          tester,
+          plPlayerController: pl,
+          onRefresh: () => liveRefreshCount++,
+        );
+        plane.failed.value = true;
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(liveRefreshCount, 1);
+        expect(pl.refreshCount, 0);
+        expect(pl.doubleTapCenterCount, 0);
         await tester.pump(const Duration(seconds: 3));
       });
     });

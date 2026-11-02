@@ -84,7 +84,7 @@ void main() {
   Future<void> settingOn() => box.put(TvVideoPlane.settingKey, true);
 
   TvVideoPlane newPlane(FakeMpv mpv) {
-    final plane = TvVideoPlane.forNewPlayer(isLive: false)!
+    final plane = TvVideoPlane.forNewPlayer()!
       ..bind(mpv, videoRect, onFail: () => failCount += 1);
     mpv.calls.clear();
     return plane;
@@ -102,41 +102,40 @@ void main() {
   group('the setting', () {
     test('is on by default on a TV, and can be turned off', () async {
       expect(TvVideoPlane.enabled, isTrue);
-      expect(TvVideoPlane.forNewPlayer(isLive: false), isNotNull);
+      expect(TvVideoPlane.forNewPlayer(), isNotNull);
 
       await box.put(TvVideoPlane.settingKey, false);
       expect(TvVideoPlane.enabled, isFalse);
-      expect(TvVideoPlane.forNewPlayer(isLive: false), isNull);
+      expect(TvVideoPlane.forNewPlayer(), isNull);
     });
 
     test('does nothing off a TV', () async {
       await box.put(TvVideoPlane.settingKey, true);
       TvPlatform.setTvModeForTesting(false);
       expect(TvVideoPlane.enabled, isFalse);
-      expect(TvVideoPlane.forNewPlayer(isLive: false), isNull);
+      expect(TvVideoPlane.forNewPlayer(), isNull);
     });
 
-    test(
-      'gives a video a plane and leaves a live room on the texture',
-      () async {
-        await box.put(TvVideoPlane.settingKey, true);
-        expect(TvVideoPlane.forNewPlayer(isLive: false), isNotNull);
-        expect(TvVideoPlane.forNewPlayer(isLive: true), isNull);
-      },
-    );
-
-    test('stored quality above 1080P60 comes down, and only that', () async {
+    test('stored video and live quality above 1080p come down, and only that', () async {
       await box.put(SettingBoxKey.defaultVideoQa, 120);
       await box.put(SettingBoxKey.defaultVideoQaCellular, 127);
+      await box.put(SettingBoxKey.liveQuality, 15000);
+      await box.put(SettingBoxKey.liveQualityCellular, 30000);
       TvVideoPlane.capStoredQuality(box);
       expect(box.get(SettingBoxKey.defaultVideoQa), 116);
       expect(box.get(SettingBoxKey.defaultVideoQaCellular), 116);
+      expect(box.get(SettingBoxKey.liveQuality), 10000);
+      expect(box.get(SettingBoxKey.liveQualityCellular), 10000);
 
       await box.put(SettingBoxKey.defaultVideoQa, 80);
       await box.delete(SettingBoxKey.defaultVideoQaCellular);
+      await box.put(SettingBoxKey.liveQuality, 400);
+      await box.delete(SettingBoxKey.liveQualityCellular);
       TvVideoPlane.capStoredQuality(box);
       expect(box.get(SettingBoxKey.defaultVideoQa), 80);
       expect(box.containsKey(SettingBoxKey.defaultVideoQaCellular), isFalse);
+      expect(box.get(SettingBoxKey.liveQuality), 400);
+      expect(box.containsKey(SettingBoxKey.liveQualityCellular), isFalse);
     });
   });
 
@@ -157,28 +156,36 @@ void main() {
       expect(TvVideoPlane.refusesTexture(null, false, 2160, 3840), isTrue);
       // A tall video's width alone would pass.
       expect(TvVideoPlane.refusesTexture(null, false, 1080, 2400), isTrue);
-      expect(toasts, hasLength(3));
+      expect(toasts, List.filled(3, TvVideoPlane.refusesVideoText));
     });
 
-    test('allows everything it allowed before the plane existed', () async {
+    test('refuses any live stream off the plane while the setting is on', () async {
+      await box.put(TvVideoPlane.settingKey, true);
+      // Live streams pass no width or height upfront.
+      expect(TvVideoPlane.refusesTexture(null, true, null, null), isTrue);
+      expect(toasts, <String>[TvVideoPlane.refusesLiveText]);
+    });
+
+    test('allows videos at or below 1080p off the plane', () async {
       await box.put(TvVideoPlane.settingKey, true);
       expect(TvVideoPlane.refusesTexture(null, false, 1920, 1080), isFalse);
       expect(TvVideoPlane.refusesTexture(null, false, 1080, 1920), isFalse);
       expect(TvVideoPlane.refusesTexture(null, false, null, null), isFalse);
-      expect(TvVideoPlane.refusesTexture(null, true, 3840, 2160), isFalse);
       expect(toasts, isEmpty);
     });
 
     test('with the setting off, playback is unchanged', () async {
       await box.put(TvVideoPlane.settingKey, false);
       expect(TvVideoPlane.refusesTexture(null, false, 3840, 2160), isFalse);
+      expect(TvVideoPlane.refusesTexture(null, true, null, null), isFalse);
       expect(toasts, isEmpty);
     });
 
-    test('a player on the plane may play 4K', () async {
+    test('a player on the plane may play 4K video and live streams', () async {
       await settingOn();
       final plane = newPlane(FakeMpv());
       expect(TvVideoPlane.refusesTexture(plane, false, 3840, 2160), isFalse);
+      expect(TvVideoPlane.refusesTexture(plane, true, null, null), isFalse);
     });
   });
 
@@ -647,6 +654,17 @@ void main() {
         source,
         contains('if (TvPlatform.isTv) ...TvVideoPlane.settingsModels,'),
       );
+    });
+
+    test('the live surface mounts without waiting on block rules', () {
+      final source = File(
+        'lib/pages/live_room/controller.dart',
+      ).readAsStringSync();
+      final wait = source.substring(
+        source.indexOf('await Future.wait(['),
+        source.indexOf('_fetchBlockRules()'),
+      );
+      expect(wait, contains('?.whenComplete(() => isLoaded.value = true)'));
     });
   });
 }

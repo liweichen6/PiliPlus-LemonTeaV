@@ -327,7 +327,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   void _togglePlayPause() {
     _virtualSeekTarget = null;
     if (_pl.videoPlane?.failed.value ?? false) {
-      _pl.refreshPlayer();
+      (widget.onRefresh ?? _pl.refreshPlayer)();
       return;
     }
     if (_pl.isLive || (widget.canPlay?.call() ?? true)) {

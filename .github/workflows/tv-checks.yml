@@ -58,6 +58,7 @@ jobs:
           flutter analyze --no-pub --no-fatal-infos \
             lib/tv \
             lib/main.dart \
+            lib/pages/live_room/controller.dart \
             lib/pages/setting/models/video_settings.dart \
             lib/pages/video/widgets/player_focus.dart \
             lib/plugin/pl_player/controller.dart \

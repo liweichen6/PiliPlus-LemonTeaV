@@ -46,10 +46,10 @@ class _NativePlaneMpv implements TvPlaneMpv {
 
 /// mpv's `vo=mediacodec_embed` on a real `SurfaceView`, so the decoder goes to
 /// the TV's video plane and the GPU stays out of the path (docs/tv/PLAN.md,
-/// M16). One per player, for videos only, behind a TV setting.
+/// M16). One per player, behind a TV setting.
 ///
-/// Fails closed. 4K60 through the GPU shuts `<physical-tv>` down, so nothing
-/// here may leave mpv on Flutter's texture:
+/// Fails closed. 4K60 and 2K live through the GPU shut `<physical-tv>` down, so
+/// nothing here may leave mpv on Flutter's texture:
 ///  * [configuration] gives media_kit no way to attach it: with a `vo` other
 ///    than `gpu` and `androidAttachSurfaceAfterVideoParameters: true` it never
 ///    sets `wid` or `vo` at all, so a hook that doesn't run leaves `vo=null`;
@@ -88,8 +88,10 @@ class TvVideoPlane {
   /// larger number isn't just a slower setting.
   static const List<int> decodeQueueOptions = <int>[0, 1, 2, 4];
 
-  // VideoQuality.high108060.code, and the long side of the frames it allows.
+  // VideoQuality.high108060.code, LiveQuality.origin.code, and the long side
+  // of the frames the texture path allows.
   static const int _maxTextureQa = 116;
+  static const int _maxTextureLiveQa = 10000;
   static const int _maxTextureSide = 1920;
 
   static const MethodChannel _channel = MethodChannel(viewType);
@@ -132,7 +134,7 @@ class TvVideoPlane {
       title: '视频直通解码队列',
       leading: const Icon(Icons.queue_play_next_outlined),
       getSubtitle: () =>
-          '当前：${_decodeQueueLabel(decodeQueueFrames)}。提前解码以减少 4K 掉帧，重新打开视频后生效',
+          '当前：${_decodeQueueLabel(decodeQueueFrames)}。提前解码以减少 4K 掉帧，重新打开视频或直播后生效',
       onTap: (context, setState) async {
         final frames = await showDialog<int>(
           context: context,
@@ -157,7 +159,7 @@ class TvVideoPlane {
 
   static SettingsModel get _planeSetting => SwitchModel(
     title: '4K 视频直通',
-    subtitle: '画面由电视直接显示，不经过 GPU，可播放 4K，重新打开视频后生效；超分辨率、镜像、缩放和截图不可用',
+    subtitle: '画面由电视直接显示，不经过 GPU，可播放 4K 及高画质直播，重新打开视频或直播后生效；超分辨率、镜像、缩放和截图不可用',
     leading: const Icon(Icons.layers_outlined),
     setKey: settingKey,
     defaultVal: true,
@@ -166,32 +168,42 @@ class TvVideoPlane {
     },
   );
 
-  /// 4K is safe with the setting on and not with it off, so turning it off
-  /// takes a stored quality above 1080P60 back down.
+  /// Above 1080p is safe with the setting on and not with it off, so turning it
+  /// off takes a stored video or live quality above 1080p back down.
   @visibleForTesting
   static void capStoredQuality(Box<dynamic> box) {
-    for (final key in const <String>[
-      SettingBoxKey.defaultVideoQa,
-      SettingBoxKey.defaultVideoQaCellular,
+    for (final (key, maxQa) in const <(String, int)>[
+      (SettingBoxKey.defaultVideoQa, _maxTextureQa),
+      (SettingBoxKey.defaultVideoQaCellular, _maxTextureQa),
+      (SettingBoxKey.liveQuality, _maxTextureLiveQa),
+      (SettingBoxKey.liveQualityCellular, _maxTextureLiveQa),
     ]) {
-      if (box.get(key) case final int qa when qa > _maxTextureQa) {
-        box.put(key, _maxTextureQa);
+      if (box.get(key) case final int qa when qa > maxQa) {
+        box.put(key, maxQa);
       }
     }
   }
 
-  /// With the setting on, a stored quality can be 4K, but a player created
-  /// before it was turned on, or for a live room, stays on the texture and
-  /// serves the next video too. That can't play above 1080P60.
+  static const String refusesVideoText = '当前无法播放 4K，请返回首页后重新打开视频';
+  static const String refusesLiveText = '当前无法启用视频直通，请返回首页后重新打开直播';
+
+  /// With the setting on, a stored quality can be above 1080p, but a player
+  /// created before it was turned on stays on the texture and serves anything
+  /// opened on top of it. Live streams report no size upfront, so any live room
+  /// on that stale player is refused; videos above 1080P60 are too.
   static bool refusesTexture(
     TvVideoPlane? plane,
     bool isLive,
     int? width,
     int? height,
   ) {
-    if (plane != null || isLive || !enabled) return false;
+    if (plane != null || !enabled) return false;
+    if (isLive) {
+      showToast(refusesLiveText);
+      return true;
+    }
     if (math.max(width ?? 0, height ?? 0) <= _maxTextureSide) return false;
-    showToast('当前无法播放 4K，请返回首页后重新打开视频');
+    showToast(refusesVideoText);
     return true;
   }
 
@@ -199,8 +211,8 @@ class TvVideoPlane {
 
   /// The plane for a player that's about to be created, or `null` to leave it
   /// on Flutter's texture.
-  static TvVideoPlane? forNewPlayer({required bool isLive}) {
-    if (isLive || !enabled) return null;
+  static TvVideoPlane? forNewPlayer() {
+    if (!enabled) return null;
     _channel.setMethodCallHandler(_onSurfaceEvent);
     return TvVideoPlane._();
   }

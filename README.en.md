@@ -59,15 +59,14 @@ Located under **Settings → Audio & Video Settings** (changes take effect on th
 > [!WARNING]
 > **This is PiliPlus TVP, with `4K 视频直通` on by default.** It installs beside the normal PiliPlus TV with its own data, and needs its own login. It has no releases and doesn't update itself: its APKs come from a manual GitHub Actions run. See [docs/tv/4K_VARIANT.md](docs/tv/4K_VARIANT.md).
 >
-> **On a TV with a MediaTek chip, don't pick 4K or higher with `4K 视频直通` turned off.** On the one MediaTek MT9690 TV tested, without it 4K video freezes within seconds and the app then stops responding. 4K60 can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
+> **On a TV with a MediaTek chip, don't pick 4K or higher in videos, or 2K or higher in live rooms, with `4K 视频直通` turned off.** On the one MediaTek MT9690 TV tested, without it 4K video freezes within seconds and the app then stops responding; 4K60 video and 2K or higher live streams (`2K`, `4K`, `4K 原画`, `杜比`) can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
 >
-> - TVs now default to **1080P 60 fps**. Existing installs that never changed the default quality get this too; a default you already chose is left alone.
-> - This is a default, not a hard limit. You can still pick 4K in the player, and that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality).
-> - **`设置 → 音视频设置 → 4K 视频直通`** (Settings → Audio & Video, TV only, on by default) sends the decoder straight to the TV's video layer, around the GPU. With it on, 4K60 AVC and AV1 played steadily inside the app on this TV. It applies the next time a video opens.
+> - TVs now default to **1080P 60 fps** for videos (and **原画** for live streams, which is 1080p in Bilibili's multi-tier ladder). Existing installs that never changed the default quality get this too; a default you already chose is left alone.
+> - This is a default, not a hard limit. You can still pick higher qualities in the player, and in videos that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality), and likewise keep live default quality at or below 原画.
+> - **`设置 → 音视频设置 → 4K 视频直通`** (Settings → Audio & Video, TV only, on by default) sends decoded video and live streams straight to the TV's video layer, around the GPU. With it on, 4K60 AVC and AV1 videos as well as 2K/4K live streams play steadily inside the app on this TV. It applies the next time a video or live room opens.
 >   - **`视频直通解码队列`** (default 4 frames) decodes ahead to reduce dropped frames at 4K. It rarely needs changing; the test data is in [docs/tv/PLAYBACK_PARAMETERS.md](docs/tv/PLAYBACK_PARAMETERS.md).
 >   - On this path, super-resolution, flip, zoom and screenshots don't work, and neither do the `裁剪`, `等宽`, `等高` and `原始` fit modes. With heavy danmaku the UI drops to about 42 fps; the video itself isn't affected.
->   - Turning it off puts a default quality above 1080P 60 fps back to 1080P 60 fps.
->   - A video opened from a live room reuses the room's player, so it can't play 4K there. Go back to the home page and open the video again.
+>   - Turning it off puts a video default quality above 1080P 60 fps back to 1080P 60 fps, and a live default quality above 原画 back to 原画.
 > - Only this one physical TV has been tested. Nothing suggests a problem on TVs with other chips so far.
 
 ---

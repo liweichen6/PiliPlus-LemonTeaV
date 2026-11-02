@@ -884,7 +884,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
     assert(_videoController == null);
 
-    videoPlane = TvVideoPlane.forNewPlayer(isLive: isLive);
+    videoPlane = TvVideoPlane.forNewPlayer();
     _videoController = await VideoController.create(
       player,
       configuration:

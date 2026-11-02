@@ -8,7 +8,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 
 ## 1. Design Goals
 
-1. **Near-Zero Upstream Merge Conflicts**: Keep upstream modifications to an absolute minimum (**only 9 Dart files in `lib/`, about 57 lines total**, 30 of them for M16's video plane) so automated weekly merges from `lemonteaau/PiliPlus` run cleanly without manual conflict resolution.
+1. **Near-Zero Upstream Merge Conflicts**: Keep upstream modifications to an absolute minimum (**only 10 Dart files in `lib/`, about 58 lines total**, 31 of them for M16's video plane) so automated weekly merges from `lemonteaau/PiliPlus` run cleanly without manual conflict resolution.
 2. **10-Foot D-Pad First Experience**: Provide spatial 2D directional focus traversal (`TvFocusTraversalPolicy`), zero-rebuild focus ring rendering (`ValueNotifier<Rect?>` + `RepaintBoundary` + `CustomPaint`), automatic scroll-into-view (`cacheExtent` pre-rendering), kept-alive offscreen `PageView`/`TabBarView` focus isolation, multi-layer `MiniScaffold` inline sheet focus isolation & LIFO promotion/restoration (`评论详情` / `对话列表` / `选集` / `AI总结`), a unified focus-layer stack that moves D-pad focus into popup menus and overlay dialogs outside the `Navigator` (such as the `SmartDialog` update dialog), keeps the page behind them unreachable, and restores the trigger on close, pinned/floating sliver header dual-coordinate scrolling and D-pad exits, embedded comment action stepping, closed-loop escape from scrollable dialogs/popups/lists, and a dedicated 10-foot TV Player HUD (`TvPlayerHud`) with progressive virtual seek and Hold-Select `3.0x` temporary speed.
 3. **Framework-Level Widget Adaptation (`patch.ps1` / `tool/tv_patch.sh`)**: Fix Flutter/Material D-pad limitations (`GestureDetector` lacking focus, `RadioGroup` trapping arrow keys, `InkResponse` missing keyboard activation for `onTapDown`/`onTapUp` hold-to-triple-like and coordinate menus, plus respecting `enabled && canRequestFocus` in directional mode) at the build-time patch layer rather than editing 40+ upstream business pages.
 4. **Universal APK & Side-by-Side Coexistence**:
@@ -24,7 +24,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | Document | Purpose |
 | :--- | :--- |
 | [**README.en.md**](./README.en.md) ([中文](./README.md)) | Overview, package identity, upstream sync guide, local APK build guide, and CI/CD signing setup. |
-| [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M10`), and 23 capability invariants (`C1`–`C23`). |
+| [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M10`), and 24 capability invariants (`C1`–`C24`). |
 | [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant, on `variant/4k-passthrough`: what differs from `main`, how to update it from `main`, its device check, and how to build it. |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | Every mpv option tried on the video plane, with results, and which ones became settings. |
 | [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0: how to time a D-pad step, the run list, the time budget, and the focus bug inventory. |
@@ -55,7 +55,7 @@ What the workflow does:
 ### TV Checks (`tv-checks.yml`)
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) runs on every pull request into `main` and before every release:
 1. Applies all patches with `lib/scripts/patch.ps1 android` (a patch that no longer applies after a Flutter bump fails here).
-2. `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the upstream files that hook into it (`lib/main.dart`, `lib/pages/setting/models/video_settings.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/utils/connectivity_utils.dart`, `lib/utils/update.dart`) and the TV tests. Errors and warnings fail the check; infos don't, so an upstream lint info in a hook file cannot block a release.
+2. `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the upstream files that hook into it (`lib/main.dart`, `lib/pages/live_room/controller.dart`, `lib/pages/setting/models/video_settings.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/utils/connectivity_utils.dart`, `lib/utils/update.dart`) and the TV tests. Errors and warnings fail the check; infos don't, so an upstream lint info in a hook file cannot block a release.
 3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart`.
 
 > **Repository setting (owner)**: in GitHub → **Settings** → **Branches**, protect `main` and require the status check **TV analyze and tests**, so a pull request cannot merge while it is red.
@@ -78,7 +78,7 @@ git merge --no-edit upstream/main
 # 4. Re-apply patches and verify static analysis & TV automated tests
 ./tool/tv_patch.sh apply
 # (the same commands as tv-checks.yml)
-flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/setting/models/video_settings.dart lib/pages/video/widgets/player_focus.dart lib/plugin/pl_player/controller.dart lib/plugin/pl_player/view/view.dart lib/utils/connectivity_utils.dart lib/utils/update.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart
+flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/live_room/controller.dart lib/pages/setting/models/video_settings.dart lib/pages/video/widgets/player_focus.dart lib/plugin/pl_player/controller.dart lib/plugin/pl_player/view/view.dart lib/utils/connectivity_utils.dart lib/utils/update.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_video_plane_test.dart
 
 # 5. Revert patches before committing or pushing

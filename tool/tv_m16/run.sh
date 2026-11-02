@@ -65,11 +65,11 @@ if [[ "${MODE}" == plane || "${MODE}" == gpuguard ]]; then
 fi
 COMP_PID=""
 if [[ "${MODE}" == plane ]]; then
-  # A 4K video layer must stay DEVICE: CLIENT means the GPU is composing it.
+  # A >1080p video layer must stay DEVICE: CLIENT means the GPU is composing it.
   (
     while sleep 20; do
       row="$(adb shell dumpsys SurfaceFlinger 2>/dev/null \
-        | grep -E '^ SurfaceView.*BLAST' -A1 | grep -E ' 3840\.0 +2160\.0' | tail -n 1)"
+        | grep -E '^ SurfaceView.*BLAST' -A1 | grep -E ' (2560|3840)\.0 +(1440|2160)\.0| (1440|2160)\.0 +(2560|3840)\.0' | tail -n 1)"
       [[ -z "${row}" ]] && continue
       echo "$(date +%H:%M:%S) ${row}" | sed -E 's/ +/ /g' >> "${GUARD_LOG}"
       if [[ "${row}" == *CLIENT* ]]; then
