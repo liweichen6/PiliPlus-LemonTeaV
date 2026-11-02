@@ -75,7 +75,7 @@ There's deliberately no free-form box for mpv options. It could set `vo` and wal
 
 * `vd-queue-max-samples=8` or more.
 * `vd-queue-max-bytes`, `vd-queue-max-secs` and `hwdec-extra-frames`.
-* HDR, Dolby Vision, HEVC and live streams at 4K.
+* HDR, Dolby Vision, HEVC and signed-in 2K/4K live streams (`M16.5` put live rooms on the plane and verified signed-out live streams up to 540p plus live-to-1080p-video transitions; signed-in 2K/4K live streams haven't been measured here yet).
 * Any TV but `<physical-tv>`.
 * Picture smoothness by eye: the numbers show frames arriving, not how it looks on the panel.
 

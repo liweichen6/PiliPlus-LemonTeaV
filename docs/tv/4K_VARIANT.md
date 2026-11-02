@@ -9,7 +9,7 @@
 | | `main` | `variant/4k-passthrough` |
 | :--- | :--- | :--- |
 | App | `PiliPlus TV`, `com.lemontea.piliplus.tv` | `PiliPlus TVP`, `com.lemontea.piliplus.tv.passthrough` |
-| 4K on `<physical-tv>` | Freezes, can shut the TV down | Plays on the video plane |
+| 4K video & 2K+ live on `<physical-tv>` | Freezes, can shut the TV down | Plays on the video plane |
 | `4K 视频直通` | Doesn't exist | On by default |
 | Follows upstream | Automatically | When someone merges `main` |
 | APKs | Releases here, automatic | Artifacts of a manual Actions run, kept 90 days |
@@ -24,7 +24,7 @@
 
 Never merge this branch into `main`.
 
-1. `git merge main`. Conflicts should be small: the hooks in `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart` and `lib/pages/setting/models/video_settings.dart`, the identity lines in `android/app/build.gradle.kts`, the update hook in `lib/utils/update.dart`, and `tv-checks.yml`.
+1. `git merge main`. Conflicts should be small: the hooks in `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/live_room/controller.dart` and `lib/pages/setting/models/video_settings.dart`, the identity lines in `android/app/build.gradle.kts`, the update hook in `lib/utils/update.dart`, and `tv-checks.yml`.
 2. Check what moved:
 
    ```bash
@@ -51,8 +51,9 @@ The short list. M16.3 in [`PLAN.md`](./PLAN.md) has the full one. Ask before the
 | 4K60 AVC and AV1, 10 minutes each, warm TV | No freeze, ANR or shutdown; layer stays `DEVICE` |
 | Home and back, TV sleep and back, at 4K60 | Playing again within about 10 s |
 | Next-video, split-screen and fullscreen | New decoder with `hwRender:1`; right rect |
-| Open a 4K video from a live room | Refused, with no `gdec:1` |
-| Turn the setting off with a stored 4K default | The next video opens at 1080P60 |
+| Live room opened directly (`原画` and 2K/4K) | Plays on the plane with `hwRender:1, gdec:0`; layer stays `DEVICE` |
+| Open a 4K video from a live room | Plays on the plane with `hwRender:1, gdec:0` |
+| Turn the setting off with stored >1080p defaults | Video opens at 1080P60 and live resets to `原画` |
 | `dumpsys -t 6 media.player` afterwards | Answers in under a second |
 
 ## Building

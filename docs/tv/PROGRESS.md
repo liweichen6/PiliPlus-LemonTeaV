@@ -1664,3 +1664,32 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * One sheet replacing an open one: upstream's `MiniScaffold` trips a debug-only assert there, so a widget test fails on the assert. The trace in `M13.1` covered it and matched. `M13.2` should watch this path, because it has no test.
 * **Device Pass**: none needed. No app code changed.
 * **Next**: `M13.2`, on the user's go-ahead.
+
+---
+
+### [2026-11-02] Milestone M16 (Task `M16.5`): Live Rooms on the Video Plane
+* **Status**: ✅ Done on `variant/4k-passthrough`. Signed-in 2K/4K live soak waits for a signed-in session.
+* **Why**: the user tested a 2K live stream in a room opened directly (`vo=gpu`) and hit the kernel panic (`sys.boot.reason=watchdog`), showing that >1080p (`gdec:1`) on the GPU path is unsafe for live streams too (`M12_CRASH_DEBUG.md`, Question 5 & H5 update). In `M16.2`–`M16.4`, `TvVideoPlane.forNewPlayer` and `TvVideoPlane.refusesTexture` both exempted `isLive`, leaving directly opened >1080p live rooms on `vo=gpu` and refusing 4K videos opened from a live room.
+* **Files Changed**:
+  * `[MODIFY]` `lib/tv/tv_video_plane.dart`, `lib/plugin/pl_player/controller.dart`, `lib/tv/tv_player_hud.dart`, `lib/pages/live_room/controller.dart` (+1/−1), `.github/workflows/tv-checks.yml`, `tool/tv_m16/run.sh`, `test/tv_video_plane_test.dart`, `test/tv_player_hud_test.dart`.
+  * `[MODIFY]` `README.md`, `README.en.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/4K_VARIANT.md`, `docs/tv/M12_CRASH_DEBUG.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Changes**:
+  * `TvVideoPlane.forNewPlayer()` drops `{required bool isLive}`: live rooms opened while `4K 视频直通` is on now run on `TvVideoPlane`, and videos opened from a live room reuse that plane player instead of being refused.
+  * `TvVideoPlane.refusesTexture` refuses any live stream on a player not on the plane while `4K 视频直通` is on (even with `width == null && height == null`), showing `当前无法启用视频直通，请返回首页后重新打开直播`.
+  * `TvVideoPlane.capStoredQuality` clamps stored `liveQuality` and `liveQualityCellular` above `原画` (`10000`, `LiveQuality.origin.code`) back to `10000` when `4K 视频直通` is turned off (`原画` is 1080p in Bilibili's multi-tier live ladder, below `15000` `2K`).
+  * `TvPlayerHud._togglePlayPause` retries a plane failure via `(widget.onRefresh ?? _pl.refreshPlayer)()` so `Select` works on live rooms (`LiveRoomController.queryLiveUrl`) as well as videos.
+  * `LiveRoomController.queryLiveUrl` marks `isLoaded.value = true` via `whenComplete` on `initLiveUrl` instead of waiting for `_fetchBlockRules` (10 s timeout + 2 retries), keeping live `_PlaneSurface` mount well inside the 8 s `surfaceTimeout`.
+  * `tool/tv_m16/run.sh` checks both 2K (`2560 × 1440`) and 4K (`3840 × 2160`) `SurfaceView` layers for `CLIENT` composition.
+* **Verification**:
+  * Analyze (`tv-checks.yml` list including `lib/pages/live_room/controller.dart`): 0 errors, 0 warnings (2 pre-existing upstream infos in `lib/utils/update.dart`).
+  * Automated tests: **146 / 146** TV tests pass (`65` navigation, `31` HUD, `50` video plane).
+  * `-Pdev` `armeabi-v7a` release APK built and installed over `PiliPlus TV dev` on `<physical-tv>` (~34 h uptime, warm).
+* **Device checks on `<physical-tv>`** (`PiliPlus TV dev` signed out after `M13.0`, under `tool/tv_m16/run.sh` guards):
+  * **Direct landscape live room (`plane` guard)**: `c2.mtk.avc.decoder` opened with `hwRender:1, gdec:0` (`Detile 45` start burst only), `DEVICE(MM)` layer at `[0, 536, 2332, 1846]` in split-screen.
+  * **Direct portrait live room, split-screen → fullscreen, and Home & back (`plane` guard)**: opened with `hwRender:1, gdec:0` and `DEVICE(MM)` 9:16 pillarbox rect `[622, 224, 1710, 2160]` in split-screen and `[1312, 0, 2526, 2160]` in fullscreen; `KEYCODE_HOME` detached cleanly and resuming `MainActivity` re-attached on a new `hwRender:1, gdec:0` decoder with picture restored (`Detile 71` across both attaches).
+  * **Live room → video → Back to live room (`plane` guard)**: opened a live room (`hwRender:1, gdec:0`, `DEVICE(MM)`), opened `BV1kMxM6FECM` on top of it (`1920 × 1080` via `免登录1080P`, `hwRender:1, gdec:0`, `DEVICE(MM)` `[0, 0, 3840, 2160]`, not refused), and pressed Back twice to return to the live room, which resumed on a third `hwRender:1, gdec:0` `DEVICE(MM)` decoder.
+  * **Toggling `4K 视频直通` off with `直播默认画质: 4K` + `gpuguard` check**: picked `4K` (`20000`) in `直播默认画质`, turned `4K 视频直通` off, verified `直播默认画质` automatically read `原画`, and ran a 20 s live launch under `gpuguard` (`hwRender:0, gdec:0`, `Detile 0` on Flutter's texture); restored `4K 视频直通` on afterwards.
+* **Not verified**:
+  * Signed-in `1080p` (`原画`), `2K` (`15000`) and `4K` (`20000` / `25000`) live streams and live → `4K60` video on `<physical-tv>`, because `PiliPlus TV dev` is currently signed out (`mid=0`) and Bilibili clamps unauthenticated live streams to `qn=150` (`854 × 480` / `540 × 960`) and videos to `1080P`.
+* **Cleanup**: `PiliPlus TV dev` is force-stopped with `4K 视频直通` back on (`默认画质: 1080P 60帧`, `直播默认画质: 原画`, `免登录1080P` on); temporary `/data/local/tmp/m12` and screenshot files are removed from `<physical-tv>`; `dumpsys -t 6 media.player` answered in `< 1 s`; the user's normal app wasn't touched; all 38 SDK and pub-cache patches are reverted.
+* **Next** (owner: user): optional signed-in 2K/4K live check on `<physical-tv>`, and upstream `main` sync when ready.

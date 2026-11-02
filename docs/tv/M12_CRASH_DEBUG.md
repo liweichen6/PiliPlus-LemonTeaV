@@ -156,6 +156,7 @@ Details and raw numbers are in the [Log](#log).
     * 1080p runs a different path: `gdec:0`, and no `Detile` lines at all. At 4K, each 15,671,296-byte frame holds the tiled picture (8,355,840 bytes of luma, then chroma) and, from offset 12,533,760, a 1920 × 1080 scaled copy (VSD). On the video plane the decoder's frames are larger, 16,203,776 bytes.
     * `Detile` logs the frames' addresses, but these are IOVAs (`0x218B1D000`) and the panic's are physical (`0x1C3…`), so they can't be matched. H4 stays open.
     * A cap at 1080P60 is supported, with 4K30 as a possible exception. The re-encoded 4K30 clip needs only 3 decoder buffers, though, so bilibili's own 4K30 streams may still hit Fault 1.
+    * *Update (2026-11-02, live 2K)*: opening a 2K live room directly on `vo=gpu` panicked `<physical-tv>` too, without deadlocking first. That answers Question 5 (`vo=gpu` panics above 1080p when it doesn't hit Fault 1 first), refutes a pure pixel-rate threshold in H5 (1440p60 is 221 Mpx/s, below 4K30's 249 Mpx/s), and removes 4K30 as a safe exception: treat anything above 1080p (`gdec:1`) on the GPU path as unsafe, live included.
 
 ## Questions
 
@@ -163,7 +164,7 @@ Details and raw numbers are in the [Log](#log).
 2. Does the path the TV's own apps use, with the video on its own hardware layer, survive 4K60? This decides option F.
 3. Which property of the stream triggers it: resolution, frame rate, bitrate, codec or bit depth? What is the safe envelope, for example 4K30?
 4. Which hardware block is client `0xE000`, what does protect block 24 cover, and does a TV picture feature take part?
-5. Can the `vo=gpu` deadlock be broken while keeping mpv's shaders, for example with a larger reader queue? If it can, does 4K on that path then panic too?
+5. Can the `vo=gpu` deadlock be broken while keeping mpv's shaders, for example with a larger reader queue? If it can, does 4K on that path then panic too? *(Answered 2026-11-02: a 2K live stream on `vo=gpu` avoided the deadlock and panicked `<physical-tv>`.)*
 6. Does anything observable (temperature, memory, clocks, kernel warnings) come before a panic?
 
 ## Hypotheses
@@ -174,7 +175,7 @@ Details and raw numbers are in the [Log](#log).
 | H2 | The path the TV's own apps use (`SurfaceView`, the video plane, tunneled playback) is safe at 4K60. **Holds so far**: AVC is safe by this plan's verdicts (4 passes of 10 minutes), AV1 probably safe (one of 10 minutes, two of the file's 5:32). No panic on a warm TV. Tunneled playback, HDR, Dolby Vision and network streams aren't tested | CD1, CD3 |
 | H3 | Client `0xE000` belongs to the picture-quality or AI pipeline (AI picture, AI super resolution, motion smoothing), and turning those features off avoids the panic. **Weakened**: the AI engine runs on the video plane, which doesn't panic (finding 9) | CD6, CD8 |
 | H4 | A hardware engine reads past the end of a 4K frame buffer, because 2160 isn't a multiple of the tile height, and the overrun lands in block 24 | CD5 (alignment variants), CD7 and CD8 (addresses against buffers and regions) |
-| H5 | The panic scales with throughput (pixel rate or memory bandwidth), not with resolution: 4K60 fails, 4K30 or 1440p60 don't. **Supported** on a warm TV (finding 15); 1440p60 is untested | CD5 |
+| H5 | The panic scales with throughput (pixel rate or memory bandwidth), not with resolution: 4K60 fails, 4K30 or 1440p60 don't. **Refuted (2026-11-02)**: 4K30 survived one 600 s run (finding 15) while 1440p60 was untested in CD5, and a directly opened 2K live stream on `vo=gpu` later panicked `<physical-tv>` below 4K30's pixel rate. Anything above 1080p (`gdec:1`) on the GPU path is treated as unsafe | CD5, M16.5 |
 | H6 | The panic comes from buffer recycling (a buffer reused while another block still reads it), so it depends on how many frames the consumer holds | CD2 hold sweeps, CD4 queue options, CD5 reference-frame variant |
 | H7 | A reader queue larger than 5 images, or mpv holding at most 1 frame, breaks the `vo=gpu` deadlock | CD2a/b, CD4 |
 | H8 | Memory pressure (demuxer and cache size) plays a part. Low prior: about 850 MB was free during the M12.2 stalls | CD4, CD7 |

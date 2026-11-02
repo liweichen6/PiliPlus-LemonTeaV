@@ -57,10 +57,10 @@ Located under **Settings → Audio & Video Settings** (changes take effect on th
 ## Known Issues
 
 > [!WARNING]
-> **Don't pick 4K or higher on a TV with a MediaTek chip.** On the one MediaTek MT9690 TV tested, 4K video freezes within seconds and the app then stops responding. 4K60 can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
+> **On a TV with a MediaTek chip, don't pick 4K or higher in videos, or 2K or higher in live rooms.** On the one MediaTek MT9690 TV tested, 4K video freezes within seconds and the app then stops responding; 4K60 video and 2K or higher live streams (`2K`, `4K`, `4K 原画`, `杜比`) can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
 >
-> - TVs now default to **1080P 60 fps**. Existing installs that never changed the default quality get this too; a default you already chose is left alone.
-> - This is a default, not a hard limit. You can still pick 4K in the player, and that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality).
+> - TVs now default to **1080P 60 fps** for videos (and **原画** for live streams, which is 1080p in Bilibili's multi-tier ladder). Existing installs that never changed the default quality get this too; a default you already chose is left alone.
+> - This is a default, not a hard limit. You can still pick higher qualities in the player, and in videos that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality), and likewise keep live default quality at or below 原画.
 > - Only this one physical TV has been tested. Nothing suggests a problem on TVs with other chips so far.
 
 ---
