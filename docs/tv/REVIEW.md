@@ -27,7 +27,7 @@
 | **10-Foot Player HUD (`TvPlayerHud`)** | **A** | Full transport/episode/quality/speed/fit/danmaku OSD, hardware-decoupled virtual seek accumulator (`1x → 2x → 3x`), Hold-Select 3.0x temporary speed boost, remote hold-to-triple-like, and `PopScope` Back dismissal. |
 | **Native Bridge & Platform Layer** | **A-** | `WeakReference<Activity>` prevents Activity leaks; `_TvTextInputGateControl` reliably blocks unwanted soft-keyboard popups during D-pad traversal; minor doc/predicate nuance around non-Leanback HDMI boxes (see **R1**). |
 | **SDK & Package Patch Pipeline** | **A** | Minimal, surgical patches guarded by `NavigationMode.directional` (zero overhead in touch mode); includes an important fix for stock Flutter's `_InkResponseState._canRequestFocus` directional bug. |
-| **Test Suite & Release Hygiene** | **A** | 146 targeted TV tests (navigation/geometry/benchmark/inline-sheet/overlay, HUD/modal/3x-speed, and 50 for the M16 video plane), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
+| **Test Suite & Release Hygiene** | **A** | 170 targeted TV tests (navigation/geometry/benchmark/inline-sheet/overlay/M13, HUD/modal/3x-speed, and 50 for the M16 video plane), deterministic latency assertions (`< 50ms/step`), weekly CI upstream sync, keystore secret validation, and strict patch revert discipline. |
 
 ---
 

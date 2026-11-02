@@ -1,10 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:PiliPlus/common/widgets/flutter/list_tile.dart'
-    as custom_list_tile;
-import 'package:PiliPlus/common/widgets/scaffold/bottom_sheet_layout.dart'
-    show BottomSheetLayout, BottomSheetType;
-import 'package:PiliPlus/pages/login/controller.dart';
+import 'package:PiliPlus/tv/adapters/tv_adapters.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:flutter/rendering.dart'
     show
@@ -25,7 +21,6 @@ import 'package:flutter/rendering.dart'
         SliverMultiBoxAdaptorParentData;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
 part 'tv_focus_layers.dart';
@@ -35,27 +30,6 @@ part 'tv_focus_layers.dart';
 /// that scope.
 FocusScopeNode? _scopeOf(BuildContext context) =>
     Focus.maybeOf(context, scopeOk: true, createDependency: false)?.nearestScope;
-
-final Expando<ModalRoute<dynamic>> _routeOfScope = Expando<ModalRoute<dynamic>>(
-  'tvRouteOfScope',
-);
-
-/// The route that owns [node]'s focus scope, looked up once per scope.
-/// `ModalRoute.of(node.context)` registers an inherited dependency on the
-/// focused widget itself, so that widget rebuilt whenever its route's modal
-/// state changed. Asking the scope's own context once puts the dependency on
-/// the scope, which holds the same child and rebuilds nothing below it.
-ModalRoute<dynamic>? _routeOfFocusNode(FocusNode node) {
-  final FocusScopeNode? scope = node.nearestScope;
-  if (scope == null) return null;
-  final ModalRoute<dynamic>? cached = _routeOfScope[scope];
-  if (cached != null) return cached;
-  final BuildContext? context = scope.context;
-  if (context == null || !context.mounted) return null;
-  final ModalRoute<dynamic>? route = ModalRoute.of(context);
-  if (route != null) _routeOfScope[scope] = route;
-  return route;
-}
 
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
@@ -76,9 +50,9 @@ class _TvNodeMeta {
     required this.ancestorsComplete,
     required this.verticalScrollable,
     required this.horizontalScrollable,
-    required this.enclosingListTile,
-    required this.enclosingInkResponse,
-    required this.enclosingButton,
+    required this.enclosingRow,
+    required this.enclosingCard,
+    required this.enclosingAction,
     required this.enclosingWrap,
   });
 
@@ -88,24 +62,10 @@ class _TvNodeMeta {
   final bool ancestorsComplete;
   final ScrollableState? verticalScrollable;
   final ScrollableState? horizontalScrollable;
-  final Element? enclosingListTile;
-  final Element? enclosingInkResponse;
-  final Element? enclosingButton;
+  final Element? enclosingRow;
+  final Element? enclosingCard;
+  final Element? enclosingAction;
   final Element? enclosingWrap;
-}
-
-class _BottomSheetNodeStatus {
-  const _BottomSheetNodeStatus({
-    this.occludingLayout,
-    this.closingLayout,
-    this.enclosingActiveSheetLayout,
-  });
-
-  final Element? occludingLayout;
-  final Element? closingLayout;
-  final Element? enclosingActiveSheetLayout;
-
-  bool get isInvalidated => occludingLayout != null || closingLayout != null;
 }
 
 class _TvTraversalCache {
@@ -113,75 +73,6 @@ class _TvTraversalCache {
   final Map<RenderBox, Rect> _boxRects = <RenderBox, Rect>{};
   final Map<ScrollableState, Rect?> _scrollableRects =
       <ScrollableState, Rect?>{};
-
-  /// Every sheet `MiniScaffold` puts in a `BottomSheetLayout` is a
-  /// [StandardBottomSheet]. A typed read means an upstream rename fails to
-  /// compile, instead of every sheet silently counting as open.
-  static AnimationController? _bottomSheetAnimationController(Widget? sheet) =>
-      sheet is StandardBottomSheet ? sheet.animationController : null;
-
-  static bool _isBottomSheetClosing(Widget? sheet) {
-    if (sheet == null) return true;
-    final AnimationController? controller =
-        _bottomSheetAnimationController(sheet);
-    if (controller != null) {
-      final status = controller.status;
-      return status == AnimationStatus.reverse ||
-          status == AnimationStatus.dismissed;
-    }
-    return false;
-  }
-
-  static bool _isBottomSheetAnimatingOpen(Widget? sheet) {
-    final AnimationController? controller =
-        _bottomSheetAnimationController(sheet);
-    if (controller != null) {
-      return controller.status == AnimationStatus.forward;
-    }
-    return false;
-  }
-
-  static _BottomSheetNodeStatus _inspectBottomSheetNode(FocusNode? node) {
-    final BuildContext? context = node?.context;
-    if (context == null || !context.mounted) {
-      return const _BottomSheetNodeStatus();
-    }
-    Element? occludingLayout;
-    Element? closingLayout;
-    Element? enclosingActiveSheetLayout;
-    Element childElement = context as Element;
-    context.visitAncestorElements((Element element) {
-      final Object? childSlot = childElement.slot;
-      childElement = element;
-      final Widget widget = element.widget;
-      if (widget is BottomSheetLayout) {
-        final Widget? sheet = widget.bottomSheet;
-        if (sheet != null) {
-          final bool closing = _isBottomSheetClosing(sheet);
-          if (childSlot == BottomSheetType.body && !closing) {
-            occludingLayout = element;
-          } else if (childSlot == BottomSheetType.bottomSheet) {
-            if (closing) {
-              closingLayout = element;
-            } else {
-              enclosingActiveSheetLayout ??= element;
-            }
-          }
-        }
-      }
-      return true;
-    });
-    if (occludingLayout == null &&
-        closingLayout == null &&
-        enclosingActiveSheetLayout == null) {
-      return const _BottomSheetNodeStatus();
-    }
-    return _BottomSheetNodeStatus(
-      occludingLayout: occludingLayout,
-      closingLayout: closingLayout,
-      enclosingActiveSheetLayout: enclosingActiveSheetLayout,
-    );
-  }
 
   static bool _isKeptAliveOffscreen(RenderBox box) {
     RenderObject? current = box;
@@ -278,14 +169,14 @@ class _TvTraversalCache {
   ScrollableState? horizontalScrollableOf(FocusNode node) =>
       _metaWithAncestors(node).horizontalScrollable;
 
-  Element? enclosingListTileOf(FocusNode node) =>
-      _metaWithAncestors(node).enclosingListTile;
+  Element? enclosingRowOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingRow;
 
-  Element? enclosingInkResponseOf(FocusNode node) =>
-      _metaWithAncestors(node).enclosingInkResponse;
+  Element? enclosingCardOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingCard;
 
-  Element? enclosingButtonOf(FocusNode node) =>
-      _metaWithAncestors(node).enclosingButton;
+  Element? enclosingActionOf(FocusNode node) =>
+      _metaWithAncestors(node).enclosingAction;
 
   Element? enclosingWrapOf(FocusNode node) =>
       _metaWithAncestors(node).enclosingWrap;
@@ -312,9 +203,9 @@ class _TvTraversalCache {
         ancestorsComplete: true,
         verticalScrollable: null,
         horizontalScrollable: null,
-        enclosingListTile: null,
-        enclosingInkResponse: null,
-        enclosingButton: null,
+        enclosingRow: null,
+        enclosingCard: null,
+        enclosingAction: null,
         enclosingWrap: null,
       );
       _nodeMeta[node] = meta;
@@ -355,9 +246,9 @@ class _TvTraversalCache {
         ancestorsComplete: false,
         verticalScrollable: null,
         horizontalScrollable: null,
-        enclosingListTile: null,
-        enclosingInkResponse: null,
-        enclosingButton: null,
+        enclosingRow: null,
+        enclosingCard: null,
+        enclosingAction: null,
         enclosingWrap: null,
       );
       _nodeMeta[node] = meta;
@@ -372,9 +263,9 @@ class _TvTraversalCache {
     double sliverScrollOffsetDelta = 0.0;
     ScrollableState? verticalScrollable;
     ScrollableState? horizontalScrollable;
-    Element? enclosingListTile;
-    Element? enclosingInkResponse;
-    Element? enclosingButton;
+    Element? enclosingRow;
+    Element? enclosingCard;
+    Element? enclosingAction;
     Element? enclosingWrap;
 
     bool stopOrContinue() {
@@ -457,16 +348,14 @@ class _TvTraversalCache {
       }
 
       final Widget widget = element.widget;
-      if (enclosingListTile == null &&
-          (widget is ListTile || widget is custom_list_tile.ListTile)) {
-        enclosingListTile = element;
+      if (enclosingRow == null && tvListTiles.isGroup(widget)) {
+        enclosingRow = element;
       }
-      if (enclosingInkResponse == null && widget is InkResponse) {
-        enclosingInkResponse = element;
+      if (enclosingCard == null && tvCards.isGroup(widget)) {
+        enclosingCard = element;
       }
-      if (enclosingButton == null &&
-          (widget is ButtonStyleButton || widget is IconButton)) {
-        enclosingButton = element;
+      if (enclosingAction == null && tvCards.isAction(widget)) {
+        enclosingAction = element;
       }
       if (enclosingWrap == null && widget is Wrap) {
         enclosingWrap = element;
@@ -474,19 +363,9 @@ class _TvTraversalCache {
 
       if (!focusable) return true;
 
-      if (widget is BottomSheetLayout) {
-        final Widget? sheet = widget.bottomSheet;
-        if (sheet != null) {
-          final bool sheetClosing = _isBottomSheetClosing(sheet);
-          if (childSlot == BottomSheetType.body && !sheetClosing) {
-            focusable = false;
-            return stopOrContinue();
-          }
-          if (childSlot == BottomSheetType.bottomSheet && sheetClosing) {
-            focusable = false;
-            return stopOrContinue();
-          }
-        }
+      if (tvSheets.hides(widget, childSlot)) {
+        focusable = false;
+        return stopOrContinue();
       }
 
       final RenderObject? ancestorRo = element.renderObject;
@@ -522,9 +401,7 @@ class _TvTraversalCache {
           focusable = false;
           return stopOrContinue();
         }
-        if (ancestorRo is RenderFractionalTranslation &&
-            (ancestorRo.translation.dx.abs() > 0.01 ||
-                ancestorRo.translation.dy.abs() > 0.01)) {
+        if (tvPlayerHud.isSlidAway(ancestorRo)) {
           hasNonZeroTranslation = true;
         }
         // Intersect clip bounds only below any enclosing Scrollable (or when
@@ -628,9 +505,9 @@ class _TvTraversalCache {
       ancestorsComplete: ancestorsComplete,
       verticalScrollable: verticalScrollable,
       horizontalScrollable: horizontalScrollable,
-      enclosingListTile: enclosingListTile,
-      enclosingInkResponse: enclosingInkResponse,
-      enclosingButton: enclosingButton,
+      enclosingRow: enclosingRow,
+      enclosingCard: enclosingCard,
+      enclosingAction: enclosingAction,
       enclosingWrap: enclosingWrap,
     );
     _nodeMeta[node] = meta;
@@ -671,7 +548,8 @@ class _TvPolicyFrameState {
   _TvTraversalCache? activeCache;
 }
 
-class TvFocusTraversalPolicy extends FocusTraversalPolicy {
+class TvFocusTraversalPolicy extends FocusTraversalPolicy
+    implements TvFocusFinder {
   TvFocusTraversalPolicy({
     TraversalRequestFocusCallback? requestFocusCallback,
   }) : super(
@@ -711,11 +589,15 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     double alignment = 0.0,
     Duration duration = Duration.zero,
     Curve curve = Curves.ease,
+    Axis? onlyAxis,
   }) {
+    BuildContext current = context;
+    RenderObject? firstTarget;
     ScrollableState? scrollable = Scrollable.maybeOf(context);
     while (scrollable != null) {
-      if (_canUserScroll(scrollable)) {
-        final RenderObject? target = context.findRenderObject();
+      final RenderObject? target = current.findRenderObject();
+      if (_canUserScroll(scrollable) &&
+          (onlyAxis == null || scrollable.position.axis == onlyAxis)) {
         if (target != null && target.attached) {
           double? pinnedSliverPrecedingExtent;
           final RenderObject? scrollableRo = scrollable.context
@@ -755,6 +637,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             duration: duration,
             curve: curve,
             alignmentPolicy: alignmentPolicy,
+            targetRenderObject: firstTarget,
           );
           if (pinnedSliverPrecedingExtent != null &&
               scrollable.position.hasPixels &&
@@ -777,7 +660,9 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           }
         }
       }
+      firstTarget ??= target;
       final BuildContext scrollableContext = scrollable.context;
+      current = scrollableContext;
       scrollable = scrollableContext.mounted
           ? Scrollable.maybeOf(scrollableContext)
           : null;
@@ -837,6 +722,9 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   static bool isEffectivelyFocusable(FocusNode node) =>
       _TvTraversalCache().isEffectivelyFocusable(node);
 
+  @override
+  bool isFocusable(FocusNode node) => isEffectivelyFocusable(node);
+
   static FocusNode? _findFirstReadingOrderNode(
     List<FocusNode> candidates,
     _TvTraversalCache cache,
@@ -890,73 +778,6 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     return found;
   }
 
-  static Element? _slotChildOfBottomSheetLayout(
-    Element layoutElement,
-    BottomSheetType slot,
-  ) {
-    if (!layoutElement.mounted || layoutElement.widget is! BottomSheetLayout) {
-      return null;
-    }
-    Element? found;
-    layoutElement.visitChildren((Element child) {
-      if (child.slot == slot) {
-        found = child;
-      }
-    });
-    return found;
-  }
-
-  static bool _subtreeHasRequestableFocus(Element root) {
-    if (!root.mounted) return false;
-    bool found = false;
-    void visit(Element el) {
-      if (found) return;
-      final Widget w = el.widget;
-      if (w is ExcludeFocus && w.excluding) return;
-      if (w is Offstage && w.offstage) return;
-      if (w is Visibility && !w.visible) return;
-      if (w is IgnorePointer && w.ignoring) return;
-      if (w is BottomSheetLayout) {
-        final Widget? sheet = w.bottomSheet;
-        if (sheet != null) {
-          final bool sheetClosing = _TvTraversalCache._isBottomSheetClosing(
-            sheet,
-          );
-          el.visitChildren((Element child) {
-            if (found) return;
-            if (child.slot == BottomSheetType.body && !sheetClosing) return;
-            if (child.slot == BottomSheetType.bottomSheet && sheetClosing) {
-              return;
-            }
-            visit(child);
-          });
-          return;
-        }
-      }
-      final RenderObject? ro = el.renderObject;
-      if (ro is RenderBox &&
-          (!ro.attached ||
-              !ro.hasSize ||
-              ro.size.width <= 1.0 ||
-              ro.size.height <= 1.0)) {
-        return;
-      }
-      if (w is Focus &&
-          w is! FocusScope &&
-          w.canRequestFocus &&
-          (w.focusNode?.canRequestFocus ?? true) &&
-          !w.skipTraversal &&
-          !(w.focusNode?.skipTraversal ?? false)) {
-        found = true;
-        return;
-      }
-      el.visitChildren(visit);
-    }
-
-    visit(root);
-    return found;
-  }
-
   FocusNode? findFirstFocusInSubtree(
     Element subtreeRoot,
     FocusScopeNode currentScope,
@@ -973,6 +794,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   /// The initial focus target among [candidates], with the same preferences as
   /// [findFirstFocusInSubtree]: an `autofocus` node first, otherwise the
   /// first one in reading order among those visible in their scrollables.
+  @override
   FocusNode? findFirstFocusAmong(Iterable<FocusNode> candidates) => _withCache(
     (_TvTraversalCache cache) => _firstFocusAmong(candidates, cache),
   );
@@ -1016,7 +838,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
 
   /// Finds the best focus target in [currentScope] when [invalidNode] has
   /// become offscreen or unfocusable (e.g. after switching tabs in a
-  /// `PageView`/`TabBarView`, opening/closing a `MiniScaffold` sheet, or
+  /// `PageView`/`TabBarView`, opening/closing an inline sheet, or
   /// resuming the app on `HomePage`).
   ///
   /// When [invalidNode] (or [previousRect]) belonged to a non-user-scrollable
@@ -1028,14 +850,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     FocusScopeNode currentScope, {
     Rect? previousRect,
   }) => _withCache((_TvTraversalCache cache) {
-    final _BottomSheetNodeStatus sheetStatus =
-        _TvTraversalCache._inspectBottomSheetNode(invalidNode);
+    final TvSheetNodeStatus sheetStatus = tvSheets.inspect(invalidNode);
     final Element? occludingLayout = sheetStatus.occludingLayout;
-    if (occludingLayout != null && occludingLayout.widget is BottomSheetLayout) {
-      final Element? sheetSlot = _slotChildOfBottomSheetLayout(
-        occludingLayout,
-        BottomSheetType.bottomSheet,
-      );
+    if (occludingLayout != null && tvSheets.isLayout(occludingLayout)) {
+      final Element? sheetSlot = tvSheets.sheetSlotOf(occludingLayout);
       if (sheetSlot != null) {
         final FocusNode? inSheet = findFirstFocusInSubtree(
           sheetSlot,
@@ -1047,10 +865,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     }
     final Element? closingLayout = sheetStatus.closingLayout;
     if (closingLayout != null) {
-      final Element? bodySlot = _slotChildOfBottomSheetLayout(
-        closingLayout,
-        BottomSheetType.body,
-      );
+      final Element? bodySlot = tvSheets.bodySlotOf(closingLayout);
       if (bodySlot != null) {
         final FocusNode? inBody = findFirstFocusInSubtree(
           bodySlot,
@@ -1285,9 +1100,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         r.center.dx <= scrollableRect.right + 1.0;
   }
 
-  /// Returns true when [secondary] is a small action widget (e.g. a trailing
-  /// IconButton/Switch or an overlaid VideoPopupMenu) whose center lies inside
-  /// a much larger primary container [container] (e.g. a ListTile or VideoCard).
+  /// Returns true when [secondary] is an action embedded in the primary
+  /// [container].
   static bool _isEmbeddedSecondaryOf(
     FocusNode secondary,
     FocusNode container,
@@ -1296,11 +1110,16 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     if (secondary == container) return false;
     final Rect cr = cache.rectOf(container);
     final Rect sr = cache.rectOf(secondary);
-    if (!cr.contains(sr.center)) return false;
-    final bool isMicroButton = sr.width <= 36.0 && sr.height <= 36.0;
-    return isMicroButton ||
-        cr.width > sr.width * 1.8 ||
-        cr.height > sr.height * 1.8;
+    return tvCards.isSecondaryIn(sr, cr);
+  }
+
+  /// Whether [node] is a tile or card that actions can be embedded in.
+  @pragma('vm:prefer-inline')
+  static bool _isPrimaryContainer(FocusNode node, _TvTraversalCache cache) {
+    final Widget? w = node.context?.widget;
+    return (w != null && tvCards.isGroup(w)) ||
+        cache.enclosingRowOf(node) != null ||
+        cache.enclosingCardOf(node) != null;
   }
 
   static bool _isEmbeddedSecondaryOfFocusableAncestor(
@@ -1309,12 +1128,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   ) {
     for (final FocusNode ancestor in node.ancestors) {
       if (!cache.isEffectivelyFocusable(ancestor)) continue;
-      final Widget? w = ancestor.context?.widget;
-      final bool isPrimaryContainer =
-          w is InkResponse ||
-          cache.enclosingListTileOf(ancestor) != null ||
-          cache.enclosingInkResponseOf(ancestor) != null;
-      if (isPrimaryContainer && _isEmbeddedSecondaryOf(node, ancestor, cache)) {
+      if (_isPrimaryContainer(ancestor, cache) &&
+          _isEmbeddedSecondaryOf(node, ancestor, cache)) {
         return true;
       }
     }
@@ -1341,12 +1156,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
     final List<FocusNode> primaryOnly = pool.where((FocusNode node) {
       for (final FocusNode ancestor in node.ancestors) {
         if (!focusableSet.contains(ancestor)) continue;
-        final Widget? w = ancestor.context?.widget;
-        final bool isPrimaryContainer =
-            w is InkResponse ||
-            cache.enclosingListTileOf(ancestor) != null ||
-            cache.enclosingInkResponseOf(ancestor) != null;
-        if (isPrimaryContainer &&
+        if (_isPrimaryContainer(ancestor, cache) &&
             _isEmbeddedSecondaryOf(node, ancestor, cache)) {
           return false;
         }
@@ -1384,9 +1194,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
         }
       }
       if (excludedByAncestor) continue;
-      final Rect r = cache.rectOf(node);
-      if ((r.width <= 36.0 && r.height <= 36.0) ||
-          (r.width <= 64.0 && r.height <= 64.0 && r.width * r.height <= 2500)) {
+      if (tvCards.isMicroAction(cache.rectOf(node))) {
         microNodes.add(node);
       }
     }
@@ -1427,6 +1235,21 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       },
     );
+    // A row runs across an Up or Down move, so the policy above checks only
+    // one of its ends, and the card can be cut off at the other.
+    final BuildContext? context = node.context;
+    if (context != null &&
+        context.mounted &&
+        (direction == TraversalDirection.up ||
+            direction == TraversalDirection.down)) {
+      _ensureVisibleInUserScrollables(
+        context,
+        alignmentPolicy: direction == TraversalDirection.up
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        onlyAxis: Axis.horizontal,
+      );
+    }
     final double afterScroll = _sumUserScrollPixels(node.context);
     if ((afterScroll - beforeScroll).abs() > 0.5) {
       _frameState.didScrollInLastFocus = true;
@@ -1506,7 +1329,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       final Set<FocusNode> rawSet = rawDescendants.toSet();
       final Set<FocusNode> nonLeafNodes = <FocusNode>{};
       for (final FocusNode node in rawDescendants) {
-        final Element? nodeListTile = cache.enclosingListTileOf(node);
+        final Element? nodeRow = cache.enclosingRowOf(node);
         final Rect nr = cache.rectOf(node);
         for (final FocusNode ancestor in node.ancestors) {
           if (!rawSet.contains(ancestor)) continue;
@@ -1514,15 +1337,15 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           final bool sameSizeWrapper =
               (ar.width - nr.width).abs() < 8.0 &&
               (ar.height - nr.height).abs() < 8.0;
-          final bool isEnclosingListTileRow =
-              nodeListTile != null &&
+          final bool isEnclosingRow =
+              nodeRow != null &&
               !sameSizeWrapper &&
-              cache.enclosingListTileOf(ancestor) == nodeListTile;
-          final bool isPrimaryInkContainer =
+              cache.enclosingRowOf(ancestor) == nodeRow;
+          final bool isPrimaryCard =
               !sameSizeWrapper &&
-              cache.enclosingInkResponseOf(ancestor) != null &&
+              cache.enclosingCardOf(ancestor) != null &&
               _isEmbeddedSecondaryOf(node, ancestor, cache);
-          if (!isEnclosingListTileRow && !isPrimaryInkContainer) {
+          if (!isEnclosingRow && !isPrimaryCard) {
             nonLeafNodes.add(ancestor);
           }
         }
@@ -1833,17 +1656,17 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
   }) {
     final bool isRight = direction == TraversalDirection.right;
 
-    // 0. Support stepping between a ListTile container and its trailing
-    // focusable descendant (e.g. refresh IconButton or Switch).
-    final Element? focusedListTile = cache.enclosingListTileOf(focusedChild);
-    if (focusedListTile != null) {
+    // 0. Support stepping between a row and its trailing focusable descendant
+    // (e.g. refresh IconButton or Switch).
+    final Element? focusedRow = cache.enclosingRowOf(focusedChild);
+    if (focusedRow != null) {
       if (isRight) {
         final List<FocusNode> trailingChildren = allNodes.where((
           FocusNode node,
         ) {
           return node.ancestors.contains(focusedChild) &&
-              cache.enclosingListTileOf(node) == focusedListTile &&
-              cache.rectOf(node).center.dx > target.center.dx + 8.0;
+              cache.enclosingRowOf(node) == focusedRow &&
+              tvListTiles.isSecondaryIn(cache.rectOf(node), target);
         }).toList();
         if (trailingChildren.isNotEmpty) {
           trailingChildren.sort(
@@ -1857,8 +1680,8 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
           FocusNode node,
         ) {
           return focusedChild.ancestors.contains(node) &&
-              cache.enclosingListTileOf(node) == focusedListTile &&
-              cache.rectOf(node).center.dx < target.center.dx - 8.0;
+              cache.enclosingRowOf(node) == focusedRow &&
+              tvListTiles.isSecondaryIn(target, cache.rectOf(node));
         }).toList();
         if (parentContainers.isNotEmpty) {
           parentContainers.sort(
@@ -1870,27 +1693,26 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
       }
     }
 
-    // 0b. Support stepping across sibling ButtonStyleButtons embedded inside
-    // a primary InkResponse card (e.g. ReplyItemGrpc's 回复 / 翻译 / 查看对话 /
-    // 跳转回复 / 点踩 / 点赞) and stepping Left from the leftmost button back
-    // to the enclosing card.
-    FocusNode? parentInkCard;
-    if (focusedListTile == null && cache.enclosingButtonOf(focusedChild) != null) {
+    // 0b. Support stepping across sibling actions embedded inside a primary
+    // card and stepping Left from the leftmost action back to the enclosing
+    // card.
+    FocusNode? parentCard;
+    if (focusedRow == null && cache.enclosingActionOf(focusedChild) != null) {
       for (final FocusNode ancestor in focusedChild.ancestors) {
         if (cache.isEffectivelyFocusable(ancestor) &&
-            cache.enclosingInkResponseOf(ancestor) != null &&
-            cache.enclosingButtonOf(ancestor) == null &&
-            cache.enclosingListTileOf(ancestor) == null &&
+            cache.enclosingCardOf(ancestor) != null &&
+            cache.enclosingActionOf(ancestor) == null &&
+            cache.enclosingRowOf(ancestor) == null &&
             _isEmbeddedSecondaryOf(focusedChild, ancestor, cache)) {
-          parentInkCard = ancestor;
+          parentCard = ancestor;
           break;
         }
       }
     }
-    if (parentInkCard != null) {
-      final List<FocusNode> siblingButtons = allNodes.where((FocusNode node) {
-        if (!node.ancestors.contains(parentInkCard)) return false;
-        if (cache.enclosingButtonOf(node) == null) return false;
+    if (parentCard != null) {
+      final List<FocusNode> siblingActions = allNodes.where((FocusNode node) {
+        if (!node.ancestors.contains(parentCard)) return false;
+        if (cache.enclosingActionOf(node) == null) return false;
         final Rect r = cache.rectOf(node);
         final bool sameBand =
             r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
@@ -1899,32 +1721,32 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy {
             ? r.center.dx > target.center.dx + 4.0
             : r.center.dx < target.center.dx - 4.0;
       }).toList();
-      if (siblingButtons.isNotEmpty) {
-        siblingButtons.sort(
+      if (siblingActions.isNotEmpty) {
+        siblingActions.sort(
           (FocusNode a, FocusNode b) => isRight
               ? cache.rectOf(a).left.compareTo(cache.rectOf(b).left)
               : cache.rectOf(b).right.compareTo(cache.rectOf(a).right),
         );
-        return siblingButtons.first;
+        return siblingActions.first;
       }
       if (!isRight) {
-        return parentInkCard;
+        return parentCard;
       }
     }
 
     FocusNode? embeddedCardActionFallback() {
       if (!isRight ||
-          focusedListTile != null ||
-          cache.enclosingInkResponseOf(focusedChild) == null ||
-          cache.enclosingButtonOf(focusedChild) != null) {
+          focusedRow != null ||
+          cache.enclosingCardOf(focusedChild) == null ||
+          cache.enclosingActionOf(focusedChild) != null) {
         return null;
       }
-      final List<FocusNode> embeddedButtons = allNodes.where((FocusNode node) {
+      final List<FocusNode> embeddedActions = allNodes.where((FocusNode node) {
         return node.ancestors.contains(focusedChild) &&
-            cache.enclosingButtonOf(node) != null &&
+            cache.enclosingActionOf(node) != null &&
             _isEmbeddedSecondaryOf(node, focusedChild, cache);
       }).toList();
-      return _findFirstReadingOrderNode(embeddedButtons, cache);
+      return _findFirstReadingOrderNode(embeddedActions, cache);
     }
 
     final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
@@ -2184,8 +2006,8 @@ class TvNavigation extends StatefulWidget {
   State<TvNavigation> createState() => _TvNavigationState();
 }
 
-class _MiniScaffoldSheetRecord {
-  _MiniScaffoldSheetRecord({
+class _TvSheetRecord {
+  _TvSheetRecord({
     required this.sheetWidget,
     this.savedFocusNode,
   });
@@ -2211,8 +2033,8 @@ class _TvNavigationState extends State<TvNavigation>
   /// Frames a probe that found nothing to promote into stays trusted while the
   /// focus tree does not change (about 200 ms at 60 Hz).
   static const int _kEmptySheetProbeFrames = 12;
-  static final Expando<_MiniScaffoldSheetRecord> _bottomSheetRecords =
-      Expando<_MiniScaffoldSheetRecord>('tvBottomSheetRecords');
+  static final Expando<_TvSheetRecord> _bottomSheetRecords =
+      Expando<_TvSheetRecord>('tvBottomSheetRecords');
   static final Expando<bool> _routeWillHandlePop = Expando<bool>(
     'tvRouteWillHandlePop',
   );
@@ -2240,10 +2062,12 @@ class _TvNavigationState extends State<TvNavigation>
     skipTraversal: true,
   );
   late final _TvFocusLayerStack _layers = _TvFocusLayerStack(
-    // Bottom first: popup routes sit below overlay content.
-    providers: <_TvFocusLayerProvider>[
-      _RouteFocusLayerProvider(),
-      _OverlayFocusLayer(_layerAnchor),
+    providers: <TvFocusLayerProvider>[
+      for (final TvFocusAdapter adapter in tvFocusAdapters)
+        ...adapter.layerProviders(
+          anchor: _layerAnchor,
+          rememberTrigger: TvNavigationObserver.rememberFocusedNode,
+        ),
     ],
     policy: _policy,
     showRing: (FocusNode node) => _updateRect(_computeFocusedRect(node)),
@@ -2332,7 +2156,7 @@ class _TvNavigationState extends State<TvNavigation>
     Element layoutEl,
     Widget sheet,
     FocusNode? primary,
-    _BottomSheetNodeStatus status, {
+    TvSheetNodeStatus status, {
     required bool preferSelectTrigger,
   }) {
     if (!_knownBottomSheetLayouts.contains(layoutEl)) {
@@ -2347,9 +2171,9 @@ class _TvNavigationState extends State<TvNavigation>
               : ((_lastSelectTriggerNode?.context?.mounted ?? false)
                     ? _lastSelectTriggerNode
                     : null));
-    final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[layoutEl];
+    final _TvSheetRecord? rec = _bottomSheetRecords[layoutEl];
     if (rec == null) {
-      _bottomSheetRecords[layoutEl] = _MiniScaffoldSheetRecord(
+      _bottomSheetRecords[layoutEl] = _TvSheetRecord(
         sheetWidget: sheet,
         savedFocusNode: trigger,
       );
@@ -2386,7 +2210,7 @@ class _TvNavigationState extends State<TvNavigation>
   /// frame.
   void _pollRouteWillHandlePop(FocusNode? primary) {
     if (primary == null) return;
-    final ModalRoute<dynamic>? route = _routeOfFocusNode(primary);
+    final ModalRoute<dynamic>? route = tvRouteOfFocusNode(primary);
     if (route == null) return;
     final bool prevWillPop = _routeWillHandlePop[route] ?? false;
     final bool currWillPop = route.willHandlePopInternally;
@@ -2396,17 +2220,17 @@ class _TvNavigationState extends State<TvNavigation>
     }
   }
 
-  /// Whether a known `BottomSheetLayout` has an open sheet that has not been
+  /// Whether a known sheet layout has an open sheet that has not been
   /// registered yet.
   bool _hasUnregisteredOpenSheet() {
     for (int i = 0; i < _knownBottomSheetLayouts.length; i++) {
       final Element el = _knownBottomSheetLayouts[i];
-      if (!el.mounted || el.widget is! BottomSheetLayout) continue;
-      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
-      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+      if (!el.mounted || !tvSheets.isLayout(el)) continue;
+      final Widget? sheet = tvSheets.sheetOf(el);
+      if (sheet == null || tvSheets.isClosing(sheet)) {
         continue;
       }
-      final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      final _TvSheetRecord? rec = _bottomSheetRecords[el];
       if (rec == null || !identical(rec.sheetWidget, sheet)) return true;
     }
     return false;
@@ -2414,16 +2238,16 @@ class _TvNavigationState extends State<TvNavigation>
 
   void _captureBottomSheetTransitions(
     FocusNode? primary,
-    _BottomSheetNodeStatus status,
+    TvSheetNodeStatus status,
   ) {
     _knownBottomSheetLayouts.removeWhere(
-      (Element el) => !el.mounted || el.widget is! BottomSheetLayout,
+      (Element el) => !el.mounted || !tvSheets.isLayout(el),
     );
 
     final Element? occluding = status.occludingLayout;
-    if (occluding != null && occluding.widget is BottomSheetLayout) {
-      final Widget? sheet = (occluding.widget as BottomSheetLayout).bottomSheet;
-      if (sheet != null && !_TvTraversalCache._isBottomSheetClosing(sheet)) {
+    if (occluding != null && tvSheets.isLayout(occluding)) {
+      final Widget? sheet = tvSheets.sheetOf(occluding);
+      if (sheet != null && !tvSheets.isClosing(sheet)) {
         _registerActiveSheetLayout(
           occluding,
           sheet,
@@ -2434,14 +2258,14 @@ class _TvNavigationState extends State<TvNavigation>
       }
     }
 
-    // O(1) check on already-discovered BottomSheetLayout elements in the scope
+    // O(1) check on already-discovered sheet layout elements in the scope
     // so async-triggered sheets (e.g. awaiting an HTTP Future after Select on a
     // left-column button) are caught immediately regardless of network latency.
     for (int i = 0; i < _knownBottomSheetLayouts.length; i++) {
       final Element el = _knownBottomSheetLayouts[i];
-      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
-      if (sheet != null && !_TvTraversalCache._isBottomSheetClosing(sheet)) {
-        final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      final Widget? sheet = tvSheets.sheetOf(el);
+      if (sheet != null && !tvSheets.isClosing(sheet)) {
+        final _TvSheetRecord? rec = _bottomSheetRecords[el];
         if (rec == null || !identical(rec.sheetWidget, sheet)) {
           _registerActiveSheetLayout(
             el,
@@ -2462,20 +2286,18 @@ class _TvNavigationState extends State<TvNavigation>
     if (_pendingSelectSheetCheckFrames > 0) {
       _pendingSelectSheetCheckFrames--;
       if (scope != null &&
-          !_isScopeInactive(scope) &&
+          !tvIsScopeInactive(scope) &&
           scopeCtx is Element &&
           scopeCtx.mounted) {
         Element? newlyOpened;
         void scan(Element el) {
-          final Widget w = el.widget;
-          if (w is BottomSheetLayout) {
+          if (tvSheets.isLayout(el)) {
             if (!_knownBottomSheetLayouts.contains(el)) {
               _knownBottomSheetLayouts.add(el);
             }
-            final Widget? sheet = w.bottomSheet;
-            if (sheet != null &&
-                !_TvTraversalCache._isBottomSheetClosing(sheet)) {
-              final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+            final Widget? sheet = tvSheets.sheetOf(el);
+            if (sheet != null && !tvSheets.isClosing(sheet)) {
+              final _TvSheetRecord? rec = _bottomSheetRecords[el];
               if (rec == null || !identical(rec.sheetWidget, sheet)) {
                 newlyOpened = el;
               }
@@ -2486,8 +2308,7 @@ class _TvNavigationState extends State<TvNavigation>
 
         scopeCtx.visitChildren(scan);
         if (newlyOpened != null) {
-          final Widget sheet =
-              (newlyOpened!.widget as BottomSheetLayout).bottomSheet!;
+          final Widget sheet = tvSheets.sheetOf(newlyOpened!)!;
           _registerActiveSheetLayout(
             newlyOpened!,
             sheet,
@@ -2508,12 +2329,12 @@ class _TvNavigationState extends State<TvNavigation>
         !status.isInvalidated) {
       for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
         final Element el = _trackedBottomSheetLayouts[i];
-        if (!el.mounted || el.widget is! BottomSheetLayout) continue;
-        final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
-        if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+        if (!el.mounted || !tvSheets.isLayout(el)) continue;
+        final Widget? sheet = tvSheets.sheetOf(el);
+        if (sheet == null || tvSheets.isClosing(sheet)) {
           continue;
         }
-        final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+        final _TvSheetRecord? rec = _bottomSheetRecords[el];
         if (rec == null ||
             !identical(rec.sheetWidget, sheet) ||
             rec.promoted ||
@@ -2521,11 +2342,7 @@ class _TvNavigationState extends State<TvNavigation>
             identical(primary, rec.savedFocusNode)) {
           continue;
         }
-        final Element? sheetSlot =
-            TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
-              el,
-              BottomSheetType.bottomSheet,
-            );
+        final Element? sheetSlot = tvSheets.sheetSlotOf(el);
         if (sheetSlot != null &&
             TvFocusTraversalPolicy._isElementInSubtree(
               primary.context,
@@ -2542,22 +2359,17 @@ class _TvNavigationState extends State<TvNavigation>
   }
 
   bool _canPromoteSheet(Element layoutEl) {
-    if (!layoutEl.mounted || layoutEl.widget is! BottomSheetLayout) {
+    if (!layoutEl.mounted || !tvSheets.isLayout(layoutEl)) {
       return false;
     }
     final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
     if (sheetScope == null ||
-        _isScopeInactive(sheetScope) ||
+        tvIsScopeInactive(sheetScope) ||
         !sheetScope.canRequestFocus) {
       return false;
     }
-    final Element? sheetSlot =
-        TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
-          layoutEl,
-          BottomSheetType.bottomSheet,
-        );
-    if (sheetSlot == null ||
-        !TvFocusTraversalPolicy._subtreeHasRequestableFocus(sheetSlot)) {
+    final Element? sheetSlot = tvSheets.sheetSlotOf(layoutEl);
+    if (sheetSlot == null || !tvSheets.hasRequestableFocus(sheetSlot)) {
       return false;
     }
     return _policy.findFirstFocusInSubtree(sheetSlot, sheetScope) != null;
@@ -2566,12 +2378,12 @@ class _TvNavigationState extends State<TvNavigation>
   bool _hasUnpromotedActiveSheetInScope(FocusScopeNode scope) {
     for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
       final Element el = _trackedBottomSheetLayouts[i];
-      if (!el.mounted || el.widget is! BottomSheetLayout) continue;
-      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
-      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+      if (!el.mounted || !tvSheets.isLayout(el)) continue;
+      final Widget? sheet = tvSheets.sheetOf(el);
+      if (sheet == null || tvSheets.isClosing(sheet)) {
         continue;
       }
-      final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      final _TvSheetRecord? rec = _bottomSheetRecords[el];
       if (rec != null &&
           identical(rec.sheetWidget, sheet) &&
           (rec.promoted || rec.userMovedFocus)) {
@@ -2584,21 +2396,21 @@ class _TvNavigationState extends State<TvNavigation>
     return false;
   }
 
-  bool _hasPendingBottomSheetWork(_BottomSheetNodeStatus status) {
+  bool _hasPendingBottomSheetWork(TvSheetNodeStatus status) {
     if (status.isInvalidated) return true;
     for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
       final Element el = _trackedBottomSheetLayouts[i];
-      if (!el.mounted || el.widget is! BottomSheetLayout) return true;
-      final Widget? sheet = (el.widget as BottomSheetLayout).bottomSheet;
-      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
+      if (!el.mounted || !tvSheets.isLayout(el)) return true;
+      final Widget? sheet = tvSheets.sheetOf(el);
+      if (sheet == null || tvSheets.isClosing(sheet)) {
         return true;
       }
-      final _MiniScaffoldSheetRecord? rec = _bottomSheetRecords[el];
+      final _TvSheetRecord? rec = _bottomSheetRecords[el];
       if (rec == null || !identical(rec.sheetWidget, sheet)) {
         return true;
       }
       if (!rec.promoted && !rec.userMovedFocus) {
-        if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet)) return true;
+        if (tvSheets.isAnimatingOpen(sheet)) return true;
         final int treeSize = _scopeOf(el)?.descendants.length ?? -1;
         if (rec.emptyProbeTreeSize == treeSize &&
             rec.emptyProbeFramesLeft > 0) {
@@ -2618,7 +2430,7 @@ class _TvNavigationState extends State<TvNavigation>
     final FocusNode? current = FocusManager.instance.primaryFocus;
     if (current != null &&
         current is! FocusScopeNode &&
-        _TvTraversalCache._inspectBottomSheetNode(current).isInvalidated) {
+        tvSheets.inspect(current).isInvalidated) {
       current.unfocus(disposition: UnfocusDisposition.scope);
       _updateRect(null);
     }
@@ -2636,28 +2448,21 @@ class _TvNavigationState extends State<TvNavigation>
     if (!mounted || !TvPlatform.isTv) return false;
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     _pollRouteWillHandlePop(primary);
-    final _BottomSheetNodeStatus status =
-        _TvTraversalCache._inspectBottomSheetNode(primary);
+    final TvSheetNodeStatus status = tvSheets.inspect(primary);
     _captureBottomSheetTransitions(primary, status);
 
     for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
       if (i >= _trackedBottomSheetLayouts.length) continue;
       final Element layoutEl = _trackedBottomSheetLayouts[i];
-      if (!layoutEl.mounted || layoutEl.widget is! BottomSheetLayout) {
+      if (!layoutEl.mounted || !tvSheets.isLayout(layoutEl)) {
         _trackedBottomSheetLayouts.removeAt(i);
         continue;
       }
-      final BottomSheetLayout layoutWidget =
-          layoutEl.widget as BottomSheetLayout;
-      final Widget? sheet = layoutWidget.bottomSheet;
-      final _MiniScaffoldSheetRecord? record = _bottomSheetRecords[layoutEl];
+      final Widget? sheet = tvSheets.sheetOf(layoutEl);
+      final _TvSheetRecord? record = _bottomSheetRecords[layoutEl];
 
-      if (sheet == null || _TvTraversalCache._isBottomSheetClosing(sheet)) {
-        final Element? closingSheetSlot =
-            TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
-              layoutEl,
-              BottomSheetType.bottomSheet,
-            );
+      if (sheet == null || tvSheets.isClosing(sheet)) {
+        final Element? closingSheetSlot = tvSheets.sheetSlotOf(layoutEl);
         _trackedBottomSheetLayouts.removeAt(i);
         _bottomSheetRecords[layoutEl] = null;
         if (closingSheetSlot != null) {
@@ -2687,13 +2492,9 @@ class _TvNavigationState extends State<TvNavigation>
         }
         final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
         if (sheetScope != null &&
-            !_isScopeInactive(sheetScope) &&
+            !tvIsScopeInactive(sheetScope) &&
             sheetScope.canRequestFocus) {
-          final Element? bodySlot =
-              TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
-                layoutEl,
-                BottomSheetType.body,
-              );
+          final Element? bodySlot = tvSheets.bodySlotOf(layoutEl);
           final FocusNode? fallback =
               (bodySlot != null
                   ? _policy.findFirstFocusInSubtree(bodySlot, sheetScope)
@@ -2716,9 +2517,9 @@ class _TvNavigationState extends State<TvNavigation>
         continue;
       }
 
-      final _MiniScaffoldSheetRecord activeRecord =
+      final _TvSheetRecord activeRecord =
           record ??
-          (_bottomSheetRecords[layoutEl] = _MiniScaffoldSheetRecord(
+          (_bottomSheetRecords[layoutEl] = _TvSheetRecord(
             sheetWidget: sheet,
           ));
       if (!identical(activeRecord.sheetWidget, sheet)) {
@@ -2731,15 +2532,11 @@ class _TvNavigationState extends State<TvNavigation>
       if (!activeRecord.promoted && !activeRecord.userMovedFocus) {
         final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
         if (sheetScope == null ||
-            _isScopeInactive(sheetScope) ||
+            tvIsScopeInactive(sheetScope) ||
             !sheetScope.canRequestFocus) {
           continue;
         }
-        final Element? sheetSlot =
-            TvFocusTraversalPolicy._slotChildOfBottomSheetLayout(
-              layoutEl,
-              BottomSheetType.bottomSheet,
-            );
+        final Element? sheetSlot = tvSheets.sheetSlotOf(layoutEl);
         final FocusNode? firstInSheet = sheetSlot != null
             ? _policy.findFirstFocusInSubtree(sheetSlot, sheetScope)
             : null;
@@ -2756,7 +2553,7 @@ class _TvNavigationState extends State<TvNavigation>
           return true;
         }
         _unfocusIfBottomSheetInvalidated();
-        if (_TvTraversalCache._isBottomSheetAnimatingOpen(sheet)) {
+        if (tvSheets.isAnimatingOpen(sheet)) {
           WidgetsBinding.instance.ensureVisualUpdate();
           return true;
         }
@@ -2807,7 +2604,7 @@ class _TvNavigationState extends State<TvNavigation>
         !node.canRequestFocus ||
         node.skipTraversal ||
         _layers.occludes(node) ||
-        _TvTraversalCache._inspectBottomSheetNode(node).isInvalidated) {
+        tvSheets.inspect(node).isInvalidated) {
       return null;
     }
     final BuildContext? context = node.context;
@@ -2916,57 +2713,6 @@ class _TvNavigationState extends State<TvNavigation>
     return Offset(dx, dy);
   }
 
-  static bool _isScopeInactive(FocusScopeNode scope) {
-    FocusScopeNode? current = scope;
-    while (current != null) {
-      if (current.skipTraversal) return true;
-      current = current.enclosingScope;
-    }
-    return false;
-  }
-
-  static FocusScopeNode? _findActiveSiblingScope(FocusScopeNode scope) {
-    FocusScopeNode inactiveRoot = scope;
-    FocusScopeNode? current = scope.enclosingScope;
-    while (current != null) {
-      if (current.skipTraversal) {
-        inactiveRoot = current;
-      }
-      current = current.enclosingScope;
-    }
-
-    FocusScopeNode? searchIn(FocusNode root) {
-      FocusScopeNode? result;
-      void visit(FocusNode parent) {
-        for (final FocusNode child in parent.children) {
-          if (child is FocusScopeNode) {
-            if (child != inactiveRoot &&
-                !_isScopeInactive(child) &&
-                child.canRequestFocus) {
-              result = child;
-            }
-          } else {
-            visit(child);
-          }
-        }
-      }
-
-      visit(root);
-      return result;
-    }
-
-    final FocusNode? parent = inactiveRoot.parent;
-    if (parent != null) {
-      final FocusScopeNode? found = searchIn(parent);
-      if (found != null) return found;
-    }
-    final FocusScopeNode? enclosing = inactiveRoot.enclosingScope;
-    if (enclosing != null && !identical(enclosing, parent)) {
-      return searchIn(enclosing);
-    }
-    return null;
-  }
-
   void _syncFocusRectAfterLayout(Duration _) {
     if (!mounted || !TvPlatform.isTv) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
@@ -3005,9 +2751,9 @@ class _TvNavigationState extends State<TvNavigation>
         _trackedBottomSheetLayouts.isNotEmpty ||
         _pendingSelectSheetCheckFrames > 0 ||
         _hasUnregisteredOpenSheet();
-    final _BottomSheetNodeStatus sheetStatus = sheetsInPlay
-        ? _TvTraversalCache._inspectBottomSheetNode(node)
-        : const _BottomSheetNodeStatus();
+    final TvSheetNodeStatus sheetStatus = sheetsInPlay
+        ? tvSheets.inspect(node)
+        : const TvSheetNodeStatus();
     if (sheetsInPlay) _captureBottomSheetTransitions(node, sheetStatus);
     if (sheetsInPlay && _hasPendingBottomSheetWork(sheetStatus)) {
       _lastFocusedNode = null;
@@ -3022,7 +2768,7 @@ class _TvNavigationState extends State<TvNavigation>
           final FocusScopeNode? scope = current is FocusScopeNode
               ? current
               : current?.nearestScope;
-          if (current != null && scope != null && !_isScopeInactive(scope)) {
+          if (current != null && scope != null && !tvIsScopeInactive(scope)) {
             if (current is FocusScopeNode &&
                 _hasUnpromotedActiveSheetInScope(scope)) {
               _updateRect(null);
@@ -3057,8 +2803,8 @@ class _TvNavigationState extends State<TvNavigation>
     if (node == null || node is FocusScopeNode) {
       if (node is FocusScopeNode && !_focusSyncScheduled) {
         FocusScopeNode targetScope = node;
-        if (_isScopeInactive(node)) {
-          targetScope = _findActiveSiblingScope(node) ?? node;
+        if (tvIsScopeInactive(node)) {
+          targetScope = tvFindActiveSiblingScope(node) ?? node;
         }
         if (!_hasUnpromotedActiveSheetInScope(targetScope)) {
           final FocusNode? pendingInvalid = _pendingInvalidNode;
@@ -3090,7 +2836,7 @@ class _TvNavigationState extends State<TvNavigation>
                       : _policy.findFirstFocus(targetScope)) ??
                   first;
               if (FocusManager.instance.primaryFocus == node &&
-                  !_isScopeInactive(targetScope) &&
+                  !tvIsScopeInactive(targetScope) &&
                   targetScope.canRequestFocus &&
                   resolvedFirst.canRequestFocus &&
                   (resolvedFirst.context?.mounted ?? false)) {
@@ -3129,7 +2875,7 @@ class _TvNavigationState extends State<TvNavigation>
     }
 
     // A popup route that is active but never took focus (showMenu with
-    // requestFocus: false) is handled by _RouteFocusLayer in the layer stack.
+    // requestFocus: false) is handled in the layer stack.
     final FocusScopeNode? currentScope = node.nearestScope;
 
     final BuildContext? context = node.context;
@@ -3171,7 +2917,7 @@ class _TvNavigationState extends State<TvNavigation>
     if (isStationary) return;
 
     if (currentScope != null &&
-        !_isScopeInactive(currentScope) &&
+        !tvIsScopeInactive(currentScope) &&
         !_focusSyncScheduled &&
         (parentOffset == null ||
             !TvFocusTraversalPolicy.isEffectivelyFocusable(node))) {
@@ -3262,7 +3008,7 @@ class _TvNavigationState extends State<TvNavigation>
       if (immediateNode != null &&
           immediateNode is! FocusScopeNode &&
           immediateScope != null &&
-          !_isScopeInactive(immediateScope)) {
+          !tvIsScopeInactive(immediateScope)) {
         _updateRect(_computeFocusedRect(immediateNode));
       }
     }
@@ -3278,8 +3024,8 @@ class _TvNavigationState extends State<TvNavigation>
       final FocusNode? node = FocusManager.instance.primaryFocus;
       if (node is FocusScopeNode) {
         FocusScopeNode targetScope = node;
-        if (_isScopeInactive(node)) {
-          targetScope = _findActiveSiblingScope(node) ?? node;
+        if (tvIsScopeInactive(node)) {
+          targetScope = tvFindActiveSiblingScope(node) ?? node;
         }
         final FocusNode? pendingInvalid = _pendingInvalidNode;
         final Rect? pendingRect = _pendingRecoveryRect;
@@ -3313,7 +3059,7 @@ class _TvNavigationState extends State<TvNavigation>
       final FocusScopeNode? currentScope = node?.nearestScope;
       if (node != null &&
           currentScope != null &&
-          !_isScopeInactive(currentScope)) {
+          !tvIsScopeInactive(currentScope)) {
         final bool effectivelyFocusable =
             TvFocusTraversalPolicy.isEffectivelyFocusable(node);
         if (!effectivelyFocusable) {
@@ -3473,7 +3219,7 @@ class _TvNavigationState extends State<TvNavigation>
                     policy: _policy,
                     // Top of the subtree: the root Navigator's focus branch and
                     // those of overlay dialogs attach below it (see
-                    // _OverlayFocusLayer).
+                    // tv_popup_adapter.dart).
                     child: Focus(
                       focusNode: _layerAnchor,
                       canRequestFocus: false,
@@ -3538,9 +3284,8 @@ class _TvFocusRingPainter extends CustomPainter {
 /// Route observer that:
 /// 1. Memorizes the last focused [FocusNode] for each [Route] before pushing a
 ///    new route or dialog and restores it when popping back.
-/// 2. Automatically switches `/loginPage` to the `扫码登录` tab
-///    ([loginQrTabIndex]) on TV via `Get.find<LoginPageController>()` without
-///    touching `lib/pages/login/`.
+/// 2. Tells the adapters about each pushed route, so that [TvLoginAdapter] can
+///    open `/loginPage` on its `扫码登录` tab ([loginQrTabIndex]).
 class TvNavigationObserver extends NavigatorObserver {
   static final Expando<FocusNode> _savedFocusByRoute = Expando<FocusNode>(
     'tvSavedFocusByRoute',
@@ -3551,34 +3296,14 @@ class TvNavigationObserver extends NavigatorObserver {
     if (node is FocusScopeNode) return;
     final BuildContext? context = node.context;
     if (context == null || !context.mounted) return;
-    final ModalRoute<dynamic>? route = _routeOfFocusNode(node);
+    final ModalRoute<dynamic>? route = tvRouteOfFocusNode(node);
     if (route != null) {
       _savedFocusByRoute[route] = node;
     }
   }
 
-  /// Index of the `扫码` tab in [LoginPageController.tabController]
-  /// (`密码` / `短信` / `扫码` / `Cookie`). The controller's own QR polling keys
-  /// on the same index; a test reads both upstream files and fails if the tab
-  /// order or that index moves.
-  static const int loginQrTabIndex = 2;
-
-  static void _switchLoginPageToQrTab({int remainingRetries = 2}) {
-    if (!TvPlatform.isTv) return;
-    if (Get.isRegistered<LoginPageController>()) {
-      final LoginPageController ctr = Get.find<LoginPageController>();
-      if (ctr.tabController.index != loginQrTabIndex) {
-        ctr.tabController.animateTo(loginQrTabIndex);
-      }
-      return;
-    }
-    if (remainingRetries > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _switchLoginPageToQrTab(remainingRetries: remainingRetries - 1);
-      });
-      WidgetsBinding.instance.ensureVisualUpdate();
-    }
-  }
+  /// Index of the `扫码` tab on the login page.
+  static const int loginQrTabIndex = TvLoginAdapter.qrTabIndex;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
@@ -3597,11 +3322,8 @@ class TvNavigationObserver extends NavigatorObserver {
       }
     }
 
-    if (route.settings.name == '/loginPage') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _switchLoginPageToQrTab();
-      });
-      WidgetsBinding.instance.ensureVisualUpdate();
+    for (final TvFocusAdapter adapter in tvFocusAdapters) {
+      adapter.didPushRoute(route);
     }
   }
 

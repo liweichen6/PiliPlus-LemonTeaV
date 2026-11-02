@@ -1,16 +1,15 @@
 diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
-index 013ed9283..9b9fa9072 100644
 --- a/lib/tv/tv_navigation.dart
 +++ b/lib/tv/tv_navigation.dart
-@@ -6,6 +6,7 @@ import 'package:PiliPlus/common/widgets/scaffold/bottom_sheet_layout.dart'
-     show BottomSheetLayout, BottomSheetType;
- import 'package:PiliPlus/pages/login/controller.dart';
+@@ -2,6 +2,7 @@ import 'dart:math' as math;
+ 
+ import 'package:PiliPlus/tv/adapters/tv_adapters.dart';
  import 'package:PiliPlus/tv/tv_platform.dart';
 +import 'package:PiliPlus/tv/tv_step_probe.dart';
  import 'package:flutter/rendering.dart'
      show
          BoxParentData,
-@@ -2143,7 +2144,10 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
+@@ -1966,7 +1967,10 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
      if (primaryFocus == null || primaryFocus.context == null) {
        return false;
      }
@@ -22,7 +21,7 @@ index 013ed9283..9b9fa9072 100644
    }
  }
  
-@@ -2158,7 +2162,10 @@ class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
+@@ -1981,7 +1985,10 @@ class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
      if (primaryFocus == null || primaryFocus.context == null) {
        return false;
      }
@@ -34,7 +33,7 @@ index 013ed9283..9b9fa9072 100644
    }
  }
  
-@@ -2224,8 +2231,11 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2047,8 +2054,11 @@ class _TvNavigationState extends State<TvNavigation>
    static _TvNavigationState? _mounted;
    static bool _frameCallbackInstalled = false;
  
@@ -48,7 +47,7 @@ index 013ed9283..9b9fa9072 100644
  
    final GlobalKey _key = GlobalKey();
    final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
-@@ -2270,6 +2280,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2095,6 +2105,7 @@ class _TvNavigationState extends State<TvNavigation>
    @override
    void initState() {
      super.initState();
@@ -56,7 +55,7 @@ index 013ed9283..9b9fa9072 100644
      WidgetsBinding.instance.addObserver(this);
      HardwareKeyboard.instance.addHandler(_observeHardwareKeyEvent);
      FocusManager.instance.addListener(_onFocus);
-@@ -2308,6 +2319,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2133,6 +2144,7 @@ class _TvNavigationState extends State<TvNavigation>
    }
  
    bool _observeHardwareKeyEvent(KeyEvent event) {
@@ -64,7 +63,7 @@ index 013ed9283..9b9fa9072 100644
      if (!TvPlatform.isTv) return false;
      final LogicalKeyboardKey key = event.logicalKey;
      final bool isSelect =
-@@ -2848,6 +2860,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2646,6 +2658,7 @@ class _TvNavigationState extends State<TvNavigation>
    void _updateRect(Rect? next) {
      if (!_sameRect(next, _rectNotifier.value)) {
        _rectNotifier.value = next;

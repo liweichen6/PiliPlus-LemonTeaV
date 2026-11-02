@@ -121,8 +121,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M16: 4K on the Video Plane** | Epic M16.2 | `M16.3` | Device Pass & Docs | ✅ Done (the media service hang stays an open risk) | `<physical-tv>`, `docs/tv/*` (`0744f0078`, `549916e58`) |
 | **M16: 4K on the Video Plane** | Epic M16.3 | `M16.4` | Split Into the PiliPlus TVP Variant | ✅ Done on `variant/4k-passthrough` (the first CI build passed; that APK isn't checked on the TV yet) | `docs/tv/4K_VARIANT.md`, `docs/tv/PLAYBACK_PARAMETERS.md`, `.github/workflows/tv-variant-build.yml` (`c5097d7e1`, `fa35edb2f`) |
 | **M13: Focus Engine** | Epic M13.0 | `M13.0` | Baseline on the TV (Step Time, Frame Times) & Focus-Bug Inventory | ✅ Done (released in `v2.1.6.2-fork.5889`; the inventory stays open for more bugs) | `<vm-tv>`, `<physical-tv>`, `docs/tv/M13_BASELINE.md`, `tool/tv_m13/` |
-| **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ⏳ Planned | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
-| **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ⏳ Planned | `lib/tv/adapters/` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0a` | Fix Bug 1: Scroll Every List Level | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
+| **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
@@ -1526,6 +1528,145 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ---
 
+### [2026-11-01] Milestone M13 (Task `M13.0a`): Bug 1 Fixed
+* **Status**: ✅ Done. Down reaches every section of 我的 with the ring visible, Up comes back the same way, and all TV tests pass.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The Fix**: in `_ensureVisibleInUserScrollables`, each scrollable reveals its own child, with the focused card as the rect inside it, as `Scrollable.ensureVisible` does.
+* **Changed From the Written Diff**: `M13_BASELINE.md` recorded `firstTarget` only on levels the user can scroll. A test of a `NeverScrollable` list inside a scrolling one showed that was worse than no fix: the first row went 600 px off screen, where the old code drifts 56 px at the sixth row. `firstTarget` is now recorded on every level, and the diff in that file matches.
+* **Tests**: 97 TV tests pass, the 95 plus two new ones, and the TV analyze step finds no issues. Without the change, the section walk fails at `card_2_0` and the `NeverScrollable` test at `row_5`.
+* **Device Pass** on `<vm-tv>`, in a `-Pdev` release build with this change alone:
+  * 我的, with all four `我的页卡片` sections on: Down went from `观看记录` through `稍后再看` to `我的订阅` with the ring visible, Up came back to the top, and Down left a section correctly after scrolling it sideways. The setting is back to `我的收藏`, and it held after a restart.
+  * `live`, `pgc` (`番剧`, `影视` and the timeline row, which has a `NeverScrollable` `TabBarView` between its two lists), `search_panel` and the pgc introduction: Down and Up kept focus on screen with the ring visible, and sideways rows scrolled.
+  * The ugc introduction: Down and Up work, but the video used has no staff row and no parts, so its horizontal rows weren't reached.
+  * The user page wasn't on the list. It was added because its collapsing header is the riskiest nesting for this change. Down collapses the header correctly.
+  * No ANR or crash from the app in the log for the whole run.
+* **Compared With `origin/main`** (same keys, same device, on the user page and `影视`):
+  * `影视`: Up from `查看更多` into `最近追剧` left that row above the top of the screen, with only a sliver of ring showing. That's bug 1's symptom on `pgc`, and with the fix the row scrolls into view.
+  * The user page: going back up, the header stopped a little short of fully open, and with the fix it opens fully.
+* **Seen on the Way, on Both Builds and Not Fixed Here**:
+  * `pgc`: Up into a row can land on a card cut off by the right edge of the screen, and the row doesn't scroll, so the ring runs off the edge. Right scrolls such a row correctly. It's bug 5, in `M13.0b`.
+  * The user page: Up from the first `查看更多` does nothing, however often it's pressed, so the tabs and `编辑资料` can't be reached by going back up. It's bug 6, a `stuck` bug in the rule chain, for M13.3 and M13.4.
+  * Up doesn't always return to the card Down left. That's the missing column memory, which is M13.4's.
+* **Effect on the Account**: the two playing checks ran with `开启硬解` off, and it's back on. One opened a show from the top instead of its saved position, so that episode's position went from 35:19 to 1:39, and the show moved to the front of `最近追剧`. The other, a video from `观看记录`, may have moved too. The search history was empty, and is empty again after the one entry this run added.
+* **Next**: `M13.0b`, in the next entry.
+
+---
+
+### [2026-11-01] Milestone M13: Bugs 5 and 6 Added, and `M13.0b` Planned
+* **Status**: ✅ Done. Docs only.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`, so `M13.0a` and `M13.0b` land together in one release.
+* **Files Changed**: `[MODIFY] docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Decision** (the user): the two bugs seen during `M13.0a` go into the plan. The cut-off card is bug 5, fixed now as `M13.0b`, because its cause is outside the rule chain. The stuck Up on the user page is bug 6, with a recorded path in M13.3 and the fix in M13.4, because it's in the rule chain M13.4 replaces.
+* **Next**: `M13.0b`, in the next entry.
+
+---
+
+### [2026-11-02] Milestone M13 (Task `M13.0b`): Bug 5 Fixed
+* **Status**: ✅ Done. Up and Down land on a fully visible card in rows, bug 1's walk through 我的 still passes, and all TV tests pass.
+* **Branch**: `fix/tv-m13-0a-scroll-levels`
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The Fix**: after a move's reveal, `_focusNode` runs a second one on Up and Down with the policy for the other end, and `_ensureVisibleInUserScrollables` has a new `onlyAxis` argument that limits it to horizontal lists. Vertical lists keep their one policy, so the pinned-header and tall-card handling doesn't change.
+* **Tests**: 99 TV tests pass, the 97 plus two new ones, and the TV analyze step finds no issues. Without the change, Up leaves the card 140 px past the right edge, and Down leaves one 100 px past the left edge.
+* **Device Pass** on `<vm-tv>`, in a `-Pdev` release build with `M13.0a` and this change:
+  * `影视`: Up from `查看更多` lands on a card that used to stay cut off, and the row scrolls to show all of it, with the whole ring on screen.
+  * 我的, with all four `我的页卡片` sections on: the same keys as bug 1's walk give the same path both ways. After a row was scrolled sideways, Down onto a card cut off on the left scrolled the row back to show it. The setting is back to `我的收藏`, read back on the settings row.
+  * `番剧`, with its timeline row, and `search_panel`, 18 and 30 steps: the ring stayed fully on screen at every step.
+  * No ANR or crash from the app in the log. No video was played, and the search history is empty again after the one entry this run added.
+* **Seen on the Way and Not Fixed**: the side rail on 我的 can skip two items, so search and the bell can't be reached until the page moves. The user added it to the inventory as bug 7, and `M13_BASELINE.md` has the key run and what's known.
+  * The same keys do the same on the `M13.0a` build, so `M13.0b` didn't cause it. With the row not scrolled, the rail walks correctly on that build, and a scrolled row on `影视` doesn't trigger it, so the trigger isn't understood.
+  * It hasn't been compared with `origin/main`, because bug 1 stops that build reaching the page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that's read from the code and not tested.
+* **Decision** (the user): `M13.1` starts now, on top of `M13.0a` and `M13.0b`, before they land.
+* **Next**: `M13.1`.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.1`): Adapters
+* **Status**: ✅ Done. All 99 TV tests pass unchanged, the TV analyze step finds no issues, and a D-pad step runs no more instructions than before.
+* **Branch**: `claude/tv-m13-1-adapters-654465`, on top of `fix/tv-m13-0a-scroll-levels`.
+* **Files Changed**: `[NEW] lib/tv/adapters/` (eight files); `[MODIFY] lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. Nothing in `test/` changed.
+* **The Move**: `tv_navigation.dart` and `tv_focus_layers.dart` now import only `tv_adapters.dart` and `tv_platform.dart` from this project, and no code in them names an upstream class. An upstream rename now breaks one adapter, not the engine. The two files went from 4,173 lines to 3,586.
+
+| Adapter | Source | Contributes |
+| :--- | :--- | :--- |
+| `TvSheetAdapter` | `MiniScaffold` / `BottomSheetLayout` | What to hide (`hides`), and reads of a layout and its sheet for the lifecycle the engine still keeps |
+| `TvCardAdapter` | Comment and video cards and their embedded actions | Groups (`isGroup`, `isAction`) and roles (`isSecondaryIn`, `isMicroAction`) |
+| `TvListTileAdapter` | `ListTile` trailing controls, in both classes | Groups (`isGroup`) and roles (`isSecondaryIn`) |
+| `TvPopupAdapter` | Popup routes and overlay dialogs | Layers (`layerProviders`) |
+| `TvPlayerHudAdapter` | Upstream's player bars, which `AppBarAni` slides away | What to hide (`isSlidAway`) |
+| `TvLoginAdapter` | The login QR tab | `didPushRoute` |
+
+* **The Contract**: `tv_focus_adapter.dart` holds `TvFocusAdapter`, the layer interfaces and three focus-tree helpers the engine and adapters share. It imports only Flutter, and no adapter imports the engine, so there's no import cycle.
+* **Design Note, the Hot Paths**: `hides` and `isGroup` run per ancestor per candidate, and `isSecondaryIn` per pair of candidates, so the engine calls the `const` adapters by name and never loops over a list. They're `final class`es with `vm:prefer-inline` on what the walk calls. Only the cold `layerProviders` and `didPushRoute` go through `tvFocusAdapters`. A new source that fits rows, cards, actions, sheets or layers changes an adapter and not the engine. One that needs a new concept still needs an engine change until M13.4's scorer.
+* **Left Where It Is**:
+  * The inline sheets' lifecycle stays in `_TvNavigationState` for `M13.2`, reading layouts and sheets through `TvSheetAdapter`.
+  * The rule chain stays for `M13.4`. It now reads rows, cards and actions. The engine still tests `InkResponse`, `IconButton` and `TextField` to see whether a control is enabled, which is Flutter and not upstream.
+  * `Wrap` as a group, and the pinned sliver header handling, are Flutter types outside the six sources.
+  * `tv_player_hud.dart` keeps its calls into upstream's player, because M14 owns that file and the plan keeps `M13.1` off it. So `TvPlayerHudAdapter` is small: the slide check is all the engine knew about the player.
+* **Names for M13.5**: `ARCHITECTURE.md` and `REVIEW.md` keep the old names until that task's docs pass. `_TvFocusLayer` and `_TvFocusLayerProvider` lost their underscores and moved to `tv_focus_adapter.dart`. `_OverlayFocusLayer`, `_RouteFocusLayer` and `_RouteFocusLayerProvider` moved to `tv_popup_adapter.dart`. `_inspectBottomSheetNode` is `TvSheetAdapter.inspect`, and `_subtreeHasRequestableFocus` is `hasRequestableFocus`. `enclosingListTile`, `enclosingInkResponse` and `enclosingButton` are `enclosingRow`, `enclosingCard` and `enclosingAction`.
+* **`logging.patch`**: regenerated, because its context held the removed imports. It has the same six hooks, and the probe file is byte for byte the same.
+* **Tests**: 99 TV tests pass with no change to `test/`, and the TV analyze step finds no issues.
+* **What the 99 Tests Don't See**: 29 mutants, each breaking one adapter contribution. 14 fail the tests. The other 15 pass all 99: the tile group in either class, the trailing role, sheets' opening and closing states, the body-slot fallback, micro actions, the slid-away check and the login switch. Passing tests prove little on those paths.
+* **Differential Trace**: to cover those, a throwaway test drove seeded keys through tiles, cards, slid-away bars, sheets frame by frame, popups, overlay dialogs and the login tab, and logged focus, ring and scroll offsets at every step. Base and branch match on all 68,759 lines. It catches 11 of the 15 mutants. Of the other four, one is dead code and one only changes cost (see below); `trigger not remembered` changes nothing because `_onFocus` already remembers that node; and `no enclosing active sheet` only matters when a replaced sheet's record has no trigger. That last one wasn't exercised, and its code moved verbatim. The test isn't committed.
+* **Speed, Machine Code**: the same `--split-debug-info` build of both, disassembled, instructions and direct calls:
+
+| Function | Instructions | Direct calls | Notes |
+| :--- | :--- | :--- | :--- |
+| `evaluateNode`'s walk | 1,377 → 1,348 | 43 → 43 | No adapter code left out of line |
+| `_findVerticalCandidate` | 927 → 927 | 49 → 49 | |
+| `_filterOutEmbeddedSecondaryActions` | 376 → 376 | 30 → 30 | |
+| `_isEmbeddedSecondaryOf` | 73 → 71 | 5 → 5 | |
+| `inDirection`'s closure | 719 → 788 | 60 → 63 | `_isEmbeddedSecondaryOf` now inlines here: one call fewer on the path, with its body in line |
+| `_findHorizontalCandidate` | 475 → 541 | 64 → 67 | The same |
+
+  No new loop and no new call on the path. On the per-frame path `_discover` gains five instructions, for its new argument.
+* **Speed, Timing** on `<vm-tv>`, `decide` in ms, with the same keys, alternating builds in A-B-B-A order:
+  * Home, 8 runs and 991 steps on the final build: mean 0.945 → 0.938, p50 0.92 → 0.94, p90 1.32 → 1.28 (permutation test on run means, p = 0.77).
+  * Settings, 音视频设置, 4 runs and 675 steps: mean 0.80 → 0.80, p50 0.78 → 0.79, p90 1.12 → 1.06.
+  * Per frame, `engine` p50 over 20 home runs: 19.4 → 19.9 µs (p = 0.81). It follows the time of the session, not the build.
+  * The settings runs and the per-frame comparison used builds from before the last change, which only made a role a `bool` instead of an enum. That first version read 5 % slower on home over 12 runs (0.923 → 0.972, p = 0.25). It wasn't proven, but it added a compare per pair of candidates, so it went.
+  * Not timed: comments and the video page, which would need a video playing. They rest on the machine code. `<physical-tv>` wasn't used, so the budget's real check is still M13.5's bench.
+* **Seen on the Way and Not Fixed**:
+  * `_isPrimaryContainer` carries `w is InkResponse` from two copies of the old code. It can't be true: a focus node's context is a `Focus`, and `InkResponse` sits above it. Removing it changes nothing in the tests or the trace.
+  * `TvNavigationObserver.didPush` still calls `ModalRoute.of(current.context!)`, the dependency on the focused widget that `R13` removed elsewhere.
+  * Upstream's `MiniScaffold` trips a debug-only assert when a sheet replaces an open one. It doesn't exist in a release build.
+* **Device Pass** on `<vm-tv>`: 20 home and 4 settings runs, D-pad keys plus Select on the rail, the gear and a settings pane, with a screenshot before each. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe.
+* **Next**: `M13.2`, on the user's go-ahead. It reworks the sheets' lifecycle, and the 99 tests don't pin those opening and closing states, so the trace's sheet scenes should become real tests first.
+
+---
+
+### [2026-11-01] Milestone M13 (Task `M13.1a`): Tests for What the Adapters Carry
+* **Status**: ✅ Done. 119 TV tests pass, the 99 plus 20 new ones, and the TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-1-adapters-654465`.
+* **Files Changed**: `[MODIFY] test/tv_navigation_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed.
+* **Decision** (the user): the paths `M13.1` found the tests couldn't see get real tests before `M13.2`, because that task reworks the sheets' lifecycle.
+* **The Tests**, in the group `paths the adapters carry (M13.1a)`, which CI runs with no workflow change:
+
+| Path | Tests |
+| :--- | :--- |
+| `ListTile` trailing controls, material and upstream | Right onto a button and back, Right onto a switch and back, and Up and Down staying on the tiles: 6 tests |
+| A `⋮` over a card | Up and Down land on the card, also from a narrow control right above the `⋮` |
+| A player bar slid out of its box | A list inside it stays out of reach until it slides back |
+| The login QR tab | Controller registered first, or a frame late, or never, and another route leaves the tab alone |
+| Inline sheets | Takes focus while opening, opened late from outside it, gives focus back as it starts closing, takes no keys while closing, closed while still opening, trigger gone with something left in the body, and with nothing left |
+
+* **Checks**:
+  * 25 of the 29 mutants from `M13.1` now fail a test, up from 14. The two tests that first missed theirs show why such a check matters. A full-width card hides the `⋮` rule, because the card under it is the nearer centre anyway. And `isAnimatingOpen` turned out to keep a late sheet from waiting out the 12-frame empty probe, about 200 ms, which an ordinary open never shows.
+  * All 119 also pass on the engine from before `M13.1`, so they pin existing behavior and not something the refactor introduced.
+  * No line of an existing test changed: the diff to the test file only adds lines.
+* **Still Invisible**, the same four as in `M13.1`:
+  * `no enclosing active sheet`: the guard only matters for a replaced sheet whose record has no trigger, and from the code the node it would save is gone by then.
+  * `all subtrees requestable`: only changes cost, because the probe after it finds nothing either.
+  * `trigger not remembered`: `_onFocus` already remembers that node, and the layer stack restores it anyway.
+  * `drop the InkResponse check`: dead code, listed in `M13.1`.
+* **Not Pinned, on Purpose**:
+  * Right onto a `⋮`: that's bug 3, so the expected path belongs to M13.3 and the fix to M13.4.
+  * One sheet replacing an open one: upstream's `MiniScaffold` trips a debug-only assert there, so a widget test fails on the assert. The trace in `M13.1` covered it and matched. `M13.2` should watch this path, because it has no test.
+* **Device Pass**: none needed. No app code changed.
+* **Next**: `M13.2`, on the user's go-ahead.
+
+---
+
 ### [2026-11-02] Milestone M16 (Task `M16.5`): Live Rooms on the Video Plane
 * **Status**: ✅ Done on `variant/4k-passthrough`. Signed-in 2K/4K live soak waits for a signed-in session.
 * **Why**: the user tested a 2K live stream in a room opened directly (`vo=gpu`) and hit the kernel panic (`sys.boot.reason=watchdog`), showing that >1080p (`gdec:1`) on the GPU path is unsafe for live streams too (`M12_CRASH_DEBUG.md`, Question 5 & H5 update). In `M16.2`–`M16.4`, `TvVideoPlane.forNewPlayer` and `TvVideoPlane.refusesTexture` both exempted `isLive`, leaving directly opened >1080p live rooms on `vo=gpu` and refusing 4K videos opened from a live room.
@@ -1551,4 +1692,4 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Not verified**:
   * Signed-in `1080p` (`原画`), `2K` (`15000`) and `4K` (`20000` / `25000`) live streams and live → `4K60` video on `<physical-tv>`, because `PiliPlus TV dev` is currently signed out (`mid=0`) and Bilibili clamps unauthenticated live streams to `qn=150` (`854 × 480` / `540 × 960`) and videos to `1080P`.
 * **Cleanup**: `PiliPlus TV dev` is force-stopped with `4K 视频直通` back on (`默认画质: 1080P 60帧`, `直播默认画质: 原画`, `免登录1080P` on); temporary `/data/local/tmp/m12` and screenshot files are removed from `<physical-tv>`; `dumpsys -t 6 media.player` answered in `< 1 s`; the user's normal app wasn't touched; all 38 SDK and pub-cache patches are reverted.
-* **Next** (owner: user): optional signed-in 2K/4K live check on `<physical-tv>`, merge into `variant/4k-passthrough`, and upstream `main` sync when ready.
+* **Next** (owner: user): optional signed-in 2K/4K live check on `<physical-tv>`, and upstream `main` sync when ready.
