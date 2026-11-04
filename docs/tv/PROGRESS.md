@@ -125,7 +125,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
-| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done (not landed yet) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
@@ -1698,7 +1698,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 
 ### [2026-11-04] Milestone M13 (Task `M13.2`): One Reconcile Loop, Inline Sheets on the Layer Stack
 * **Status**: ✅ Done. All 119 TV tests pass unchanged, the TV analyze step finds no issues, a differential trace matches the engine before `M13.2` line for line, and a D-pad step runs the same machine code as before.
-* **Branch**: `claude/tv-m13-2-reconcile-7332fc`, on top of `main` after `v2.2.0-fork.5907`. Not pushed: landing it publishes a release.
+* **Branch**: `claude/tv-m13-2-reconcile-7332fc`, on top of `main` after `v2.2.0-fork.5907`. It lands through its pull request, and landing it publishes a release: the release job merges upstream first.
 * **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `tool/tv_m13/logging.patch`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. Nothing in `test/` changed.
 * **One Reconcile Pass**: `_reconcile(pass)` in `_TvNavigationState` is now the only place that moves focus or the ring after an event. Its steps always run in one order: layers (modal, then the inline sheets) → whether the focused node is still valid → recovery → reveal → ring. A pass carries its reason, which picks the steps:
 
@@ -1755,6 +1755,11 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Home, 8 runs and 491 steps each: mean 0.967 → 0.980, p50 0.97 → 0.98, p90 1.27 → 1.28, p99 1.46 → 1.46 (permutation test on run means, p = 0.80). `engine` p50 14.0 → 14.0.
   * Settings, 音视频设置, 4 runs and 334 and 336 steps: mean 0.841 → 0.790, p50 0.87 → 0.80, p90 1.06 → 1.02. `engine` p50 12.5 → 13.0.
   * Both follow the time of the session more than the build: home's base runs went from 0.885 to 1.016 over the session. The `decide` machine code is the same, so neither difference is the change.
-  * Not timed: comments and the video page, which need a video playing, and a frame with a sheet open. They rest on the machine code. `<physical-tv>` wasn't used.
+  * Not timed: comments and the video page, which need a video playing, and a frame with a sheet open. They rest on the machine code. Timing wasn't repeated on `<physical-tv>`.
 * **Device Pass** on `<vm-tv>`: the 12 timing runs, then the clean branch build: the home grid and the side rail with D-pad keys, then 我的 → the gear → 音视频设置 → the right pane, `CDN 设置` opened and closed with Back (focus went into the dialog, moved inside it, and came back to `CDN 设置`; the setting stayed 备用URL). A screenshot came before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe, and the emulator is stopped.
-* **Next**: `M13.3` (recorded D-pad paths), on the user's go-ahead. Landing `M13.2` publishes a release, and the release job merges upstream first.
+* **Device Pass** on `<physical-tv>` (32-bit `-Pdev` builds of the base commit and of this branch, without the probe):
+  * Two fixed D-pad walks over the home grid from a fresh start, 23 and 18 keys: into the tabs, down the grid as it scrolls, Left across columns and onto the rail, up the rail to the avatar, back along the tabs, and Down from `影视`. A screenshot after every key, on both builds. The ring lands on the same item at every step in both, although the feed shows other videos on each start.
+  * In the free walk before them, Right from a top-row card half under the tab bar went to `影视`, Down from `影视` went to the left column, and one Left went to the rail. The fixed walks give the same moves on base, so they come from the old rules, not from `M13.2`. They're left for M13.3's recorded paths and M13.4.
+  * On this branch: 我的 → the gear → 音视频设置 → the right pane, then `CDN 设置` opened with Select, Down and Up inside the dialog, and closed with Back. Focus stayed in the dialog while it was open, came back to `CDN 设置`, and the setting stayed 备用URL.
+  * The dev app there is signed in now, so only arrow keys were used away from those Selects, and there was a screenshot before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on this branch's build and stopped, the TV is on its home screen, and nothing was pushed to it.
+* **Next**: `M13.3` (recorded D-pad paths), on the user's go-ahead.
