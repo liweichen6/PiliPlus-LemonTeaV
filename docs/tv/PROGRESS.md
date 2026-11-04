@@ -126,7 +126,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
-| **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ✅ Done (13 known failures, for bugs 2–4 and 6–10, until M13.4) | `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/M13_BASELINE.md` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
@@ -1763,3 +1763,37 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * On this branch: 我的 → the gear → 音视频设置 → the right pane, then `CDN 设置` opened with Select, Down and Up inside the dialog, and closed with Back. Focus stayed in the dialog while it was open, came back to `CDN 设置`, and the setting stayed 备用URL.
   * The dev app there is signed in now, so only arrow keys were used away from those Selects, and there was a screenshot before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on this branch's build and stopped, the TV is on its home screen, and nothing was pushed to it.
 * **Next**: `M13.3` (recorded D-pad paths), on the user's go-ahead.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.3`): Recorded D-Pad Paths
+* **Status**: ✅ Done. 144 TV tests pass: the 119 from before, unchanged, and 25 recorded paths, 13 of them known failures. The TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-3-paths-36ae14`, on top of `main` after PR 17 (`M13.2`) and the upstream merge after it.
+* **Files Changed**: `[NEW] test/tv_path_harness.dart`, `test/tv_paths_test.dart`; `[MODIFY] test/tv_player_hud_test.dart` (lines added only), `.github/workflows/tv-checks.yml` (analyze and test the new files), `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed, and nothing in `lib/tv/`.
+* **How a Path Works** (`tv_path_harness.dart`): a path is a start node and a list of steps, each a key (the arrows, Select, or Back as the system back button) and the label of the node focus should land on. After each step the replay checks the focused node, that the ring is drawn on it, that all of the ring is on screen, and that the node isn't cut off by any list around it. Where more than one landing is right, a step lists them with `|`; there are four such steps, noted below. The expected path is the correct one, including the inventory's fixes.
+* **Known Failures**: a `KnownFailure` names its bug and the step that goes wrong, and either where the old rules land (`landsOn`) or that they land on the right node but leave it cut off (`cutOff`). The replay checks every step before it as usual, then checks that this step goes wrong in exactly that way. If the bug is fixed the test fails with "no longer shows: make it an ordinary step", and if it goes wrong some other way it fails too. So the old scorer keeps passing, and M13.4 drops each `KnownFailure` as its scorer fixes that step. Each test's name starts with `[known failure: bug N]`.
+* **The Scenes**: the real pages need GetX controllers, Hive and the network, so each scene copies its page's layout at the TV's logical size, 960×540, with the real containers where they're cheap: `NavigationRail` with the avatar, bell and search above it, the scrollable `TabBar`, `ExtendedNestedScrollView`, `SimpleScaffold`, `MiniScaffold`, upstream's `ListTile`, `SelectDialog`, `SliderDialog`, the home grid's `SliverGridDelegateWithExtentAndRatio` at the TV's card width, and the real `TvPlayerHud` with the HUD tests' fakes. Cards copy `VideoCardV`, `VideoCardH` and `VideoCardHLater`, comments copy `ReplyItemGrpc`. The video page's paths are in `tv_player_hud_test.dart` because the fakes are there.
+
+| Screen | Paths | Known failures |
+| :--- | :--- | :--- |
+| Home grid with the rail | Columns and rows, Left from the first column onto the rail, Up onto the tabs; the rail from `首页` to the avatar and back | Bug 8: Right and Left from a card cut off by the tab bar land on `直播` and `影视`. Bug 10: Right onto a card cut off at the top and Left onto one cut off at the bottom leave it cut off. Bug 9: Down from a tab lands on the row's first card, after leaving from another card and with no card to return to |
+| 我的, four sections | Down and Up through every section as the page scrolls (bug 1), a row walked to its end and back (bug 5) | Bug 7: with 观看记录 scrolled sideways, Up from `首页` skips search |
+| User page | A tab's list walked down and up as the header folds away | Bug 6: Up from the first row stays there |
+| Settings | The categories end to end; `SelectDialog` and `SliderDialog` opened, walked and closed with Back onto their tiles | Bug 9: Left from a setting lands on the category level with it, not the one it came from |
+| 稍后再看 | Columns, and Right onto a card's `×` | Bug 4: Up from a `×` in the right column lands on the left card of its row. Bug 2: Down from the last card doesn't reach `播放全部` |
+| Video page, split view | The quick strip, the introduction's actions, Right into the related list, Up onto its tabs | Bug 3: Right from a related card doesn't reach its `⋮` |
+| Comments | The first layer and its actions, `评论详情` and `对话列表` opened from it, Back to each trigger | Bug 2: Down from the last comment doesn't reach the reply button |
+| Player HUD | `播控` opens it, the D-pad walks its pills and the progress bar, Back closes it | None |
+
+* **The Three Moves From `<physical-tv>`**, decided with the user:
+  * Right from a top-row card half under the tab bar went to `影视`: wrong, reproduced in the scene, and it's bug 8. The rule measures the card by its whole rect, and a tab just past the card's edge counts as nearer than the next card.
+  * Down from `影视` went to the left column: wrong by the user's decision. Down should return to the card focus left the grid from, and with nothing to return to, go to the card under the tab. It's bug 9, M13.4's column memory, and the same rule makes Left in settings return to the wrong category.
+  * One Left from the grid went to the rail: not reproduced. In the scene, Left steps one column at a time, also from a card cut off at either edge, and reaches the rail only from the first column. That path passes.
+* **Found While Recording**:
+  * **Bug 10**: Left and Right onto a card cut off along its vertical list don't reveal it, the vertical counterpart of bug 5. `M13.0b` deliberately left Left and Right with one policy.
+  * **Bug 7's likely cause**: the scene reproduced it. The first card of the row scrolled sideways sits under the rail, at x −114 to 66, over search and the bell, and `_filterOutEmbeddedSecondaryActions` drops a small button inside any candidate's rect before the off-screen card itself is dropped. Not proven on a device.
+* **Steps With More Than One Right Landing**: Up from a card that every tab sits over (any tab); Up from the user page's first row (the tab focus left from, or the tab that's showing); Up from a `×` in bug 4 (the `×` or the card above); Back from the HUD (the strip's first pill, as today, or its trigger `播控`).
+* **Kept as Today, by Design**: a second-layer sheet puts focus on its close button first, as M9 decided. `SelectDialog` lands on its first option, so the path selects the first value, where the first and the chosen option are the same. Neither is in the inventory.
+* **Checks**: `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart` passes 144; no line of an existing test changed, only lines added to `tv_player_hud_test.dart`. The TV analyze step, with the two new files added, finds no issues. CI's `tv-checks.yml` now analyzes and runs them.
+* **Limits**: the scenes copy the pages' layout; they aren't the pages. A path can pass in a scene and fail on the device if a page differs, as bug 7's two runs show. No device run was needed or done.
+* **Next**: `M13.4` (scoring function and column memory behind a flag), on the user's go-ahead.
