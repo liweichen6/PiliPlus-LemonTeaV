@@ -44,7 +44,7 @@ Then undo both before committing. The probe must never ship:
 git apply -R tool/tv_m13/logging.patch
 ```
 
-The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. `M13.1` changed that file's imports, so the patch was regenerated then, with the same hooks. It applies to the `tv_navigation.dart` it's committed with, and a branch without `M13.1` needs the version before it.
+The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. `M13.1` changed that file's imports, so the patch was regenerated then, with the same hooks. `M13.2` renamed the per-frame callback from `_syncFocusRectAfterLayout` to `_onFrame`, so it was regenerated again, still with the same hooks: `engine` still times all of `_onPersistentFrame`. It applies to the `tv_navigation.dart` it's committed with, and an older branch needs the version committed with it.
 
 ## What a Step Shows
 

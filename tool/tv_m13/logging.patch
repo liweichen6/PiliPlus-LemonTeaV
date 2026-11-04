@@ -9,7 +9,7 @@ diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
  import 'package:flutter/rendering.dart'
      show
          BoxParentData,
-@@ -1966,7 +1967,10 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
+@@ -1960,7 +1961,10 @@ class _TvDirectionalFocusAction extends Action<DirectionalFocusIntent> {
      if (primaryFocus == null || primaryFocus.context == null) {
        return false;
      }
@@ -21,7 +21,7 @@ diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
    }
  }
  
-@@ -1981,7 +1985,10 @@ class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
+@@ -1975,7 +1979,10 @@ class _TvArrowFocusAction extends Action<_TvArrowFocusIntent> {
      if (primaryFocus == null || primaryFocus.context == null) {
        return false;
      }
@@ -33,21 +33,21 @@ diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
    }
  }
  
-@@ -2047,8 +2054,11 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2064,8 +2071,11 @@ class _TvNavigationState extends State<TvNavigation>
    static _TvNavigationState? _mounted;
    static bool _frameCallbackInstalled = false;
  
 -  static void _onPersistentFrame(Duration timeStamp) =>
--      _mounted?._syncFocusRectAfterLayout(timeStamp);
+-      _mounted?._onFrame(timeStamp);
 +  static void _onPersistentFrame(Duration timeStamp) {
 +    final Stopwatch timer = Stopwatch()..start();
-+    _mounted?._syncFocusRectAfterLayout(timeStamp);
++    _mounted?._onFrame(timeStamp);
 +    TvStepProbe.perFrame(timer.elapsedMicroseconds);
 +  }
  
    final GlobalKey _key = GlobalKey();
    final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
-@@ -2095,6 +2105,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2116,6 +2126,7 @@ class _TvNavigationState extends State<TvNavigation>
    @override
    void initState() {
      super.initState();
@@ -55,7 +55,7 @@ diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
      WidgetsBinding.instance.addObserver(this);
      HardwareKeyboard.instance.addHandler(_observeHardwareKeyEvent);
      FocusManager.instance.addListener(_onFocus);
-@@ -2133,6 +2144,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2152,6 +2163,7 @@ class _TvNavigationState extends State<TvNavigation>
    }
  
    bool _observeHardwareKeyEvent(KeyEvent event) {
@@ -63,7 +63,7 @@ diff --git a/lib/tv/tv_navigation.dart b/lib/tv/tv_navigation.dart
      if (!TvPlatform.isTv) return false;
      final LogicalKeyboardKey key = event.logicalKey;
      final bool isSelect =
-@@ -2646,6 +2658,7 @@ class _TvNavigationState extends State<TvNavigation>
+@@ -2548,6 +2560,7 @@ class _TvNavigationState extends State<TvNavigation>
    void _updateRect(Rect? next) {
      if (!_sameRect(next, _rectNotifier.value)) {
        _rectNotifier.value = next;

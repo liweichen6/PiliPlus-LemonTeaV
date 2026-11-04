@@ -125,7 +125,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
-| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
@@ -1693,3 +1693,73 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Signed-in `1080p` (`原画`), `2K` (`15000`) and `4K` (`20000` / `25000`) live streams and live → `4K60` video on `<physical-tv>`, because `PiliPlus TV dev` is currently signed out (`mid=0`) and Bilibili clamps unauthenticated live streams to `qn=150` (`854 × 480` / `540 × 960`) and videos to `1080P`.
 * **Cleanup**: `PiliPlus TV dev` is force-stopped with `4K 视频直通` back on (`默认画质: 1080P 60帧`, `直播默认画质: 原画`, `免登录1080P` on); temporary `/data/local/tmp/m12` and screenshot files are removed from `<physical-tv>`; `dumpsys -t 6 media.player` answered in `< 1 s`; the user's normal app wasn't touched; all 38 SDK and pub-cache patches are reverted.
 * **Next** (owner: user): optional signed-in 2K/4K live check on `<physical-tv>`, and upstream `main` sync when ready.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.2`): One Reconcile Loop, Inline Sheets on the Layer Stack
+* **Status**: ✅ Done. All 119 TV tests pass unchanged, the TV analyze step finds no issues, a differential trace matches the engine before `M13.2` line for line, and a D-pad step runs the same machine code as before.
+* **Branch**: `claude/tv-m13-2-reconcile-7332fc`, on top of `main` after `v2.2.0-fork.5907`. It lands through its pull request, and landing it publishes a release: the release job merges upstream first.
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `tool/tv_m13/logging.patch`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. Nothing in `test/` changed.
+* **One Reconcile Pass**: `_reconcile(pass)` in `_TvNavigationState` is now the only place that moves focus or the ring after an event. Its steps always run in one order: layers (modal, then the inline sheets) → whether the focused node is still valid → recovery → reveal → ring. A pass carries its reason, which picks the steps:
+
+| Reason | Trigger | Steps |
+| :--- | :--- | :--- |
+| `focus` | The focus listener, and app resume | All five |
+| `layers` | A frame found a modal layer opening, closing or losing focus | Layers |
+| `sheets` | A frame found an inline sheet with work | Layers, then validity and recovery |
+| `scope` | A frame found focus resting on a scope | Layers, then validity and recovery |
+| `invalid` | A frame found the focused node out of reach | Layers, then validity and recovery |
+| `select` | Select with nothing reachable focused | Layers, then recovery, at once |
+| `scroll` | A scroll notification | Validity, at once; the focus change it causes brings the rest |
+| `ring` | A frame found the ring out of date | Ring |
+
+  These replace seven post-frame closures in `_syncFocusRectAfterLayout`, the closure in `_onFocus`, and the recovery code in `_handleKeyEvent` and `_handleScrollNotification`. `_focusSyncScheduled` and `_rectSyncScheduled` became `_passPending` and `_ringPending`, with the same rules: the first request of a kind wins until it runs. Each recovery keeps the rules its trigger had, as a branch of step 3, for M13.4 to replace with the scorer and column memory.
+* **The Frame Check**: layout can move the focused node with no event (a scroll animation, a list that grows, a sheet that slides), so a persistent frame callback stays. It's now `_onFrame`, a check that reads a few cheap signals and asks for a pass when one changed. It never asks for a frame itself, so a still screen costs nothing, and per-frame work happens only while something else animates. This is how "it replaces the per-frame callback" was read, and the user agreed to it in the plan.
+* **Inline Sheets as a Non-Modal Layer**: the sheets' lifecycle moved out of `_TvNavigationState` into `_TvSheetLayers`, which `_TvFocusLayerStack` owns next to its modal records. `stack.reconcile()` runs the modal layers, then the sheets, as `_reconcileFocusLayers` did. Each tracked sheet is a `TvSheetLayer` (`tv_sheet_adapter.dart`), a `TvFocusLayer` with the new `isModal` set to `false`: it covers only its layout's body, which the adapter's `hides` keeps out of reach, focus moves in once (also when its content mounts late) unless the user went elsewhere first, nothing pulls focus back, and focus goes back to the trigger as soon as it starts closing. The modal stack's `occludes` still loops over modal records only. The lifecycle code moved with its rules unchanged; `_TvSheetRecord` now holds the layer instead of the sheet widget.
+* **The Status Listener**: a `TvSheetLayer` listens to its sheet's `AnimationController` and marks the sheets dirty on each status change. That's what lets a frame skip the sheets' bookkeeping (the walk up the focused node's ancestors, and the loops over tracked and known layouts) while every tracked sheet is settled and nothing changed. A skipped frame still checks, cheaply, that each tracked sheet is still the one in its layout, that no known layout shows a new sheet, and that every sheet layout around the focused node shows the same sheet in the same state. Focus changes, registrations and passes mark the sheets dirty too. Closing still gives focus back on the same frame as before: the listener wakes the bookkeeping, and the pass runs at the end of the frame, as the old per-frame check did.
+* **What Stayed the Same**: the rule chain and `inDirection`, `evaluateNode` and the traversal cache, the adapters' hot-path calls, `findRecoveryFocus` and `findFirstFocus`, the 45 ms repeat throttle, `_ensureVisibleInUserScrollables` with the bug 1 and bug 5 fixes, the 12-frame empty probe, the 500 ms settle window, the popup and overlay providers, and `TvNavigationObserver`. M7's one-frame ring wait on steps that scroll stays, so the baseline's 55 ms limit for scrolling steps isn't attempted here. Bugs 2, 3, 4, 6 and 7, the dead `InkResponse` check and `didPush`'s `ModalRoute.of` are untouched.
+* **One Assumption**: a skipped frame relies on the focused widget keeping its ancestors. If a `GlobalKey` moved the focused widget into or out of a sheet's slot with no focus change, the bookkeeping would only see it on the next event. Nothing in the app was found to do that.
+* **Tests**: 119 TV tests pass with no change to `test/`, including the `paths the adapters carry (M13.1a)` group, and the TV analyze step finds no issues.
+* **Differential Trace**: the `M13.1` trace test was lost with its worktree, so a new one was written and not committed. It drives seeded keys, Select, Back, scrolls, page switches, unfocus and app resume through four sets of scenes, and logs the focused node, the ring, every scroll offset and whether a frame is scheduled after every frame:
+  * tiles, cards with a `⋮` over them, both `ListTile` classes, a two-page `PageView`, and cards removed by Select (10 seeds);
+  * a player bar sliding in and out (4 seeds);
+  * inline sheets frame by frame, 18 frames per action (16 seeds): a plain sheet, a second layer with its own `MiniScaffold` and a third layer inside it, content that mounts late, a sheet with nothing focusable, a sheet opened late from the left column, the trigger removed while it's open, a popup menu over the page, and **one sheet replacing an open one**, the path no test covers;
+  * routes pushed and popped, a dialog route and a `SmartDialog` overlay (6 seeds);
+  * fixed scenes for the frame skip, in four sheet seeds: a second layer opened by code inside an open sheet, around the focused node, a sheet opened over an open one by code while focus is outside it, and focus asked for behind an open sheet.
+
+  Base and branch give the same 27,200 lines, byte for byte, and base gives the same lines on a second run.
+* **Mutants**: one break at a time, each run against the 119 tests and the trace (`M13.1`'s script, extended):
+  * The 29 from `M13.1` give the same result as in `M13.1a`: 25 fail a test, and the same four change nothing either can see (`no enclosing active sheet`, `all subtrees requestable`, `trigger not remembered`, the dead `InkResponse` check).
+  * 29 new ones break the pass, the sheet layer and the frame skip. 12 fail a test or change the trace, among them: no restore to the trigger, no body fallback, a replaced sheet keeping its promotion, the focus pass skipping the reveal, the frame's out-of-reach recovery dropped, select ignoring a pending scroll recovery, the frame skip ignoring its dirty flag, and **the sheet's status listener not reporting**, which the trace catches.
+  * Eight change nothing either can see, on paths the old engine had: a scroll's unfocus, remembering the focused node, the scope branch clearing the ring, the sheets pass's own recovery, app resume clearing the pending flags, dropping nested sheets on close, and noting a user who left a sheet waiting for content (twice: the note itself, and the layer's `contains` it uses). The first seven, broken the same way on the engine before `M13.2`, are just as invisible, so these are old blind spots, not new ones. They moved without change.
+  * The other nine are in the frame skip and the pass flags. The skip's single checks (tracked sheets, known layouts, the layouts around focus, the focused node, and settling only when every sheet is settled) each change nothing alone, because they cover each other. Tracked, known and around switched off together change the trace at the second-layer scene above. Setting the dirty flag on a focus change or on a pass also duplicates the focused-node check, and turning both off changes nothing either can see. `ring shares the pass flag` and `never skips` change nothing too; the second shouldn't.
+* **Speed, Machine Code**: the same `-Pdev` `--split-debug-info` builds of both, with the probe, disassembled. Instructions and direct calls:
+
+| Function | Instructions | Direct calls | Notes |
+| :--- | :--- | :--- | :--- |
+| `evaluateNode` and its closures | 1,768 → 1,768 | 70 → 70 | |
+| `_findVerticalCandidate` | 927 → 927 | 49 → 49 | |
+| `_findHorizontalCandidate` | 541 → 541 | 67 → 67 | |
+| `_filterOutEmbeddedSecondaryActions` | 376 → 376 | 30 → 30 | |
+| `_isEmbeddedSecondaryOf` | 71 → 71 | 5 → 5 | |
+| `inDirection` and its closures | 875 → 875 | 71 → 71 | |
+| `isEffectivelyFocusable` (both) | 15 → 15, 20 → 20 | 2 → 2, 4 → 4 | |
+| `_computeFocusedRect` | 202 → 202 | 17 → 17 | |
+| `_TvFocusLayerStack.occludes` | 71 → 81 | 5 → 5 | With no layer open, the path is the same instructions. With a dialog or popup open, each record costs one class-id compare more |
+| Per frame: `_syncFocusRectAfterLayout` and its helpers → `_onFrame`, `frameHasWork` and its helpers | 1,308 → 844 | 102 → 63 | Smaller, because the passes left it. With no sheet in play, a frame makes one call more (`frameHasWork`) |
+| Per focus change: `_onFocus` and its closure → `_onFocus`, `_requestReconcile`, `_reconcile` | 552 → 611 | 55 → 60 | One call more per focus change |
+| `_handleScrollNotification` | 106 → 37 | 12 → 4 | Its body moved into the pass: two calls more per notification |
+
+  The D-pad decision runs the same machine code. `occludes` first came out at 107 instructions with four calls more, because the compiler inlined the sheet layer's `occludes` into the modal loop, where a sheet never is. `TvSheetLayer.occludes` is now `vm:never-inline`, which leaves the one compare.
+* **Speed, Timing** on `<vm-tv>`, `decide` in ms and `engine` per frame in µs, with the same keys as `M13.0`, alternating builds in A-B-B-A order, on the final builds:
+  * Home, 8 runs and 491 steps each: mean 0.967 → 0.980, p50 0.97 → 0.98, p90 1.27 → 1.28, p99 1.46 → 1.46 (permutation test on run means, p = 0.80). `engine` p50 14.0 → 14.0.
+  * Settings, 音视频设置, 4 runs and 334 and 336 steps: mean 0.841 → 0.790, p50 0.87 → 0.80, p90 1.06 → 1.02. `engine` p50 12.5 → 13.0.
+  * Both follow the time of the session more than the build: home's base runs went from 0.885 to 1.016 over the session. The `decide` machine code is the same, so neither difference is the change.
+  * Not timed: comments and the video page, which need a video playing, and a frame with a sheet open. They rest on the machine code. Timing wasn't repeated on `<physical-tv>`.
+* **Device Pass** on `<vm-tv>`: the 12 timing runs, then the clean branch build: the home grid and the side rail with D-pad keys, then 我的 → the gear → 音视频设置 → the right pane, `CDN 设置` opened and closed with Back (focus went into the dialog, moved inside it, and came back to `CDN 设置`; the setting stayed 备用URL). A screenshot came before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe, and the emulator is stopped.
+* **Device Pass** on `<physical-tv>` (32-bit `-Pdev` builds of the base commit and of this branch, without the probe):
+  * Two fixed D-pad walks over the home grid from a fresh start, 23 and 18 keys: into the tabs, down the grid as it scrolls, Left across columns and onto the rail, up the rail to the avatar, back along the tabs, and Down from `影视`. A screenshot after every key, on both builds. The ring lands on the same item at every step in both, although the feed shows other videos on each start.
+  * In the free walk before them, Right from a top-row card half under the tab bar went to `影视`, Down from `影视` went to the left column, and one Left went to the rail. The fixed walks give the same moves on base, so they come from the old rules, not from `M13.2`. They're left for M13.3's recorded paths and M13.4.
+  * On this branch: 我的 → the gear → 音视频设置 → the right pane, then `CDN 设置` opened with Select, Down and Up inside the dialog, and closed with Back. Focus stayed in the dialog while it was open, came back to `CDN 设置`, and the setting stayed 备用URL.
+  * The dev app there is signed in now, so only arrow keys were used away from those Selects, and there was a screenshot before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on this branch's build and stopped, the TV is on its home screen, and nothing was pushed to it.
+* **Next**: `M13.3` (recorded D-pad paths), on the user's go-ahead.

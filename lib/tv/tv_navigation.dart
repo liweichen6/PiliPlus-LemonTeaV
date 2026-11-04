@@ -25,12 +25,6 @@ import 'package:material_ui/material_ui.dart';
 
 part 'tv_focus_layers.dart';
 
-/// Focus scope of [context] without registering an inherited dependency.
-/// `FocusScope.of` would rebuild [context]'s element on every focus change in
-/// that scope.
-FocusScopeNode? _scopeOf(BuildContext context) =>
-    Focus.maybeOf(context, scopeOk: true, createDependency: false)?.nearestScope;
-
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
 ///    chain so collapsed (`AnimatedHeight`) or offscreen (`AppBarAni`) widgets
@@ -778,6 +772,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     return found;
   }
 
+  @override
   FocusNode? findFirstFocusInSubtree(
     Element subtreeRoot,
     FocusScopeNode currentScope,
@@ -2006,38 +2001,61 @@ class TvNavigation extends StatefulWidget {
   State<TvNavigation> createState() => _TvNavigationState();
 }
 
-class _TvSheetRecord {
-  _TvSheetRecord({
-    required this.sheetWidget,
-    this.savedFocusNode,
+/// Why a reconcile pass runs. The reason picks which steps of the pass apply;
+/// the steps always run in one order, see [_TvNavigationState._reconcile].
+enum _TvReconcileReason {
+  /// Focus moved, or the app came back to the foreground: every step.
+  focus,
+
+  /// A frame found a modal layer that opened, closed or lost focus.
+  layers,
+
+  /// A frame found an inline sheet with work to do: one to register, to move
+  /// focus into, or to give focus back from.
+  sheets,
+
+  /// A frame found focus resting on a scope with a node in it to focus.
+  scope,
+
+  /// A frame found the focused node out of reach.
+  invalid,
+
+  /// Select was pressed with nothing reachable focused.
+  select,
+
+  /// A scroll may have moved the focused node out of reach.
+  scroll,
+
+  /// A frame found the ring out of date: the last step alone.
+  ring,
+}
+
+/// One reconcile pass, with what its trigger saw: the node it looked at, that
+/// node's scope, the ring then, a node a recovery left pending, and the target
+/// it found, which the pass falls back to.
+class _TvPass {
+  const _TvPass(
+    this.reason, {
+    this.node,
+    this.scope,
+    this.rect,
+    this.invalidNode,
+    this.target,
+    this.clearRing = false,
   });
 
-  Widget sheetWidget;
-  FocusNode? savedFocusNode;
-  bool promoted = false;
-  bool userMovedFocus = false;
-
-  /// Focus-tree size at the last probe that found nothing to promote into, and
-  /// how many frames that result may still be trusted. Probing walks the whole
-  /// sheet subtree, so a sheet with nothing focusable (an image preview) is
-  /// not re-walked every frame: it is re-probed when focus nodes attach or
-  /// detach, and otherwise now and then.
-  int? emptyProbeTreeSize;
-  int emptyProbeFramesLeft = 0;
+  final _TvReconcileReason reason;
+  final FocusNode? node;
+  final FocusScopeNode? scope;
+  final Rect? rect;
+  final FocusNode? invalidNode;
+  final FocusNode? target;
+  final bool clearRing;
 }
 
 class _TvNavigationState extends State<TvNavigation>
     with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
-
-  /// Frames a probe that found nothing to promote into stays trusted while the
-  /// focus tree does not change (about 200 ms at 60 Hz).
-  static const int _kEmptySheetProbeFrames = 12;
-  static final Expando<_TvSheetRecord> _bottomSheetRecords =
-      Expando<_TvSheetRecord>('tvBottomSheetRecords');
-  static final Expando<bool> _routeWillHandlePop = Expando<bool>(
-    'tvRouteWillHandlePop',
-  );
 
   /// The mounted [TvNavigation]'s state. A persistent frame callback can't be
   /// removed, so one static callback is installed per process and forwards here
@@ -2047,7 +2065,7 @@ class _TvNavigationState extends State<TvNavigation>
   static bool _frameCallbackInstalled = false;
 
   static void _onPersistentFrame(Duration timeStamp) =>
-      _mounted?._syncFocusRectAfterLayout(timeStamp);
+      _mounted?._onFrame(timeStamp);
 
   final GlobalKey _key = GlobalKey();
   final TvFocusTraversalPolicy _policy = TvFocusTraversalPolicy();
@@ -2072,19 +2090,23 @@ class _TvNavigationState extends State<TvNavigation>
     policy: _policy,
     showRing: (FocusNode node) => _updateRect(_computeFocusedRect(node)),
     currentRing: () => _rectNotifier.value,
+    hideRing: () => _updateRect(null),
+    focusMoved: () {
+      _pendingInvalidNode = null;
+      _pendingRecoveryRect = null;
+    },
   );
-  final List<Element> _trackedBottomSheetLayouts = <Element>[];
-  final List<Element> _knownBottomSheetLayouts = <Element>[];
   late final Stopwatch _repeatClock =
       WidgetsBinding.instance.samplingClock.stopwatch()..start();
   int? _lastDirectionalStepMs;
-  bool _rectSyncScheduled = false;
-  bool _focusSyncScheduled = false;
+
+  /// A ring pass and a reconcile pass of another reason can each be pending
+  /// once. A later request finds its kind pending and leaves it as it is.
+  bool _ringPending = false;
+  bool _passPending = false;
   FocusNode? _lastFocusedNode;
   FocusNode? _pendingInvalidNode;
   Rect? _pendingRecoveryRect;
-  FocusNode? _lastSelectTriggerNode;
-  int _pendingSelectSheetCheckFrames = 0;
   RenderBox? _lastTargetBox;
   Size? _lastTargetSize;
   Size? _lastRootSize;
@@ -2120,11 +2142,9 @@ class _TvNavigationState extends State<TvNavigation>
     // A replacement state mounts (initState) before this one is disposed, so
     // only clear the slot if it still points here.
     if (identical(_mounted, this)) _mounted = null;
-    _trackedBottomSheetLayouts.clear();
-    _knownBottomSheetLayouts.clear();
+    _layers.dispose();
     _lastFocusedNode = null;
     _pendingInvalidNode = null;
-    _lastSelectTriggerNode = null;
     _lastTargetBox = null;
     _layerAnchor.dispose();
     _rectNotifier.dispose();
@@ -2141,426 +2161,320 @@ class _TvNavigationState extends State<TvNavigation>
         key == LogicalKeyboardKey.gameButtonA;
     if (!isSelect) return false;
     if (event is KeyDownEvent) {
-      final FocusNode? primary = FocusManager.instance.primaryFocus;
-      if (primary != null && primary is! FocusScopeNode) {
-        _lastSelectTriggerNode = primary;
-      }
-      _pendingSelectSheetCheckFrames = 4;
-    } else if (event is KeyUpEvent && _pendingSelectSheetCheckFrames < 4) {
-      _pendingSelectSheetCheckFrames = 4;
+      _layers.sheets.selectPressed(FocusManager.instance.primaryFocus);
+    } else if (event is KeyUpEvent) {
+      _layers.sheets.selectReleased();
     }
     return false;
   }
 
-  void _registerActiveSheetLayout(
-    Element layoutEl,
-    Widget sheet,
-    FocusNode? primary,
-    TvSheetNodeStatus status, {
-    required bool preferSelectTrigger,
-  }) {
-    if (!_knownBottomSheetLayouts.contains(layoutEl)) {
-      _knownBottomSheetLayouts.add(layoutEl);
-    }
-    final FocusNode? trigger = preferSelectTrigger
-        ? ((_lastSelectTriggerNode?.context?.mounted ?? false)
-              ? _lastSelectTriggerNode
-              : (primary is FocusScopeNode ? null : primary))
-        : ((primary != null && primary is! FocusScopeNode)
-              ? primary
-              : ((_lastSelectTriggerNode?.context?.mounted ?? false)
-                    ? _lastSelectTriggerNode
-                    : null));
-    final _TvSheetRecord? rec = _bottomSheetRecords[layoutEl];
-    if (rec == null) {
-      _bottomSheetRecords[layoutEl] = _TvSheetRecord(
-        sheetWidget: sheet,
-        savedFocusNode: trigger,
-      );
-      if (!_trackedBottomSheetLayouts.contains(layoutEl)) {
-        _trackedBottomSheetLayouts.add(layoutEl);
-      }
-    } else if (!identical(rec.sheetWidget, sheet)) {
-      if (trigger != null && status.enclosingActiveSheetLayout != layoutEl) {
-        rec.savedFocusNode ??= trigger;
-      }
-      rec
-        ..sheetWidget = sheet
-        ..promoted = false
-        ..userMovedFocus = false;
-      _trackedBottomSheetLayouts
-        ..remove(layoutEl)
-        ..add(layoutEl);
-    } else {
-      if (trigger != null && status.enclosingActiveSheetLayout != layoutEl) {
-        rec.savedFocusNode ??= trigger;
-      }
-      if (!rec.userMovedFocus) {
-        rec.promoted = false;
-      }
-      if (!_trackedBottomSheetLayouts.contains(layoutEl)) {
-        _trackedBottomSheetLayouts.add(layoutEl);
-      }
-    }
-  }
-
-  /// Notes when the route of [primary] starts handling pops itself, which is
-  /// what a sheet does by registering a local history entry, and schedules a
-  /// scan for the sheet. A cached route and a boolean: cheap enough for every
-  /// frame.
-  void _pollRouteWillHandlePop(FocusNode? primary) {
-    if (primary == null) return;
-    final ModalRoute<dynamic>? route = tvRouteOfFocusNode(primary);
-    if (route == null) return;
-    final bool prevWillPop = _routeWillHandlePop[route] ?? false;
-    final bool currWillPop = route.willHandlePopInternally;
-    _routeWillHandlePop[route] = currWillPop;
-    if (!prevWillPop && currWillPop && _pendingSelectSheetCheckFrames <= 0) {
-      _pendingSelectSheetCheckFrames = 1;
-    }
-  }
-
-  /// Whether a known sheet layout has an open sheet that has not been
-  /// registered yet.
-  bool _hasUnregisteredOpenSheet() {
-    for (int i = 0; i < _knownBottomSheetLayouts.length; i++) {
-      final Element el = _knownBottomSheetLayouts[i];
-      if (!el.mounted || !tvSheets.isLayout(el)) continue;
-      final Widget? sheet = tvSheets.sheetOf(el);
-      if (sheet == null || tvSheets.isClosing(sheet)) {
-        continue;
-      }
-      final _TvSheetRecord? rec = _bottomSheetRecords[el];
-      if (rec == null || !identical(rec.sheetWidget, sheet)) return true;
-    }
-    return false;
-  }
-
-  void _captureBottomSheetTransitions(
-    FocusNode? primary,
-    TvSheetNodeStatus status,
-  ) {
-    _knownBottomSheetLayouts.removeWhere(
-      (Element el) => !el.mounted || !tvSheets.isLayout(el),
-    );
-
-    final Element? occluding = status.occludingLayout;
-    if (occluding != null && tvSheets.isLayout(occluding)) {
-      final Widget? sheet = tvSheets.sheetOf(occluding);
-      if (sheet != null && !tvSheets.isClosing(sheet)) {
-        _registerActiveSheetLayout(
-          occluding,
-          sheet,
-          primary,
-          status,
-          preferSelectTrigger: false,
-        );
-      }
-    }
-
-    // O(1) check on already-discovered sheet layout elements in the scope
-    // so async-triggered sheets (e.g. awaiting an HTTP Future after Select on a
-    // left-column button) are caught immediately regardless of network latency.
-    for (int i = 0; i < _knownBottomSheetLayouts.length; i++) {
-      final Element el = _knownBottomSheetLayouts[i];
-      final Widget? sheet = tvSheets.sheetOf(el);
-      if (sheet != null && !tvSheets.isClosing(sheet)) {
-        final _TvSheetRecord? rec = _bottomSheetRecords[el];
-        if (rec == null || !identical(rec.sheetWidget, sheet)) {
-          _registerActiveSheetLayout(
-            el,
-            sheet,
-            primary,
-            status,
-            preferSelectTrigger: false,
-          );
-        }
-      }
-    }
-
-    final FocusScopeNode? scope = primary is FocusScopeNode
-        ? primary
-        : primary?.nearestScope;
-    final BuildContext? scopeCtx = scope?.context;
-
-    if (_pendingSelectSheetCheckFrames > 0) {
-      _pendingSelectSheetCheckFrames--;
-      if (scope != null &&
-          !tvIsScopeInactive(scope) &&
-          scopeCtx is Element &&
-          scopeCtx.mounted) {
-        Element? newlyOpened;
-        void scan(Element el) {
-          if (tvSheets.isLayout(el)) {
-            if (!_knownBottomSheetLayouts.contains(el)) {
-              _knownBottomSheetLayouts.add(el);
-            }
-            final Widget? sheet = tvSheets.sheetOf(el);
-            if (sheet != null && !tvSheets.isClosing(sheet)) {
-              final _TvSheetRecord? rec = _bottomSheetRecords[el];
-              if (rec == null || !identical(rec.sheetWidget, sheet)) {
-                newlyOpened = el;
-              }
-            }
-          }
-          el.visitChildren(scan);
-        }
-
-        scopeCtx.visitChildren(scan);
-        if (newlyOpened != null) {
-          final Widget sheet = tvSheets.sheetOf(newlyOpened!)!;
-          _registerActiveSheetLayout(
-            newlyOpened!,
-            sheet,
-            primary,
-            status,
-            preferSelectTrigger: true,
-          );
-          _pendingSelectSheetCheckFrames = 0;
-        }
-      }
-    }
-
-    // If the user manually navigated to another non-occluded focus node while
-    // an async/zero-focusable sheet was waiting to promote, respect the user's
-    // navigation rather than overriding it when async content later mounts.
-    if (primary != null &&
-        primary is! FocusScopeNode &&
-        !status.isInvalidated) {
-      for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
-        final Element el = _trackedBottomSheetLayouts[i];
-        if (!el.mounted || !tvSheets.isLayout(el)) continue;
-        final Widget? sheet = tvSheets.sheetOf(el);
-        if (sheet == null || tvSheets.isClosing(sheet)) {
-          continue;
-        }
-        final _TvSheetRecord? rec = _bottomSheetRecords[el];
-        if (rec == null ||
-            !identical(rec.sheetWidget, sheet) ||
-            rec.promoted ||
-            rec.userMovedFocus ||
-            identical(primary, rec.savedFocusNode)) {
-          continue;
-        }
-        final Element? sheetSlot = tvSheets.sheetSlotOf(el);
-        if (sheetSlot != null &&
-            TvFocusTraversalPolicy._isElementInSubtree(
-              primary.context,
-              sheetSlot,
-            )) {
-          rec.promoted = true;
-        } else {
-          rec
-            ..userMovedFocus = true
-            ..promoted = true;
-        }
-      }
-    }
-  }
-
-  bool _canPromoteSheet(Element layoutEl) {
-    if (!layoutEl.mounted || !tvSheets.isLayout(layoutEl)) {
-      return false;
-    }
-    final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
-    if (sheetScope == null ||
-        tvIsScopeInactive(sheetScope) ||
-        !sheetScope.canRequestFocus) {
-      return false;
-    }
-    final Element? sheetSlot = tvSheets.sheetSlotOf(layoutEl);
-    if (sheetSlot == null || !tvSheets.hasRequestableFocus(sheetSlot)) {
-      return false;
-    }
-    return _policy.findFirstFocusInSubtree(sheetSlot, sheetScope) != null;
-  }
-
-  bool _hasUnpromotedActiveSheetInScope(FocusScopeNode scope) {
-    for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
-      final Element el = _trackedBottomSheetLayouts[i];
-      if (!el.mounted || !tvSheets.isLayout(el)) continue;
-      final Widget? sheet = tvSheets.sheetOf(el);
-      if (sheet == null || tvSheets.isClosing(sheet)) {
-        continue;
-      }
-      final _TvSheetRecord? rec = _bottomSheetRecords[el];
-      if (rec != null &&
-          identical(rec.sheetWidget, sheet) &&
-          (rec.promoted || rec.userMovedFocus)) {
-        continue;
-      }
-      if (_scopeOf(el) == scope) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool _hasPendingBottomSheetWork(TvSheetNodeStatus status) {
-    if (status.isInvalidated) return true;
-    for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
-      final Element el = _trackedBottomSheetLayouts[i];
-      if (!el.mounted || !tvSheets.isLayout(el)) return true;
-      final Widget? sheet = tvSheets.sheetOf(el);
-      if (sheet == null || tvSheets.isClosing(sheet)) {
-        return true;
-      }
-      final _TvSheetRecord? rec = _bottomSheetRecords[el];
-      if (rec == null || !identical(rec.sheetWidget, sheet)) {
-        return true;
-      }
-      if (!rec.promoted && !rec.userMovedFocus) {
-        if (tvSheets.isAnimatingOpen(sheet)) return true;
-        final int treeSize = _scopeOf(el)?.descendants.length ?? -1;
-        if (rec.emptyProbeTreeSize == treeSize &&
-            rec.emptyProbeFramesLeft > 0) {
-          rec.emptyProbeFramesLeft--;
-          continue;
-        }
-        if (_canPromoteSheet(el)) return true;
-        rec
-          ..emptyProbeTreeSize = treeSize
-          ..emptyProbeFramesLeft = _kEmptySheetProbeFrames;
-      }
-    }
-    return false;
-  }
-
-  void _unfocusIfBottomSheetInvalidated() {
-    final FocusNode? current = FocusManager.instance.primaryFocus;
-    if (current != null &&
-        current is! FocusScopeNode &&
-        tvSheets.inspect(current).isInvalidated) {
-      current.unfocus(disposition: UnfocusDisposition.scope);
-      _updateRect(null);
-    }
-  }
-
-  /// Focus layers (modal overlays) first, then the inline sheets. Returns
+  /// Focus layers: the modal ones first, then the inline sheets. Returns
   /// `true` when either moved focus or is waiting on a layer, so the caller
   /// skips its own recovery.
   bool _reconcileFocusLayers() {
     if (!mounted || !TvPlatform.isTv) return false;
-    return _layers.reconcile() || _reconcileBottomSheets();
+    return _layers.reconcile();
   }
 
-  bool _reconcileBottomSheets() {
-    if (!mounted || !TvPlatform.isTv) return false;
-    final FocusNode? primary = FocusManager.instance.primaryFocus;
-    _pollRouteWillHandlePop(primary);
-    final TvSheetNodeStatus status = tvSheets.inspect(primary);
-    _captureBottomSheetTransitions(primary, status);
-
-    for (int i = _trackedBottomSheetLayouts.length - 1; i >= 0; i--) {
-      if (i >= _trackedBottomSheetLayouts.length) continue;
-      final Element layoutEl = _trackedBottomSheetLayouts[i];
-      if (!layoutEl.mounted || !tvSheets.isLayout(layoutEl)) {
-        _trackedBottomSheetLayouts.removeAt(i);
-        continue;
+  /// Schedules [pass] for the end of the next frame, outside of layout and
+  /// paint. The flag of its kind stays set until it runs.
+  void _requestReconcile(_TvPass pass) {
+    final bool ringOnly = pass.reason == _TvReconcileReason.ring;
+    if (ringOnly) {
+      _ringPending = true;
+    } else {
+      _passPending = true;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ringOnly) {
+        _ringPending = false;
+      } else {
+        _passPending = false;
       }
-      final Widget? sheet = tvSheets.sheetOf(layoutEl);
-      final _TvSheetRecord? record = _bottomSheetRecords[layoutEl];
+      if (!mounted) return;
+      _reconcile(pass);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
-      if (sheet == null || tvSheets.isClosing(sheet)) {
-        final Element? closingSheetSlot = tvSheets.sheetSlotOf(layoutEl);
-        _trackedBottomSheetLayouts.removeAt(i);
-        _bottomSheetRecords[layoutEl] = null;
-        if (closingSheetSlot != null) {
-          _trackedBottomSheetLayouts.removeWhere((Element other) {
-            if (TvFocusTraversalPolicy._isElementInSubtree(
-              other,
-              closingSheetSlot,
-            )) {
-              _bottomSheetRecords[other] = null;
-              return true;
-            }
-            return false;
-          });
-        }
-        final FocusNode? savedNode = record?.savedFocusNode;
-        if (savedNode != null &&
-            savedNode.canRequestFocus &&
-            (savedNode.context?.mounted ?? false) &&
-            TvFocusTraversalPolicy.isEffectivelyFocusable(savedNode)) {
-          _pendingInvalidNode = null;
-          _pendingRecoveryRect = null;
-          savedNode
+  /// The reconcile pass. Its steps run in this order, and [pass]'s reason
+  /// picks the ones that apply:
+  ///
+  /// 1. Layers: the modal layers, then the inline sheets. A layer that moved
+  ///    focus, or waits for its content, ends the pass, because any node a
+  ///    later step picked would be behind it.
+  /// 2. Validity: whether the focused node can still be focused.
+  /// 3. Recovery: which node to focus instead. Each frame trigger keeps the
+  ///    rules it has always had, and M13.4 adds column memory here.
+  /// 4. Reveal: scroll the focused node into view.
+  /// 5. Ring.
+  ///
+  /// A focus pass runs every step. A ring pass is step 5 alone, and a scroll
+  /// pass is step 2 alone: when it unfocuses a node, the focus change that
+  /// follows brings the rest. The others stop after their recovery, which
+  /// sets the ring itself.
+  void _reconcile(_TvPass pass) {
+    final _TvReconcileReason reason = pass.reason;
+    if (reason == _TvReconcileReason.ring) {
+      _updateRect(
+        pass.clearRing
+            ? null
+            : _computeFocusedRect(FocusManager.instance.primaryFocus),
+      );
+      return;
+    }
+    if (reason == _TvReconcileReason.scroll) {
+      _dropUnreachableFocus();
+      return;
+    }
+
+    // 1. Layers. Select leaves them to the frame while a scroll's recovery is
+    // pending.
+    if (reason == _TvReconcileReason.select) {
+      if (_pendingInvalidNode != null || _reconcileFocusLayers()) {
+        WidgetsBinding.instance.ensureVisualUpdate();
+        return;
+      }
+    } else if (_reconcileFocusLayers()) {
+      return;
+    }
+
+    // 2–3. Validity and recovery, for what the trigger saw.
+    switch (reason) {
+      case _TvReconcileReason.layers:
+        return;
+      case _TvReconcileReason.sheets:
+        _recoverAfterSheets();
+        return;
+      case _TvReconcileReason.scope:
+        _recoverFromScope(pass);
+        return;
+      case _TvReconcileReason.invalid:
+        _recoverInvalid(pass);
+        return;
+      case _TvReconcileReason.select:
+        _recoverOnSelect(pass.node);
+        return;
+      case _TvReconcileReason.focus:
+      case _TvReconcileReason.scroll:
+      case _TvReconcileReason.ring:
+        break;
+    }
+
+    final FocusNode? node = FocusManager.instance.primaryFocus;
+    if (node is FocusScopeNode) {
+      _focusFromScope(node);
+      return;
+    }
+    final FocusScopeNode? currentScope = node?.nearestScope;
+    if (node != null &&
+        currentScope != null &&
+        !tvIsScopeInactive(currentScope)) {
+      // 2. Validity.
+      if (!TvFocusTraversalPolicy.isEffectivelyFocusable(node)) {
+        // 3. Recovery.
+        final FocusNode? first = _policy.findRecoveryFocus(
+          node,
+          currentScope,
+          previousRect: _rectNotifier.value,
+        );
+        if (first != null &&
+            first != node &&
+            first.canRequestFocus &&
+            (first.context?.mounted ?? false)) {
+          first
             ..requestFocus()
             ..consumeKeyboardToken();
-          _updateRect(_computeFocusedRect(savedNode));
-          return true;
+          _updateRect(_computeFocusedRect(first));
+          return;
         }
-        final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
-        if (sheetScope != null &&
-            !tvIsScopeInactive(sheetScope) &&
-            sheetScope.canRequestFocus) {
-          final Element? bodySlot = tvSheets.bodySlotOf(layoutEl);
-          final FocusNode? fallback =
-              (bodySlot != null
-                  ? _policy.findFirstFocusInSubtree(bodySlot, sheetScope)
-                  : null) ??
-              _policy.findRecoveryFocus(savedNode, sheetScope);
-          if (fallback != null &&
-              fallback.canRequestFocus &&
-              (fallback.context?.mounted ?? false)) {
-            _pendingInvalidNode = null;
-            _pendingRecoveryRect = null;
-            fallback
-              ..requestFocus()
-              ..consumeKeyboardToken();
-            _updateRect(_computeFocusedRect(fallback));
-            return true;
-          }
-        }
-        _unfocusIfBottomSheetInvalidated();
         _updateRect(null);
-        continue;
+        return;
       }
-
-      final _TvSheetRecord activeRecord =
-          record ??
-          (_bottomSheetRecords[layoutEl] = _TvSheetRecord(
-            sheetWidget: sheet,
-          ));
-      if (!identical(activeRecord.sheetWidget, sheet)) {
-        activeRecord
-          ..sheetWidget = sheet
-          ..promoted = false
-          ..userMovedFocus = false;
-      }
-
-      if (!activeRecord.promoted && !activeRecord.userMovedFocus) {
-        final FocusScopeNode? sheetScope = _scopeOf(layoutEl);
-        if (sheetScope == null ||
-            tvIsScopeInactive(sheetScope) ||
-            !sheetScope.canRequestFocus) {
-          continue;
-        }
-        final Element? sheetSlot = tvSheets.sheetSlotOf(layoutEl);
-        final FocusNode? firstInSheet = sheetSlot != null
-            ? _policy.findFirstFocusInSubtree(sheetSlot, sheetScope)
-            : null;
-        if (firstInSheet != null &&
-            firstInSheet.canRequestFocus &&
-            (firstInSheet.context?.mounted ?? false)) {
-          activeRecord.promoted = true;
-          _pendingInvalidNode = null;
-          _pendingRecoveryRect = null;
-          firstInSheet
-            ..requestFocus()
-            ..consumeKeyboardToken();
-          _updateRect(_computeFocusedRect(firstInSheet));
-          return true;
-        }
-        _unfocusIfBottomSheetInvalidated();
-        if (tvSheets.isAnimatingOpen(sheet)) {
-          WidgetsBinding.instance.ensureVisualUpdate();
-          return true;
-        }
+      TvNavigationObserver.rememberFocusedNode(node);
+    }
+    // 4. Reveal.
+    final BuildContext? context = node?.context;
+    if (context != null && context.mounted && node != null) {
+      if (!_policy.consumePolicyScrolledNode(node)) {
+        TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
+          context,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+        TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
+          context,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        );
       }
     }
-    _unfocusIfBottomSheetInvalidated();
-    return false;
+    // 5. Ring.
+    if (!mounted || node != FocusManager.instance.primaryFocus) return;
+    _updateRect(_computeFocusedRect(node));
+  }
+
+  /// Recovery for a focus pass that found focus on a scope [node]: the node a
+  /// scroll left pending, else the scope's first node.
+  void _focusFromScope(FocusScopeNode node) {
+    FocusScopeNode targetScope = node;
+    if (tvIsScopeInactive(node)) {
+      targetScope = tvFindActiveSiblingScope(node) ?? node;
+    }
+    final FocusNode? pendingInvalid = _pendingInvalidNode;
+    final Rect? pendingRect = _pendingRecoveryRect;
+    _pendingInvalidNode = null;
+    _pendingRecoveryRect = null;
+    if (_layers.sheets.hasUnpromotedIn(targetScope)) {
+      _updateRect(null);
+      return;
+    }
+    final FocusNode? first = pendingInvalid != null
+        ? _policy.findRecoveryFocus(
+            pendingInvalid,
+            targetScope,
+            previousRect: pendingRect,
+          )
+        : _policy.findFirstFocus(targetScope);
+    if (first != null) {
+      if (targetScope != node) {
+        targetScope.enclosingScope?.setFirstFocus(targetScope);
+      }
+      first
+        ..requestFocus()
+        ..consumeKeyboardToken();
+      _updateRect(_computeFocusedRect(first));
+    } else {
+      targetScope.nextFocus();
+      _updateRect(null);
+    }
+  }
+
+  /// Recovery for a sheets pass whose layers did nothing: focus on a scope, or
+  /// on a node out of reach, moves to the nearest node.
+  void _recoverAfterSheets() {
+    final FocusNode? current = FocusManager.instance.primaryFocus;
+    final FocusScopeNode? scope = current is FocusScopeNode
+        ? current
+        : current?.nearestScope;
+    if (current == null || scope == null || tvIsScopeInactive(scope)) return;
+    if (current is FocusScopeNode && _layers.sheets.hasUnpromotedIn(scope)) {
+      _updateRect(null);
+      return;
+    }
+    if (current is FocusScopeNode ||
+        !TvFocusTraversalPolicy.isEffectivelyFocusable(current)) {
+      final FocusNode? fallback = _policy.findRecoveryFocus(
+        current is FocusScopeNode ? null : current,
+        scope,
+        previousRect: _rectNotifier.value,
+      );
+      if (fallback != null &&
+          fallback != current &&
+          fallback.canRequestFocus &&
+          (fallback.context?.mounted ?? false)) {
+        fallback
+          ..requestFocus()
+          ..consumeKeyboardToken();
+        _updateRect(_computeFocusedRect(fallback));
+        return;
+      }
+      _updateRect(null);
+    }
+  }
+
+  /// Recovery for a frame that found focus on the scope [_TvPass.node], if
+  /// focus is still there: what the frame found, looked up again.
+  void _recoverFromScope(_TvPass pass) {
+    final FocusScopeNode targetScope = pass.scope!;
+    if (_layers.sheets.hasUnpromotedIn(targetScope)) {
+      _updateRect(null);
+      return;
+    }
+    final FocusNode? pendingInvalid = pass.invalidNode;
+    final FocusNode resolvedFirst =
+        (pendingInvalid != null
+            ? _policy.findRecoveryFocus(
+                pendingInvalid,
+                targetScope,
+                previousRect: pass.rect,
+              )
+            : _policy.findFirstFocus(targetScope)) ??
+        pass.target!;
+    if (FocusManager.instance.primaryFocus == pass.node &&
+        !tvIsScopeInactive(targetScope) &&
+        targetScope.canRequestFocus &&
+        resolvedFirst.canRequestFocus &&
+        (resolvedFirst.context?.mounted ?? false)) {
+      _pendingInvalidNode = null;
+      _pendingRecoveryRect = null;
+      if (targetScope != pass.node) {
+        targetScope.enclosingScope?.setFirstFocus(targetScope);
+      }
+      resolvedFirst
+        ..requestFocus()
+        ..consumeKeyboardToken();
+      _updateRect(_computeFocusedRect(resolvedFirst));
+    }
+  }
+
+  /// Recovery for a frame that found [_TvPass.node] out of reach, if it is
+  /// still focused and still out of reach.
+  void _recoverInvalid(_TvPass pass) {
+    final FocusNode node = pass.node!;
+    final FocusNode resolvedFirst =
+        _policy.findRecoveryFocus(
+          node,
+          pass.scope!,
+          previousRect: pass.rect,
+        ) ??
+        pass.target!;
+    if (FocusManager.instance.primaryFocus == node &&
+        !TvFocusTraversalPolicy.isEffectivelyFocusable(node) &&
+        resolvedFirst.canRequestFocus &&
+        (resolvedFirst.context?.mounted ?? false)) {
+      resolvedFirst
+        ..requestFocus()
+        ..consumeKeyboardToken();
+      _updateRect(_computeFocusedRect(resolvedFirst));
+    }
+  }
+
+  /// Recovery for Select pressed on [primary], which was out of reach.
+  void _recoverOnSelect(FocusNode? primary) {
+    final FocusScopeNode? scope = primary is FocusScopeNode
+        ? primary
+        : primary?.nearestScope;
+    if (scope == null || _layers.sheets.hasUnpromotedIn(scope)) return;
+    final FocusNode? recovered = _policy.findRecoveryFocus(
+      primary,
+      scope,
+      previousRect: _rectNotifier.value,
+    );
+    if (recovered != null &&
+        recovered.canRequestFocus &&
+        (recovered.context?.mounted ?? false)) {
+      recovered
+        ..requestFocus()
+        ..consumeKeyboardToken();
+      _updateRect(_computeFocusedRect(recovered));
+    }
+  }
+
+  /// Validity for a scroll: a focused node the scroll moved out of reach is
+  /// unfocused at once, and its ring is kept for the recovery that the focus
+  /// change brings.
+  void _dropUnreachableFocus() {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary != null &&
+        primary is! FocusScopeNode &&
+        !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
+      _pendingInvalidNode = primary;
+      _pendingRecoveryRect = _rectNotifier.value ?? _pendingRecoveryRect;
+      _lastFocusedNode = null;
+      _lastTargetBox = null;
+      primary.unfocus(disposition: UnfocusDisposition.scope);
+      _updateRect(null);
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
   }
 
   @override
@@ -2572,8 +2486,8 @@ class _TvNavigationState extends State<TvNavigation>
       _lastRootSize = null;
       _lastParentDataOffset = null;
       _lastScrollOffset = null;
-      _focusSyncScheduled = false;
-      _rectSyncScheduled = false;
+      _passPending = false;
+      _ringPending = false;
       _onFocus();
       WidgetsBinding.instance.ensureVisualUpdate();
     }
@@ -2582,18 +2496,7 @@ class _TvNavigationState extends State<TvNavigation>
   bool _handleScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification ||
         notification is ScrollEndNotification) {
-      final FocusNode? primary = FocusManager.instance.primaryFocus;
-      if (primary != null &&
-          primary is! FocusScopeNode &&
-          !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
-        _pendingInvalidNode = primary;
-        _pendingRecoveryRect = _rectNotifier.value ?? _pendingRecoveryRect;
-        _lastFocusedNode = null;
-        _lastTargetBox = null;
-        primary.unfocus(disposition: UnfocusDisposition.scope);
-        _updateRect(null);
-        WidgetsBinding.instance.ensureVisualUpdate();
-      }
+      _reconcile(const _TvPass(_TvReconcileReason.scroll));
     }
     return false;
   }
@@ -2713,7 +2616,11 @@ class _TvNavigationState extends State<TvNavigation>
     return Offset(dx, dy);
   }
 
-  void _syncFocusRectAfterLayout(Duration _) {
+  /// The frame check. Layout can move the focused node without any event, so
+  /// each frame something else produced looks at a few cheap signals and asks
+  /// for a reconcile pass when one of them changed. It never asks for a frame
+  /// by itself, so a still screen costs nothing.
+  void _onFrame(Duration _) {
     if (!mounted || !TvPlatform.isTv) return;
     final FocusNode? node = FocusManager.instance.primaryFocus;
 
@@ -2724,14 +2631,8 @@ class _TvNavigationState extends State<TvNavigation>
     if (_layers.hasPendingWork(node)) {
       _lastFocusedNode = null;
       _lastTargetBox = null;
-      if (!_focusSyncScheduled) {
-        _focusSyncScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _focusSyncScheduled = false;
-          if (!mounted) return;
-          _reconcileFocusLayers();
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
+      if (!_passPending) {
+        _requestReconcile(const _TvPass(_TvReconcileReason.layers));
       }
       return;
     }
@@ -2743,70 +2644,22 @@ class _TvNavigationState extends State<TvNavigation>
       _lastTargetBox = null;
     }
 
-    // Inline-sheet bookkeeping walks the focused node's ancestors, so it runs
-    // only when there is a sheet to track, a Select may have opened one, or the
-    // route just began handling pops itself (a sheet registered with it).
-    _pollRouteWillHandlePop(node);
-    final bool sheetsInPlay =
-        _trackedBottomSheetLayouts.isNotEmpty ||
-        _pendingSelectSheetCheckFrames > 0 ||
-        _hasUnregisteredOpenSheet();
-    final TvSheetNodeStatus sheetStatus = sheetsInPlay
-        ? tvSheets.inspect(node)
-        : const TvSheetNodeStatus();
-    if (sheetsInPlay) _captureBottomSheetTransitions(node, sheetStatus);
-    if (sheetsInPlay && _hasPendingBottomSheetWork(sheetStatus)) {
+    if (_layers.sheets.frameHasWork(node)) {
       _lastFocusedNode = null;
       _lastTargetBox = null;
-      if (!_focusSyncScheduled) {
-        _focusSyncScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _focusSyncScheduled = false;
-          if (!mounted) return;
-          if (_reconcileFocusLayers()) return;
-          final FocusNode? current = FocusManager.instance.primaryFocus;
-          final FocusScopeNode? scope = current is FocusScopeNode
-              ? current
-              : current?.nearestScope;
-          if (current != null && scope != null && !tvIsScopeInactive(scope)) {
-            if (current is FocusScopeNode &&
-                _hasUnpromotedActiveSheetInScope(scope)) {
-              _updateRect(null);
-              return;
-            }
-            if (current is FocusScopeNode ||
-                !TvFocusTraversalPolicy.isEffectivelyFocusable(current)) {
-              final FocusNode? fallback = _policy.findRecoveryFocus(
-                current is FocusScopeNode ? null : current,
-                scope,
-                previousRect: _rectNotifier.value,
-              );
-              if (fallback != null &&
-                  fallback != current &&
-                  fallback.canRequestFocus &&
-                  (fallback.context?.mounted ?? false)) {
-                fallback
-                  ..requestFocus()
-                  ..consumeKeyboardToken();
-                _updateRect(_computeFocusedRect(fallback));
-                return;
-              }
-              _updateRect(null);
-            }
-          }
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
+      if (!_passPending) {
+        _requestReconcile(const _TvPass(_TvReconcileReason.sheets));
       }
       return;
     }
-    if (_rectSyncScheduled) return;
+    if (_ringPending) return;
     if (node == null || node is FocusScopeNode) {
-      if (node is FocusScopeNode && !_focusSyncScheduled) {
+      if (node is FocusScopeNode && !_passPending) {
         FocusScopeNode targetScope = node;
         if (tvIsScopeInactive(node)) {
           targetScope = tvFindActiveSiblingScope(node) ?? node;
         }
-        if (!_hasUnpromotedActiveSheetInScope(targetScope)) {
+        if (!_layers.sheets.hasUnpromotedIn(targetScope)) {
           final FocusNode? pendingInvalid = _pendingInvalidNode;
           final Rect? pendingRect = _pendingRecoveryRect;
           final FocusNode? first = pendingInvalid != null
@@ -2817,41 +2670,16 @@ class _TvNavigationState extends State<TvNavigation>
                 )
               : _policy.findFirstFocus(targetScope);
           if (first != null) {
-            _focusSyncScheduled = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _focusSyncScheduled = false;
-              if (!mounted) return;
-              if (_reconcileFocusLayers()) return;
-              if (_hasUnpromotedActiveSheetInScope(targetScope)) {
-                _updateRect(null);
-                return;
-              }
-              final FocusNode resolvedFirst =
-                  (pendingInvalid != null
-                      ? _policy.findRecoveryFocus(
-                          pendingInvalid,
-                          targetScope,
-                          previousRect: pendingRect,
-                        )
-                      : _policy.findFirstFocus(targetScope)) ??
-                  first;
-              if (FocusManager.instance.primaryFocus == node &&
-                  !tvIsScopeInactive(targetScope) &&
-                  targetScope.canRequestFocus &&
-                  resolvedFirst.canRequestFocus &&
-                  (resolvedFirst.context?.mounted ?? false)) {
-                _pendingInvalidNode = null;
-                _pendingRecoveryRect = null;
-                if (targetScope != node) {
-                  targetScope.enclosingScope?.setFirstFocus(targetScope);
-                }
-                resolvedFirst
-                  ..requestFocus()
-                  ..consumeKeyboardToken();
-                _updateRect(_computeFocusedRect(resolvedFirst));
-              }
-            });
-            WidgetsBinding.instance.ensureVisualUpdate();
+            _requestReconcile(
+              _TvPass(
+                _TvReconcileReason.scope,
+                node: node,
+                scope: targetScope,
+                rect: pendingRect,
+                invalidNode: pendingInvalid,
+                target: first,
+              ),
+            );
             return;
           }
         }
@@ -2863,13 +2691,9 @@ class _TvNavigationState extends State<TvNavigation>
       _lastParentDataOffset = null;
       _lastScrollOffset = null;
       if (_rectNotifier.value != null) {
-        _rectSyncScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _rectSyncScheduled = false;
-          if (!mounted) return;
-          _updateRect(null);
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
+        _requestReconcile(
+          const _TvPass(_TvReconcileReason.ring, clearRing: true),
+        );
       }
       return;
     }
@@ -2918,7 +2742,7 @@ class _TvNavigationState extends State<TvNavigation>
 
     if (currentScope != null &&
         !tvIsScopeInactive(currentScope) &&
-        !_focusSyncScheduled &&
+        !_passPending &&
         (parentOffset == null ||
             !TvFocusTraversalPolicy.isEffectivelyFocusable(node))) {
       final Rect? prevRect = _rectNotifier.value;
@@ -2928,44 +2752,22 @@ class _TvNavigationState extends State<TvNavigation>
         previousRect: prevRect,
       );
       if (first != null && first != node) {
-        _focusSyncScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _focusSyncScheduled = false;
-          if (!mounted) return;
-          if (_reconcileFocusLayers()) return;
-          final FocusNode resolvedFirst =
-              _policy.findRecoveryFocus(
-                node,
-                currentScope,
-                previousRect: prevRect,
-              ) ??
-              first;
-          if (FocusManager.instance.primaryFocus == node &&
-              !TvFocusTraversalPolicy.isEffectivelyFocusable(node) &&
-              resolvedFirst.canRequestFocus &&
-              (resolvedFirst.context?.mounted ?? false)) {
-            resolvedFirst
-              ..requestFocus()
-              ..consumeKeyboardToken();
-            _updateRect(_computeFocusedRect(resolvedFirst));
-          }
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
+        _requestReconcile(
+          _TvPass(
+            _TvReconcileReason.invalid,
+            node: node,
+            scope: currentScope,
+            rect: prevRect,
+            target: first,
+          ),
+        );
         return;
       }
     }
 
     if (targetBox == null || rootBox == null) {
-      if (_rectNotifier.value != null && !_focusSyncScheduled) {
-        _rectSyncScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _rectSyncScheduled = false;
-          if (!mounted) return;
-          _updateRect(
-            _computeFocusedRect(FocusManager.instance.primaryFocus),
-          );
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
+      if (_rectNotifier.value != null && !_passPending) {
+        _requestReconcile(const _TvPass(_TvReconcileReason.ring));
       }
       return;
     }
@@ -2978,23 +2780,18 @@ class _TvNavigationState extends State<TvNavigation>
     _lastParentDataOffset = parentOffset;
     _lastScrollOffset = scrollPixels;
 
-    if (_sameRect(rect, _rectNotifier.value) || _focusSyncScheduled) return;
-    _rectSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _rectSyncScheduled = false;
-      if (!mounted) return;
-      final Rect? latest = _computeFocusedRect(
-        FocusManager.instance.primaryFocus,
-      );
-      _updateRect(latest);
-    });
-    WidgetsBinding.instance.ensureVisualUpdate();
+    if (_sameRect(rect, _rectNotifier.value) || _passPending) return;
+    _requestReconcile(const _TvPass(_TvReconcileReason.ring));
   }
 
+  /// The focus listener: a focus pass at the end of the next frame. When no
+  /// frame is being built and the step didn't scroll, the ring moves at once
+  /// as well, so it doesn't trail the key by a frame.
   void _onFocus() {
     _lastFocusedNode = null;
     _lastTargetBox = null;
     if (!TvPlatform.isTv) return;
+    _layers.sheets.markDirty();
     final FocusNode? immediateNode = FocusManager.instance.primaryFocus;
     if (immediateNode != null &&
         immediateNode is! FocusScopeNode &&
@@ -3012,97 +2809,11 @@ class _TvNavigationState extends State<TvNavigation>
         _updateRect(_computeFocusedRect(immediateNode));
       }
     }
-    if (_focusSyncScheduled) {
+    if (_passPending) {
       WidgetsBinding.instance.ensureVisualUpdate();
       return;
     }
-    _focusSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusSyncScheduled = false;
-      if (!mounted) return;
-      if (_reconcileFocusLayers()) return;
-      final FocusNode? node = FocusManager.instance.primaryFocus;
-      if (node is FocusScopeNode) {
-        FocusScopeNode targetScope = node;
-        if (tvIsScopeInactive(node)) {
-          targetScope = tvFindActiveSiblingScope(node) ?? node;
-        }
-        final FocusNode? pendingInvalid = _pendingInvalidNode;
-        final Rect? pendingRect = _pendingRecoveryRect;
-        _pendingInvalidNode = null;
-        _pendingRecoveryRect = null;
-        if (_hasUnpromotedActiveSheetInScope(targetScope)) {
-          _updateRect(null);
-          return;
-        }
-        final FocusNode? first = pendingInvalid != null
-            ? _policy.findRecoveryFocus(
-                pendingInvalid,
-                targetScope,
-                previousRect: pendingRect,
-              )
-            : _policy.findFirstFocus(targetScope);
-        if (first != null) {
-          if (targetScope != node) {
-            targetScope.enclosingScope?.setFirstFocus(targetScope);
-          }
-          first
-            ..requestFocus()
-            ..consumeKeyboardToken();
-          _updateRect(_computeFocusedRect(first));
-        } else {
-          targetScope.nextFocus();
-          _updateRect(null);
-        }
-        return;
-      }
-      final FocusScopeNode? currentScope = node?.nearestScope;
-      if (node != null &&
-          currentScope != null &&
-          !tvIsScopeInactive(currentScope)) {
-        final bool effectivelyFocusable =
-            TvFocusTraversalPolicy.isEffectivelyFocusable(node);
-        if (!effectivelyFocusable) {
-          final FocusNode? first = _policy.findRecoveryFocus(
-            node,
-            currentScope,
-            previousRect: _rectNotifier.value,
-          );
-          if (first != null &&
-              first != node &&
-              first.canRequestFocus &&
-              (first.context?.mounted ?? false)) {
-            first
-              ..requestFocus()
-              ..consumeKeyboardToken();
-            _updateRect(_computeFocusedRect(first));
-            return;
-          }
-          _updateRect(null);
-          return;
-        }
-        TvNavigationObserver.rememberFocusedNode(node);
-      }
-      final BuildContext? context = node?.context;
-      if (context != null &&
-          context.mounted &&
-          node != null &&
-          node is! FocusScopeNode) {
-        if (!_policy.consumePolicyScrolledNode(node)) {
-          TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
-            context,
-            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-          );
-          TvFocusTraversalPolicy._ensureVisibleInUserScrollables(
-            context,
-            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-          );
-        }
-      }
-      if (!mounted || node != FocusManager.instance.primaryFocus) return;
-      _updateRect(_computeFocusedRect(node));
-    });
-    WidgetsBinding.instance.ensureVisualUpdate();
+    _requestReconcile(const _TvPass(_TvReconcileReason.focus));
   }
 
   static bool _isDirectionalKey(LogicalKeyboardKey key) =>
@@ -3140,28 +2851,7 @@ class _TvNavigationState extends State<TvNavigation>
       if (primary == null ||
           primary is FocusScopeNode ||
           !TvFocusTraversalPolicy.isEffectivelyFocusable(primary)) {
-        if (_pendingInvalidNode != null || _reconcileFocusLayers()) {
-          WidgetsBinding.instance.ensureVisualUpdate();
-          return KeyEventResult.handled;
-        }
-        final FocusScopeNode? scope = primary is FocusScopeNode
-            ? primary
-            : primary?.nearestScope;
-        if (scope != null && !_hasUnpromotedActiveSheetInScope(scope)) {
-          final FocusNode? recovered = _policy.findRecoveryFocus(
-            primary,
-            scope,
-            previousRect: _rectNotifier.value,
-          );
-          if (recovered != null &&
-              recovered.canRequestFocus &&
-              (recovered.context?.mounted ?? false)) {
-            recovered
-              ..requestFocus()
-              ..consumeKeyboardToken();
-            _updateRect(_computeFocusedRect(recovered));
-          }
-        }
+        _reconcile(_TvPass(_TvReconcileReason.select, node: primary));
         return KeyEventResult.handled;
       }
       if (TvPlatform.isFocusedOnEditableText()) {
