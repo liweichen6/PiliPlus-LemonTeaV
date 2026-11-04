@@ -23,9 +23,9 @@ class TvSheetNodeStatus {
 /// the `body` slot of its own layout, and a closing one is hidden itself while
 /// its reverse animation runs.
 ///
-/// The engine still keeps the sheets' lifecycle (M13.2 moves it onto the layer
-/// stack). It holds a layout as an [Element] and a sheet as a [Widget], and
-/// reads both through here.
+/// The engine's layer stack keeps the sheets' lifecycle, with each sheet a
+/// non-modal [TvSheetLayer]. It holds a layout as an [Element] and a sheet as a
+/// [Widget], and reads both through here.
 final class TvSheetAdapter extends TvFocusAdapter {
   const TvSheetAdapter();
 
@@ -122,6 +122,20 @@ final class TvSheetAdapter extends TvFocusAdapter {
     );
   }
 
+  /// The sheet layouts above [node], innermost first.
+  List<Element> layoutsAround(FocusNode? node) {
+    final BuildContext? context = node?.context;
+    if (context == null || !context.mounted) return const <Element>[];
+    List<Element>? found;
+    context.visitAncestorElements((Element element) {
+      if (element.widget is BottomSheetLayout) {
+        (found ??= <Element>[]).add(element);
+      }
+      return true;
+    });
+    return found ?? const <Element>[];
+  }
+
   /// The element that holds the sheet of the layout at [layout].
   Element? sheetSlotOf(Element layout) =>
       _slotChild(layout, BottomSheetType.bottomSheet);
@@ -192,5 +206,116 @@ final class TvSheetAdapter extends TvFocusAdapter {
 
     visit(root);
     return found;
+  }
+}
+
+/// One inline sheet as a non-modal focus layer: the sheet slot of a
+/// `BottomSheetLayout`, which covers that layout's body and nothing else.
+///
+/// The layout's element stays while sheets come and go in it, so [sheet] is
+/// replaced in place when another sheet takes the slot.
+///
+/// The layer listens to its sheet's animation status: each change calls
+/// `onStatus`, so the layer stack learns that a sheet it tracks started
+/// closing, or finished opening, without reading every sheet's animation on
+/// every frame. Call [dispose] when the stack stops tracking the layer.
+final class TvSheetLayer extends TvFocusLayer {
+  /// [onStatus] is called on each change of the sheet's animation status.
+  TvSheetLayer(this.layout, Widget sheet, this._onStatus) : _sheet = sheet {
+    _watch();
+  }
+
+  static const TvSheetAdapter _sheets = TvSheetAdapter();
+
+  /// The `BottomSheetLayout` the sheet shows in.
+  final Element layout;
+  final VoidCallback _onStatus;
+  Widget _sheet;
+  AnimationController? _watched;
+
+  /// The sheet this layer stands for.
+  Widget get sheet => _sheet;
+  set sheet(Widget next) {
+    if (identical(next, _sheet)) return;
+    _unwatch();
+    _sheet = next;
+    _watch();
+  }
+
+  /// Stops listening to the sheet's animation. The listener is removed even
+  /// if upstream has disposed the controller since: a disposed controller has
+  /// dropped its listeners already, and removing one again does nothing.
+  void dispose() => _unwatch();
+
+  void _watch() {
+    _watched = _sheets._animationController(_sheet)
+      ?..addStatusListener(_statusChanged);
+  }
+
+  void _unwatch() {
+    _watched?.removeStatusListener(_statusChanged);
+    _watched = null;
+  }
+
+  void _statusChanged(AnimationStatus status) => _onStatus();
+
+  @override
+  bool get isModal => false;
+
+  /// The focus scope the layout sits in, found without registering an
+  /// inherited dependency: `FocusScope.of` would rebuild the layout on every
+  /// focus change in that scope.
+  FocusScopeNode? get scope => Focus.maybeOf(
+    layout,
+    scopeOk: true,
+    createDependency: false,
+  )?.nearestScope;
+
+  @override
+  bool contains(FocusNode node) {
+    final Element? slot = _sheets.sheetSlotOf(layout);
+    return slot != null && tvIsInSubtree(node.context, slot);
+  }
+
+  /// Kept out of line: the layer stack's `occludes` loop over its modal
+  /// layers runs on every focusability check, and a sheet is never in it, so
+  /// this body must not be inlined there.
+  @override
+  @pragma('vm:never-inline')
+  bool occludes(FocusNode node) {
+    if (_sheets.isClosing(_sheets.sheetOf(layout))) return false;
+    final Element? body = _sheets.bodySlotOf(layout);
+    return body != null && tvIsInSubtree(node.context, body);
+  }
+
+  @override
+  FocusNode? firstFocus(TvFocusFinder policy) {
+    final FocusScopeNode? scope = this.scope;
+    if (scope == null || tvIsScopeInactive(scope) || !scope.canRequestFocus) {
+      return null;
+    }
+    final Element? slot = _sheets.sheetSlotOf(layout);
+    return slot != null ? policy.findFirstFocusInSubtree(slot, scope) : null;
+  }
+
+  /// Whether [firstFocus] would find a node, with a cheap walk for anything
+  /// requestable first, so a sheet with nothing focusable (an image preview)
+  /// costs one walk of its subtree.
+  bool canTakeFocus(TvFocusFinder policy) {
+    if (!layout.mounted || !_sheets.isLayout(layout)) return false;
+    final FocusScopeNode? scope = this.scope;
+    if (scope == null || tvIsScopeInactive(scope) || !scope.canRequestFocus) {
+      return false;
+    }
+    final Element? slot = _sheets.sheetSlotOf(layout);
+    if (slot == null || !_sheets.hasRequestableFocus(slot)) return false;
+    return policy.findFirstFocusInSubtree(slot, scope) != null;
+  }
+
+  /// The first node in the layout's body, where focus goes when the sheet
+  /// closes and its trigger is gone.
+  FocusNode? bodyFocus(TvFocusFinder policy, FocusScopeNode scope) {
+    final Element? body = _sheets.bodySlotOf(layout);
+    return body != null ? policy.findFirstFocusInSubtree(body, scope) : null;
   }
 }

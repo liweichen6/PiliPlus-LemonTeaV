@@ -54,18 +54,37 @@ abstract interface class TvFocusFinder {
 
   /// The node to focus among [candidates].
   FocusNode? findFirstFocusAmong(Iterable<FocusNode> candidates);
+
+  /// The node to focus among the nodes of [currentScope] below [subtreeRoot].
+  FocusNode? findFirstFocusInSubtree(
+    Element subtreeRoot,
+    FocusScopeNode currentScope,
+  );
 }
 
-/// One modal layer drawn above the page that opened it.
+/// One layer drawn above the page that opened it.
 ///
 /// "A new layer appears but focus stays on the page behind it" has had to be
 /// fixed once per kind of layer: popup routes that skip auto-focus (M6), inline
 /// `MiniScaffold` sheets (M9) and overlay dialogs outside the `Navigator`
 /// (M10). A provider answers the same few questions for its kind of layer, and
 /// the engine's layer stack owns the lifecycle they share: remember the
-/// trigger, move focus into the layer, keep the page behind it unfocusable, and
+/// trigger, move focus into the layer, keep what it covers unfocusable, and
 /// give focus back to the trigger when the layer closes.
+///
+/// Most layers are modal ([isModal]). An inline sheet is not: see [isModal].
 abstract class TvFocusLayer {
+  /// Whether the layer covers the whole page. Focus that leaves a modal layer
+  /// is pulled back into it, and every node outside it is out of reach.
+  ///
+  /// A non-modal layer covers one slot of the page, such as the body of the
+  /// `BottomSheetLayout` an inline sheet opens over. Its adapter hides that
+  /// slot ([TvFocusAdapter.hides]), so the layer stack never asks it
+  /// [occludes] on a D-pad step. Focus moves into it once when it opens, the
+  /// user may leave it for the rest of the page, and focus goes back to its
+  /// trigger as soon as it starts closing.
+  bool get isModal => true;
+
   /// Whether [node] belongs to this layer.
   bool contains(FocusNode node);
 
@@ -95,6 +114,21 @@ abstract class TvFocusLayerProvider {
   /// The stack asks every frame, so this must return a shared empty list
   /// without walking the tree when nothing is open.
   List<TvFocusLayer> discover(TvFocusFinder policy);
+}
+
+/// Whether [context] is [subtreeRoot] or below it.
+bool tvIsInSubtree(BuildContext? context, Element subtreeRoot) {
+  if (context == null || !context.mounted) return false;
+  if (identical(context, subtreeRoot)) return true;
+  bool found = false;
+  context.visitAncestorElements((Element ancestor) {
+    if (identical(ancestor, subtreeRoot)) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found;
 }
 
 /// Whether [scope] or a scope above it is inactive: `skipTraversal` is set
