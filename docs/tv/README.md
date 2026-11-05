@@ -55,8 +55,8 @@
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) 会在每个合并到 `main` 的 Pull Request 上以及每次发布前运行：
 1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
 2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
-3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`。
-4. 加上 `--dart-define=TV_FOCUS_SCORER=scored` 再运行一次同样的测试，使用 M13.4 以开关引入的焦点评分器。录制的方向键路径中的已知失败对它不适用。
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`，使用焦点评分器（自 M13.5 起为默认）。录制的方向键路径中的已知失败对它不适用。
+4. 加上 `--dart-define=TV_FOCUS_SCORER=rules` 再运行一次同样的测试，使用旧的规则链。它通过隐藏开关保留一个版本，M13.6 将其删除。已知失败对它适用。
 
 > **仓库设置（仓库所有者操作）**：在 GitHub → **Settings** → **Branches** 中保护 `main` 分支，并将状态检查 **TV analyze and tests** 设为必需，使检查未通过的 Pull Request 无法合并。
 
@@ -80,7 +80,7 @@ git merge --no-edit upstream/main
 # （与 tv-checks.yml 中的命令相同）
 flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart test/tv_path_harness.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
-flutter test --no-pub --dart-define=TV_FOCUS_SCORER=scored test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
+flutter test --no-pub --dart-define=TV_FOCUS_SCORER=rules test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
 
 # 5. 提交或推送前还原补丁，确保 SDK 与工作区干净
 ./tool/tv_patch.sh revert
@@ -136,6 +136,9 @@ flutter build apk --release --split-per-abi \
 
 > **提示（在触控手机/模拟器上强制开启 TV 模式）**：
 > 在 `flutter run` 或 `flutter build apk` 时添加 `--dart-define=PILI_FORCE_TV=true`，即可在带触摸屏的设备上强制开启 TV 焦点框与播控 HUD。
+
+> **提示（切回旧的焦点规则）**：
+> 自 M13.5 起，方向键的落点由一个带列记忆的评分函数决定。旧的规则链通过隐藏开关保留一个版本：在遥控器上依次按 **上、上、下、下、左、右、左、右**，每两次按键间隔不超过 1.5 秒，屏幕会提示当前使用哪套规则。选择保存在设置项 `tvFocusScorer`（`rules` 或 `scored`）中，也可以通过 关于 → 导入/导出设置 修改，启动时读取。用 `--dart-define=TV_FOCUS_SCORER=rules`（或 `scored`）构建时，无论设置如何都从对应规则启动。如果你需要旧规则，请在 issue 中说明原因：M13.6 将删除它。
 
 > **提示（在电视上调试播放问题）**：
 > `tool/tv_m12/` 存放 M12 崩溃调试用到的工具。`run.sh` 通过 adb 运行一次测试，并把 logcat、内核日志和采样数据保存到开发机上，因此内核崩溃后日志不会丢失；`probe_app.sh` 安装一个小型测试应用，用 `SurfaceView` 或 `TextureView` 播放本地文件；`postpanic.sh` 在内核崩溃后收集证据。这些工具从环境变量 `ANDROID_SERIAL`、`M12_MEDIA` 和 `M12_RUNS` 读取配置。部分测试可能导致电视关机，详见 [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md)。

@@ -18,6 +18,7 @@ import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/grid.dart'
     show SliverGridDelegateWithExtentAndRatio;
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -1262,6 +1263,166 @@ void main() {
       expect(focusedLabel(), isNot('avatar'));
       await focusForPath(tester, s.card(1, 0));
       await walkPath(tester, 'card 1.0', [(dpadLeft, '首页|动态|我的')]);
+    });
+  });
+
+  group('switch and the showing tab (M13.5)', () {
+    late TvFocusScorer before;
+    setUp(() {
+      before = TvFocusTraversalPolicy.scorer;
+      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
+    });
+    tearDown(() => TvFocusTraversalPolicy.scorer = before);
+
+    test('the scorer is the default, and a build define or the hidden switch '
+        'picks the old rules', () {
+      TvFocusScorer resolve(String define, String? stored) =>
+          TvFocusTraversalPolicy.resolveScorer(define, stored);
+      expect(resolve('', null), TvFocusScorer.scored);
+      expect(resolve('', 'scored'), TvFocusScorer.scored);
+      expect(resolve('', 'something else'), TvFocusScorer.scored);
+      expect(resolve('', 'rules'), TvFocusScorer.rules);
+      expect(resolve('rules', null), TvFocusScorer.rules);
+      expect(resolve('rules', 'scored'), TvFocusScorer.rules);
+      expect(resolve('scored', 'rules'), TvFocusScorer.scored);
+      if (const String.fromEnvironment('TV_FOCUS_SCORER').isEmpty &&
+          TvPlatform.storedFocusScorer == null) {
+        expect(before, TvFocusScorer.scored);
+      }
+    });
+
+    test('the remote sequence counts only the whole sequence, in time', () {
+      const List<LogicalKeyboardKey> keys = TvSwitchSequence.keys;
+      final TvSwitchSequence sequence = TvSwitchSequence();
+      int now = 0;
+      bool press(LogicalKeyboardKey key, {int after = 100}) =>
+          sequence.add(key, now += after);
+
+      for (int i = 0; i < keys.length - 1; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+      expect(press(keys.last), isTrue);
+      // It starts again after a match.
+      expect(press(keys.last), isFalse);
+
+      // A third Up before the rest still counts.
+      expect(press(dpadUp), isFalse);
+      for (int i = 0; i < keys.length - 1; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+      expect(press(keys.last), isTrue);
+
+      // A pause longer than the limit starts it again.
+      for (int i = 0; i < 4; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+      expect(
+        press(keys[4], after: TvSwitchSequence.maxGapMs + 1),
+        isFalse,
+      );
+      for (int i = 5; i < keys.length; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+
+      // A wrong key in the middle doesn't count.
+      for (int i = 0; i < 4; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+      expect(press(dpadRight), isFalse);
+      for (int i = 4; i < keys.length; i++) {
+        expect(press(keys[i]), isFalse);
+      }
+    });
+
+    testWidgets('the remote sequence flips the rules while the app runs, and '
+        'back', (tester) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.card(1, 1));
+      Future<void> sendSequence() async {
+        for (final LogicalKeyboardKey key in TvSwitchSequence.keys) {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+        }
+      }
+
+      await sendSequence();
+      expect(TvFocusTraversalPolicy.scorer, TvFocusScorer.rules);
+      expect(TvPlatform.storedFocusScorer, 'rules');
+      expect(ringProblem(tester), isNull);
+      await sendSequence();
+      expect(TvFocusTraversalPolicy.scorer, TvFocusScorer.scored);
+      expect(TvPlatform.storedFocusScorer, 'scored');
+      expect(ringProblem(tester), isNull);
+    });
+
+    testWidgets('Up from the first row of a tab, with nothing remembered, '
+        'lands on the tab that\'s showing, and Down returns', (tester) async {
+      final _MemberScene s = _MemberScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.rows[0]);
+      await walkPath(tester, 'row 0', [
+        (dpadUp, _memberTabs[2]),
+        (dpadDown, 'row 0'),
+      ]);
+    });
+
+    testWidgets('entering two lists at once returns to the outer list\'s '
+        'memory, not the inner one\'s', (tester) async {
+      final List<FocusNode> side = <FocusNode>[
+        pathNode('side 0'),
+        pathNode('side 1'),
+      ];
+      final List<List<FocusNode>> rows = <List<FocusNode>>[
+        for (int r = 0; r < 2; r++)
+          List<FocusNode>.generate(10, (i) => pathNode('$r.$i')),
+      ];
+      Widget button(FocusNode node, {double width = 200}) => SizedBox(
+        width: width,
+        height: 120,
+        child: InkWell(
+          focusNode: node,
+          onTap: () {},
+          child: Text(node.debugLabel!),
+        ),
+      );
+      await _pump(
+        tester,
+        Scaffold(
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(children: [for (final FocusNode n in side) button(n)]),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final List<FocusNode> row in rows)
+                      SizedBox(
+                        height: 120,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [for (final FocusNode n in row) button(n)],
+                        ),
+                      ),
+                    for (int i = 0; i < 12; i++) const SizedBox(height: 120),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await focusForPath(tester, rows[0][2]);
+      await walkPath(tester, '0.2', [
+        (dpadDown, '1.2'),
+        (dpadLeft, '1.1'),
+        (dpadLeft, '1.0'),
+        (dpadLeft, 'side 1'),
+        (dpadUp, 'side 0'),
+        // The page remembers 1.0, and row 0 remembers 0.2. The page is the
+        // outer of the two lists Right enters, so its memory wins.
+        (dpadRight, '1.0'),
+      ]);
     });
   });
 }
