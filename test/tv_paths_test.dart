@@ -1076,4 +1076,192 @@ void main() {
       );
     });
   });
+
+  group('scorer and column memory (M13.4)', () {
+    late TvFocusScorer before;
+    setUp(() {
+      before = TvFocusTraversalPolicy.scorer;
+      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
+    });
+    tearDown(() => TvFocusTraversalPolicy.scorer = before);
+
+    testWidgets('the flag picks the rules while the app runs', (
+      tester,
+    ) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+
+      TvFocusTraversalPolicy.scorer = TvFocusScorer.rules;
+      await focusForPath(tester, s.card(0, 2));
+      await walkPath(tester, 'card 0.2', [
+        (dpadUp, _homeTabs.join('|')),
+        (dpadDown, 'card 0.0'),
+      ]);
+
+      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
+      await focusForPath(tester, s.card(0, 2));
+      await walkPath(tester, 'card 0.2', [
+        (dpadUp, _homeTabs.join('|')),
+        (dpadDown, 'card 0.2'),
+      ]);
+    });
+
+    testWidgets('moving along the tabs keeps the grid\'s memory', (
+      tester,
+    ) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.card(1, 2));
+      await walkPath(tester, 'card 1.2', [
+        (dpadUp, 'card 0.2'),
+        (dpadUp, _homeTabs.join('|')),
+      ]);
+      final String tab = focusedLabel();
+      await walkPath(tester, tab, [
+        (dpadLeft, _homeTabs.join('|')),
+        (dpadRight, tab),
+        (dpadDown, 'card 0.2'),
+      ]);
+    });
+
+    testWidgets('memory is skipped once the card it holds is scrolled out of '
+        'view', (tester) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.card(0, 2));
+      await walkPath(tester, 'card 0.2', [(dpadUp, _homeTabs.join('|'))]);
+      s.grid.jumpTo(820);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(dpadDown);
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), startsWith('card '));
+      expect(focusedLabel(), isNot('card 0.2'));
+      expect(ringProblem(tester), isNull);
+    });
+
+    testWidgets('Left returns to the category focus left from, after moving '
+        'down the page beside it', (tester) async {
+      final _SettingsScene s = _SettingsScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.categories[4]);
+      await tester.sendKeyEvent(dpadRight);
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), startsWith('tile '));
+      final String entered = focusedLabel();
+      await walkPath(tester, entered, [
+        (dpadDown, 'tile ${int.parse(entered.substring(5)) + 1}'),
+        (dpadDown, 'tile ${int.parse(entered.substring(5)) + 2}'),
+        (dpadLeft, '外观设置'),
+      ]);
+    });
+
+    testWidgets('Up from a tab\'s list returns to the tab focus came from, '
+        'in a tab bar that is not a list', (tester) async {
+      final _MemberScene s = _MemberScene();
+      await _pump(tester, s.build());
+      await _focusText(tester, '动态');
+      await walkPath(tester, '动态', [
+        (dpadDown, 'row 0'),
+        (dpadUp, '动态'),
+      ]);
+    });
+
+    testWidgets('the debug overlay shows each candidate\'s score', (
+      tester,
+    ) async {
+      TvFocusTraversalPolicy.debugRecordScores = true;
+      addTearDown(() {
+        TvFocusTraversalPolicy.debugRecordScores = false;
+        TvFocusTraversalPolicy.debugLastDecision.value = null;
+      });
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.card(0, 0));
+      await walkPath(tester, 'card 0.0', [(dpadRight, 'card 0.1')]);
+
+      final TvFocusDecision? d = TvFocusTraversalPolicy.debugLastDecision.value;
+      expect(d, isNotNull);
+      expect(d!.chosen, s.card(0, 1));
+      expect(d.fromMemory, isFalse);
+      final List<TvFocusScore> scored = [
+        for (final TvFocusScore e in d.scores)
+          if (e.score != null) e,
+      ]..sort((a, b) => a.score!.compareTo(b.score!));
+      expect(scored.first.node, s.card(0, 1));
+      expect(
+        d.scores.where((e) => e.node == s.card(1, 0)).single.dropped,
+        'dir',
+      );
+      expect(
+        d.scores.where((e) => e.node == s.menus[1]).single.dropped,
+        'sec',
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is CustomPaint &&
+              w.painter.runtimeType.toString() == '_TvScoreOverlayPainter',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a list nested in the focused list is entered in order, not '
+        'passed over like a floating button', (tester) async {
+      final FocusNode above = pathNode('above');
+      final FocusNode below = pathNode('below');
+      final List<FocusNode> inner = List<FocusNode>.generate(
+        4,
+        (i) => pathNode('inner $i'),
+      );
+      Widget button(FocusNode node) => SizedBox(
+        height: 60,
+        child: InkWell(
+          focusNode: node,
+          onTap: () {},
+          child: Text(node.debugLabel!),
+        ),
+      );
+      await _pump(
+        tester,
+        Scaffold(
+          body: ListView(
+            children: [
+              button(above),
+              SizedBox(
+                height: 200,
+                child: ListView(
+                  children: [for (final FocusNode n in inner) button(n)],
+                ),
+              ),
+              button(below),
+            ],
+          ),
+        ),
+      );
+      await focusForPath(tester, above);
+      await walkPath(tester, 'above', [
+        (dpadDown, 'inner 0'),
+        (dpadDown, 'inner 1'),
+        (dpadDown, 'inner 2'),
+        (dpadDown, 'inner 3'),
+        (dpadDown, 'below'),
+        (dpadUp, 'inner 3'),
+      ]);
+    });
+
+    testWidgets('the rail keeps no memory: Left from the grid lands level '
+        'with the card, not on the avatar focus left the rail from', (
+      tester,
+    ) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.rail.avatar);
+      await tester.sendKeyEvent(dpadRight);
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), isNot('avatar'));
+      await focusForPath(tester, s.card(1, 0));
+      await walkPath(tester, 'card 1.0', [(dpadLeft, '首页|动态|我的')]);
+    });
+  });
 }

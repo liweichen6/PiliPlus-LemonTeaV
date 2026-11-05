@@ -56,6 +56,7 @@
 1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
 2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
 3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`。
+4. 加上 `--dart-define=TV_FOCUS_SCORER=scored` 再运行一次同样的测试，使用 M13.4 以开关引入的焦点评分器。录制的方向键路径中的已知失败对它不适用。
 
 > **仓库设置（仓库所有者操作）**：在 GitHub → **Settings** → **Branches** 中保护 `main` 分支，并将状态检查 **TV analyze and tests** 设为必需，使检查未通过的 Pull Request 无法合并。
 
@@ -79,6 +80,7 @@ git merge --no-edit upstream/main
 # （与 tv-checks.yml 中的命令相同）
 flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart test/tv_path_harness.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
+flutter test --no-pub --dart-define=TV_FOCUS_SCORER=scored test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
 
 # 5. 提交或推送前还原补丁，确保 SDK 与工作区干净
 ./tool/tv_patch.sh revert

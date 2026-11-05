@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 part 'tv_focus_layers.dart';
+part 'tv_focus_scorer.dart';
 
 /// TV-aware 2D spatial focus traversal policy that:
 /// 1. Introspects `RenderBox` sizes and viewport intersection up the ancestor
@@ -554,6 +555,24 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
   final ReadingOrderTraversalPolicy _readingOrderPolicy =
       ReadingOrderTraversalPolicy();
   final _TvPolicyFrameState _frameState = _TvPolicyFrameState();
+  final _TvColumnMemory _memory = _TvColumnMemory();
+
+  /// Which rules pick the target of a D-pad move: the rule chain unless the
+  /// build passes `--dart-define=TV_FOCUS_SCORER=scored`. Tests set it.
+  static TvFocusScorer scorer =
+      const String.fromEnvironment('TV_FOCUS_SCORER') == 'scored'
+      ? TvFocusScorer.scored
+      : TvFocusScorer.rules;
+
+  /// Whether the scorer keeps each decision's scores in [debugLastDecision],
+  /// for the debug overlay: on with `--dart-define=TV_FOCUS_SCORES=true`.
+  static bool debugRecordScores = const bool.fromEnvironment(
+    'TV_FOCUS_SCORES',
+  );
+
+  /// The scorer's last decision, while [debugRecordScores] is on.
+  static final ValueNotifier<TvFocusDecision?> debugLastDecision =
+      ValueNotifier<TvFocusDecision?>(null);
 
   static void _defaultTvRequestFocusCallback(
     FocusNode node, {
@@ -1245,6 +1264,22 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
         onlyAxis: Axis.horizontal,
       );
     }
+    // The same along a vertical list on Left and Right, under the scorer
+    // (bug 10), unless the node is taller than the list.
+    if (scorer == TvFocusScorer.scored &&
+        context != null &&
+        context.mounted &&
+        (direction == TraversalDirection.left ||
+            direction == TraversalDirection.right) &&
+        _fitsInVerticalList(context)) {
+      _ensureVisibleInUserScrollables(
+        context,
+        alignmentPolicy: direction == TraversalDirection.left
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        onlyAxis: Axis.vertical,
+      );
+    }
     final double afterScroll = _sumUserScrollPixels(node.context);
     if ((afterScroll - beforeScroll).abs() > 0.5) {
       _frameState.didScrollInLastFocus = true;
@@ -1252,6 +1287,23 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     // Consume the keyboard token immediately so D-pad directional focus
     // landing on an EditableText does not automatically open the soft keyboard.
     node.consumeKeyboardToken();
+  }
+
+  /// Whether the node at [context] fits inside the nearest vertical list the
+  /// user can scroll around it.
+  static bool _fitsInVerticalList(BuildContext context) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    ScrollableState? scrollable = Scrollable.maybeOf(context);
+    while (scrollable != null) {
+      if (_canUserScroll(scrollable) &&
+          scrollable.position.axis == Axis.vertical) {
+        return box.size.height <= scrollable.position.viewportDimension;
+      }
+      final BuildContext next = scrollable.context;
+      scrollable = next.mounted ? Scrollable.maybeOf(next) : null;
+    }
+    return false;
   }
 
   @override
@@ -1353,6 +1405,19 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
           )
           .toList();
       if (allNodes.isEmpty) return false;
+
+      if (scorer == TvFocusScorer.scored) {
+        final FocusNode? scored = _findScoredCandidate(
+          focusedChild: focusedChild,
+          visualTarget: visualTarget,
+          allNodes: allNodes,
+          direction: direction,
+          cache: cache,
+        );
+        if (scored == null) return false;
+        _focusNode(scored, direction);
+        return true;
+      }
 
       final FocusNode? chosen = switch (direction) {
         TraversalDirection.down || TraversalDirection.up =>
@@ -2918,6 +2983,9 @@ class _TvNavigationState extends State<TvNavigation>
                       child: child,
                     ),
                   ),
+                  // Under the ring, so the ring stays the last painter.
+                  if (TvFocusTraversalPolicy.debugRecordScores)
+                    const Positioned.fill(child: _TvScoreOverlay()),
                   Positioned.fill(
                     child: IgnorePointer(
                       child: RepaintBoundary(

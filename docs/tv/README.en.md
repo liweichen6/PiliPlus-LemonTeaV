@@ -56,6 +56,7 @@ What the workflow does:
 1. Applies all patches with `lib/scripts/patch.ps1 android` (a patch that no longer applies after a Flutter bump fails here).
 2. `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the upstream files that hook into it (`lib/main.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/utils/connectivity_utils.dart`) and the TV tests. Errors and warnings fail the check; infos don't, so an upstream lint info in a hook file cannot block a release.
 3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`.
+4. The same tests again with `--dart-define=TV_FOCUS_SCORER=scored`, under the focus scorer that M13.4 adds behind a flag. The recorded D-pad paths' known failures don't apply to it.
 
 > **Repository setting (owner)**: in GitHub → **Settings** → **Branches**, protect `main` and require the status check **TV analyze and tests**, so a pull request cannot merge while it is red.
 
@@ -79,6 +80,7 @@ git merge --no-edit upstream/main
 # (the same commands as tv-checks.yml)
 flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart test/tv_path_harness.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
+flutter test --no-pub --dart-define=TV_FOCUS_SCORER=scored test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
 
 # 5. Revert patches before committing or pushing
 ./tool/tv_patch.sh revert

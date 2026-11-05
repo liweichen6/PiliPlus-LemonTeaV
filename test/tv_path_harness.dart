@@ -205,6 +205,9 @@ Future<void> walkPath(
   KnownFailure? known,
 }) async {
   expect(focusedLabel(), start, reason: 'the path starts somewhere else');
+  // The scorer (M13.4) has no known failures: every step must be right.
+  final KnownFailure? failure =
+      TvFocusTraversalPolicy.scorer == TvFocusScorer.rules ? known : null;
   String from = start;
   for (int i = 0; i < path.length; i++) {
     final (LogicalKeyboardKey key, String want) = path[i];
@@ -214,19 +217,19 @@ Future<void> walkPath(
     final String where =
         'step ${i + 1}, ${key == dpadBack ? 'Back' : key.keyLabel} from $from';
     final bool landed = want.split('|').contains(got);
-    if (known != null && i + 1 == known.step) {
+    if (failure != null && i + 1 == failure.step) {
       final String fixed =
-          'bug ${known.bug} no longer shows at $where: '
+          'bug ${failure.bug} no longer shows at $where: '
           'make it an ordinary step';
-      if (known.cutOff) {
+      if (failure.cutOff) {
         expect(landed, isTrue, reason: '$where lands on $got, not $want');
         expect(problem, isNotNull, reason: fixed);
       } else {
         expect(landed, isFalse, reason: fixed);
         expect(
           got,
-          known.landsOn,
-          reason: 'bug ${known.bug} now goes somewhere new at $where',
+          failure.landsOn,
+          reason: 'bug ${failure.bug} now goes somewhere new at $where',
         );
       }
       return;
@@ -236,7 +239,7 @@ Future<void> walkPath(
     from = got;
   }
   expect(
-    known,
+    failure,
     isNull,
     reason: 'the known failure is past the end of the path',
   );

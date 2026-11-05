@@ -127,7 +127,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ✅ Done (13 known failures, for bugs 2–4 and 6–10, until M13.4) | `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/M13_BASELINE.md` |
-| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<physical-tv>` 4.28 ms on home, 2.95 ms in settings, a little slower than the rule chain and inside the 6 ms limit) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
@@ -1797,3 +1797,92 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Checks**: `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart` passes 144; no line of an existing test changed, only lines added to `tv_player_hud_test.dart`. The TV analyze step, with the two new files added, finds no issues. CI's `tv-checks.yml` now analyzes and runs them.
 * **Limits**: the scenes copy the pages' layout; they aren't the pages. A path can pass in a scene and fail on the device if a page differs, as bug 7's two runs show. No device run was needed or done.
 * **Next**: `M13.4` (scoring function and column memory behind a flag), on the user's go-ahead.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.4`): Scoring Function & Column Memory, Behind a Flag
+* **Status**: ✅ Done. Under the new scorer all 25 recorded paths pass with no known failures, and all 119 older tests pass unchanged. The rule chain stays the default and still passes with the 13 known failures. 152 TV tests pass under each scorer: the 144 from before and 8 new ones. On `<vm-tv>`, `decide` p90 under the scorer is 1.46 ms on home and 1.12 ms in settings, under the 1.75 ms stand-in for the budget. The TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-4-scorer-3c490b`, on top of `main` after PR 18 (`M13.3`). It lands through its pull request, and landing it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_focus_scorer.dart` (a part of `tv_navigation.dart`); `[MODIFY] lib/tv/tv_navigation.dart` (lines added only: the flag, the dispatch in `inDirection`, the bug 10 reveal, the overlay), `test/tv_path_harness.dart` (`walkPath` ignores `known:` under the scorer), `test/tv_paths_test.dart` (lines added only), `.github/workflows/tv-checks.yml`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. `tv_player_hud.dart` isn't touched.
+* **The Flag**: `TvFocusTraversalPolicy.scorer`, `TvFocusScorer.rules` or `TvFocusScorer.scored`. It defaults to `rules`, unless a build or test run passes `--dart-define=TV_FOCUS_SCORER=scored`. Tests can set it while the app runs. `inDirection` builds the same candidate list for both and hands it to one or the other, so the timing probe's `decide` covers both. Recovery, first focus and the reconcile loop are unchanged. M13.5 adds the hidden switch.
+* **The Snapshot**: built once per decision from the candidates `inDirection` already collects. Each candidate gets:
+  * **Its rect.** Along a list it shares with the focused node it keeps its whole rect, because it gets scrolled into view. Along any other list, or with no list, it must show as the rule chain asks (its centre inside, or half the list), and is clipped to that list and the screen. A node that doesn't show is dropped first, before anything else looks at it.
+  * **Its lists and its role.** An action belongs to the card or tile it's inside in the focus tree. A small action also belongs to the visible part of a card it's laid over.
+  * **The focused node's own measure.** It's measured by its visible part, so a card cut off by its list no longer reaches into the tab bar.
+* **The Score** (lower wins), over candidates past the focused node. A candidate sharing more than half its height with the focused node (its width, for Left and Right) is level with it, so it doesn't count as above or below.
+  * **The terms**: the gap along the move; the gap across it; how much of the narrower rect misses the other (weight 100 on Up and Down, 600 on Left and Right, where a level node comes first as in the rule chain); 1,000 for each group around the focused node that the candidate isn't in; and a small tie-break. The tie-break is reading order for a candidate wholly under a wider focused node on Up and Down, so a header leads to the start of its row; otherwise it's the offset between centres.
+  * **What's left out**: actions of other cards.
+  * **A floating control**: one over the focused list (in neither that list nor a list nested in it) counts as lying just past the list's end, so it's reached once nothing in the list is left in that direction.
+  * **Up inside the focused list**: measured by scroll order, so a pinned or floating header is placed where it sits in the list, as in the rule chain.
+* **Moves Inside a Tile or Card**: kept as the rule chain makes them.
+  * Right from a tile reaches its trailing control, and Left comes back.
+  * Left and Right move between a card's buttons, and Left from the first returns to the card.
+  * Right from a card reaches its own buttons only when nothing lies past it. A `⋮` laid wholly over its card counts as one of them, as in `VideoCardH`.
+* **Column Memory**: per group, for lists and tab bars. A group is a list the user can scroll, a `TabBar`, a `NavigationRail` or a `FocusTraversalGroup`. All of them count in the cost of leaving, but only lists and tab bars keep a memory. The plan named lists and `FocusTraversalGroup`. The tab bar was added because the user page's tab bar isn't a list. The rail was added because leaving it has to cost, or Up from `首页` goes to a card up and to the right.
+  * **No memory for the rail**: on `<vm-tv>` the rail remembered the avatar, which has focus at start-up. So every Left from the grid went to the avatar, and the timing run parked there, where Left and Up do nothing. The overlay showed it. The rail is a menu, so Left now lands level with the card, as in the rule chain and M13.3's home path. A `FocusTraversalGroup` keeps no memory either.
+  * **Saving**: at each scored decision, every group around the focused node remembers it.
+  * **Restoring**: when the winner is in groups the focused node isn't in, the outermost of them is checked. If it remembers a node that's still a candidate in this direction and shows on screen, that node wins instead.
+  * **What it doesn't see**: memory is written only on D-pad moves, not on Select, touch or recovery.
+* **Bug 10**: on Left and Right, under the scorer, `_focusNode` reveals a second time along the vertical list, with the policy for its other end, as `M13.0b` does for rows on Up and Down. It's skipped for a node taller than the list, so tall cards and pinned headers keep the one policy.
+* **How Each Bug Is Fixed**:
+
+| Bug | What fixes it |
+| :--- | :--- |
+| 2 | A floating control counts as just past the end of the list under it |
+| 3 | A `⋮` laid wholly over its card counts as the card's own |
+| 4 | A candidate level with the `×` isn't above it |
+| 6 | No rule asks for a target's list to be above or below the focused one |
+| 7 | A card scrolled out of its row is dropped before it can own the rail's buttons, and it owns only by its visible part |
+| 8 | The focused card is measured by its visible part, and leaving the grid costs |
+| 9 | Column memory, and the centre offset when there's nothing to return to |
+| 10 | The second reveal on Left and Right |
+
+* **The Debug Overlay**: `--dart-define=TV_FOCUS_SCORES=true` (or `TvFocusTraversalPolicy.debugRecordScores` in a test) keeps each decision in `debugLastDecision`. A second `CustomPaint`, under the ring so the ring stays the last painter, outlines each candidate with its score, or with why it was dropped: `off` (doesn't show), `dir` (not in the direction) or `sec` (another card's action). The winner is green, and marked `(memory)` when memory chose it. Without the define it isn't built, and the scorer keeps no scores. With it on, all 151 tests still pass under the scorer.
+* **Tests**:
+  * The given command passes under the rule chain. The same command with `--dart-define=TV_FOCUS_SCORER=scored` passes under the scorer, where `walkPath` drops each `KnownFailure`. CI runs both.
+  * Eight new tests in a `scorer and column memory (M13.4)` group in `tv_paths_test.dart`. One checks that the rail keeps no memory, so Left from the grid lands level with the card after focus left the rail from the avatar (it fails without that change). The others are: switching the flag while the app runs; memory kept while moving along the tabs; memory skipped once its card is scrolled out of view; Left back to the category after moving down the page beside it; Up back to the tab in a tab bar that isn't a list; the overlay's data and painter; and a list nested in the focused list, entered in order rather than passed over like a floating button (it fails without that check). No existing test line changed. The harness's `walkPath` changed so it can drop known failures.
+* **Mutants**, under the scorer, one at a time, each run against all the TV tests. All 15 fail at least one test: the focused node unclipped; ownership by whole rects; no memory; no floating controls; no level rule; every `⋮` counted as the card's own; no tab bar or rail groups; every group costing; Up not by scroll order; the Left and Right overlap weight at 100; no cost for leaving; no bug 10 reveal; no reading-order tie; no own-button fallback; no moves between a card's buttons.
+* **Three Older Tests Shaped the Weights**: none had to change.
+  * The account dialog needed the nearest row to beat a far node that overlaps, so the overlap weight on Up and Down is 100.
+  * A reply card's header isn't a button, so Right from a card looks only at its buttons, as in the rule chain.
+  * A floating sort header in the comments needed scroll order on Up and the level-first weight on Left and Right.
+* **Decided While Building, to Check With the User**:
+  * **The home grid's `⋮` stays out of reach.** `VideoCardV`'s `⋮` hangs past the card's corner, and M13.3's home path records Right from the last column as staying put, so only a `⋮` wholly over its card counts as the card's own. The related list's `VideoCardH` `⋮` is reached (bug 3).
+  * **With no memory, Up from the user page's first row lands on its first tab (`主页`).** It doesn't land on the one that's showing. The path allows either the tab focus came from or the showing one, and with memory it gets the one focus came from.
+* **Speed**, measured locally in the widget tests (JIT, on the development Mac), so these are relative only. Each decision was run 20 times in place over every path and older test, with both scorers.
+  * The scoring step itself takes 11–17 µs at p50 and 40–54 µs at p90, against 3–9 µs and 15–32 µs for the rule chain.
+  * All of `decide` takes 202–463 µs at p50 and 737–857 µs at p90 under either scorer, by test file. The two scorers differ less than runs of the same one.
+  * So the scorer adds a few percent to `decide`. Nearly all of `decide` is the walk over the scope's nodes before either scorer runs, which M13.4 didn't change. M13.4 isn't the speed fix the budget asks for: the comments run's `decide` p90 of 7.65 ms on `<physical-tv>` would need that walk made cheaper.
+* **Limits**: the weights were tuned on the recorded scenes and the older tests, which copy the pages but aren't the pages. M13.5's device pass is where a page that differs would show.
+* **Timing on `<vm-tv>`**: the user's go-ahead came after the commits above. Two `-Pdev` release builds of this branch with `tool/tv_m13/logging.patch`, the same source with and without `--dart-define=TV_FOCUS_SCORER=scored`, installed in turn.
+  * Home ran in B-A-A-B order twice, eight runs of 120 s with M13.0's keys. Settings (音视频设置, the right pane) ran B-A-A-B, four runs of 90 s. Each home run started from a fresh launch with the ring on the first card, and each settings run on `CDN 设置`, each checked by screenshot. `decide` in ms:
+
+| Run | Scorer | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 657 | 1.096 | 1.14 | 1.49 | 1.78 |
+| Home | Scorer | 650 | 1.005 | 1.01 | 1.46 | 2.23 |
+| Settings | Rule chain | 338 | 0.815 | 0.80 | 1.09 | 1.41 |
+| Settings | Scorer | 337 | 0.874 | 0.87 | 1.12 | 1.55 |
+
+  * Run means on home: rule chain 1.138, 0.957, 1.128, 1.165; scorer 1.099, 0.977, 0.955, 0.988 (permutation test, p = 0.14). In settings: rule chain 0.823, 0.808; scorer 0.884, 0.864 (p = 0.33, the smallest possible with two runs each). Neither difference is clear of the noise. M13.2 measured home at p90 1.27–1.28 ms in its session, so the session moves the numbers about as much as the build does. `engine` per frame is 12–26 µs in every run.
+  * Both are under the 1.75 ms stand-in for the budget's 6 ms on `<physical-tv>`. Comments and the video page weren't timed, because they need a video open. That's where the budget fails today, and M13.4 doesn't change the shared walk that dominates there.
+  * A first scorer run (discarded) found the rail's memory problem above. After the fix the scorer moved on 162–164 of the run's keys, against 163–166 for the rule chain.
+  * **On the device**: only arrow keys away from navigation. Select was pressed on the 我的 rail item, the gear and 音视频设置, each after a screenshot. No video was played and no setting changed. The old rules can't go Up from 我的's user card to the header buttons (the gear row), so they were reached from the top of the rail. That's a case like bug 6 that the scorer handles; it isn't in the inventory.
+  * `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default. The emulator was synced and stopped.
+* **Timing and Walks on `<physical-tv>`**, at the user's request, on 32-bit `-Pdev` release builds of the same source as on `<vm-tv>`, with the probe. Thermal status was 0 throughout. The same orders, keys, starts and screenshot checks as on `<vm-tv>` were used. `decide` in ms:
+
+| Run | Scorer | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 619 | 3.285 | 3.33 | 4.07 | 4.79 |
+| Home | Scorer | 609 | 3.467 | 3.36 | 4.28 | 6.64 |
+| Settings | Rule chain | 316 | 2.316 | 2.28 | 2.86 | 3.20 |
+| Settings | Scorer | 316 | 2.458 | 2.44 | 2.95 | 3.52 |
+
+  * **Home run means**: rule chain 3.294, 3.268, 3.289, 3.288; scorer 3.513, 3.427, 3.428, 3.499. Every scorer run is slower than every rule-chain run (permutation test, p = 0.03, the smallest possible with four runs each). So on the TV the scorer costs about 0.18 ms a decision, 5–6 %, which `<vm-tv>`'s noise hid. Settings shows the same direction (+6 % mean). `engine` per frame is 60–83 µs in every run.
+  * **Against the budget**: `decide` p90 stays under 6 ms on both screens, and p99 under 16.7 ms. The rule chain's home p90 today is 4.07 ms, against 3.48 ms on the M13.0 bench day, so the TV runs slower today than then. Comments and the video page weren't timed: they need a video open, and the comments run is where `decide` misses the budget today.
+  * **Where the extra time likely goes**: the scorer walks the focused node's and the winner's ancestors to the root to find their groups, and looks up group rects per candidate. That's a lead for M13.5, not measured.
+  * **Walks** on the scorer build, with a screenshot after every key (28 keys over two walks, from a fresh start on home):
+    * Down ×3, Up, Right ×2, Left ×2, Up, Down, Right ×4, Down, Up, across rows partly under the tab bar. Every card the ring landed on was scrolled fully into view (bug 10), and Right or Left never landed on a tab (bug 8).
+    * Right to card 0.1, Up to the tabs, then Down back to card 0.1 (bug 9). Up again, Right along the tabs to 分区, and Down still returned to card 0.1. Left ×2 to the rail landed on `search`, the rail item level with the first card, and Right returned to card 0.0. Up from card 0.1 landed on `直播`, the first tab over the card, not the one straight above it. M13.3's path allows any tab over the card.
+  * **On the TV**: arrow keys only, apart from Select on the 我的 rail item, the gear and 音视频设置 (twice each), each after a screenshot. No video was played and no setting changed. The `m12` folder the run script made in the TV's temp folder was removed. `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default, and stopped. The TV is on its home screen, and adb was disconnected.
+* **Next**: `M13.5` (switch), on the user's go-ahead. The scorer's extra 0.18 ms on the TV is cut there, by the user's decision.
