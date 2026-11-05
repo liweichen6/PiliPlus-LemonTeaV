@@ -129,7 +129,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ✅ Done (13 known failures, for bugs 2–4 and 6–10, until M13.4) | `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/M13_BASELINE.md` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<physical-tv>` 4.28 ms on home, 2.95 ms in settings, a little slower than the rule chain and inside the 6 ms limit) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ✅ Done (the scorer is the default; its extra cost is gone on settings and on like-for-like home steps on `<physical-tv>`; the bench meets four of six budget limits and misses `decide` on comments, for `M13.5a`) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_platform.dart`, `test/tv_paths_test.dart`, `test/tv_navigation_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/*` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.5a` | Make the Shared Candidate Walk Cheaper on the Comments List | ⏳ Planned | `lib/tv/tv_navigation.dart`, `<physical-tv>` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5a` | Make the Shared Candidate Walk Cheaper on the Comments List | 🔄 In progress (a first attempt, memoizing render-object work, was 20 % slower on `<physical-tv>` and is reverted) | `lib/tv/tv_navigation.dart`, `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
@@ -1962,3 +1962,30 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * **Seen on the way**: under the rule chain, Down from the `评论` tab lands on the `最热` sort button, and Up from the share button goes straight to `返回` on the player bar; under the scorer Down lands on the first comment and Up goes to the tab. Neither was timed.
 * **On the TV**: arrow keys, Escape on the player, and Select only on the 我的 rail item, the gear, 音视频设置, 无痕模式, the two side tabs and `播/暂`, each after a screenshot. About 16 minutes of video played in all, in `无痕模式`, at 1080P60. No setting changed. Afterwards the clean build of this branch (the scorer, no probe) was installed, which closed the video and ended `无痕模式` (the avatar's badge was gone after a fresh start). The `m12` folder in the TV's temp folder was removed, `PiliPlus TV dev` was stopped, the TV is on its home screen, and adb was disconnected.
 * **Next**: `M13.5a` (the shared walk on the comments list), then `M13.6` one release after this lands, unless the hidden switch was needed.
+
+### [2026-11-05] Milestone M13 (Task `M13.5a`): A First Attempt at the Shared Walk, Measured Slower and Reverted
+* **Status**: 🔄 In progress. The first attempt is reverted: it kept every pick but made `decide` on the comments list about 20 % slower on `<physical-tv>`. Nothing of it remains in the code.
+* **Branch**: `claude/tv-m13-5a-walk`, on top of `claude/tv-m13-5-switch-3deaca` (PR 20, `M13.5`), not pushed. It holds the attempt, its revert and this entry.
+* **Where the time goes**, from a throwaway probe in the widget tests (JIT, on the development Mac, relative only): the walk over the scope's nodes before either rule set runs is 95 % of `decide`, and `evaluateNode` is about 80 %. Of `evaluateNode`, about 15 % is measuring rects (`localToGlobal`). The rest is the walk itself: each candidate walks its elements to the root with about 20 type checks per element, and candidates in one list share nearly all of that walk.
+* **What was tried** (one commit, with a debug `assert` that each new answer equals Flutter's own on every call in the widget tests):
+  * An ancestor's render object taken from the one carried up the walk, instead of walking down from each ancestor (`Element.renderObject`).
+  * Each render object's transform to the root built once per pass from its parent's, in the same order as `getTransformTo(null)`, so rects are equal to the bit.
+  * Whether a render object is hidden off screen (offstage, kept alive, a page not showing) kept per render object for the pass.
+  * Every decision of the TV tests picked the same node under both rule sets, all 160 tests passed, and the analyze step found no issues. A new test with two buttons on a kept-alive page failed on a broken memo and passed on the old code.
+  * The local probe already showed no gain: `decide` summed over the navigation tests went from 99.2 to 102.6 ms. It was taken to the device anyway, since the TV's costs differ.
+* **On `<physical-tv>`** (the user's go-ahead): A = PR 20's head, B = the attempt, 32-bit `-Pdev` release builds with the probe, run A, B, B, A. Comments only (the two limits that miss), 120 s per run with M13.0's keys, `BV1kMxM6FECM` from 27:15 in `无痕模式` at `1080P 60帧`, paused runs checked with two identical screenshots. Thermal status was 0 throughout. `decide` in ms:
+
+| Run | Build | Steps | Mean | p50 | p90 | p99 | Run means |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Comments paused | A (PR 20) | 421 | 5.952 | 5.93 | 6.49 | 7.13 | 5.999, 5.906 |
+| Comments paused | B (attempt) | 419 | 7.059 | 6.97 | 7.67 | 8.86 | 6.997, 7.122 |
+| Comments playing | A (PR 20) | 375 | 9.774 | 9.25 | 13.40 | 18.03 | 9.583, 9.965 |
+| Comments playing | B (attempt) | 374 | 11.826 | 11.38 | 15.54 | 21.53 | 11.603, 12.052 |
+
+  * Every B run was slower than every A run: +1.11 ms paused (+19 %) and +2.05 ms playing (+21 %). The A runs after B matched the ones before, so it isn't the TV drifting.
+  * **Why**, most likely: on the TV's 32-bit CPU, a hash lookup and insert per render object, and a 16-double matrix copy for each, cost more than the cheap walks and type checks they replaced. The candidates share most of their ancestors, but the first candidate of each pass still paid for every render object up to the root, and the cache lasts only one pass.
+  * **Today's A** (PR 20) misses the same two limits as M13.5's bench: `decide` p90 6.49 ms paused (limit 6) and p99 18.03 ms playing (limit 16.7).
+* **What's left**, both bigger than this attempt: fewer element visits, not cheaper ones.
+  * **Nearest first**: under the scorer, evaluate candidates in order of their raw distance along the move, and stop once the nearest one left can't beat the best score. It has to keep floating controls, column memory and the showing tab exact, and the rule chain would keep the full walk until M13.6.
+  * **Summaries per list**: walk above each list once per pass and combine the result with each candidate's walk below it. That's a rewrite of `evaluateNode`'s state machine, the most central code in the engine.
+* **On the TV**: arrow keys, Escape on the player, and Select only on the 我的 rail item, 无痕模式, the `评论` tab and `播/暂`, each after a screenshot. About 9 minutes of video played in all, in `无痕模式` at 1080P60. No setting changed. The TV had gone to sleep before the first run and was woken with `KEYCODE_WAKEUP`. Afterwards the clean `M13.5` build (PR 20) was installed, which ended `无痕模式` (checked by the avatar's badge). The `m12` folder was removed, `PiliPlus TV dev` was stopped, the TV is on its home screen, and adb was disconnected.
