@@ -1,6 +1,6 @@
 # M13.0: D-Pad Baseline and Focus Bug Inventory
 
-**Status**: ✅ Done. The six runs are done on `<vm-tv>` and on `<physical-tv>`, the inventory's causes are done on `<vm-tv>`, and the user confirmed the budget below on 2026-11-01. The inventory stays open for bugs they remember.
+**Status**: ✅ Done. The six runs are done on `<vm-tv>` and on `<physical-tv>`, the inventory's causes are done on `<vm-tv>`, and the user confirmed the budget below on 2026-11-01. The inventory stays open for bugs they remember. M13.5's bench is at the end of this file: the scorer meets four of the six limits, and misses `decide` on the comments list, which `M13.5a` takes on.
 
 M13 rebuilds the focus engine, but nobody has timed a D-pad step on a TV. The only figure, about 3.2 ms per step, came from a development Mac. So this task answers one question first: **how much of the lag is the engine's?** Anything that turns out to be something else, such as rendering, heavy upstream widgets or video decoding, becomes its own item instead of being folded into M13.
 
@@ -264,6 +264,47 @@ The fix passes each level its own child, as `Scrollable.ensureVisible` does. It'
 **Bug 10**: found while recording the home paths in M13.3. `M13.0b` gave horizontal rows the policy for both ends on Up and Down, and left Left and Right with one policy for the vertical list. So Right onto a card cut off at the top, and Left onto one cut off at the bottom, leave it cut off. Up and Down onto the same cards reveal them.
 
 **Not reproduced**: on `<physical-tv>` during M13.2, one Left from the grid seemed to go straight to the rail. In M13.3's home scene, Left steps one column at a time, also from a card cut off at the top or the bottom, and reaches the rail only from the first column. That path is recorded as passing. If it happens again, note the column it started from.
+
+## Results of the M13.5 Bench, on `<physical-tv>`
+
+One more bench on 2026-11-05, as the gate asks, with the same six runs. Two `-Pdev` release builds of `M13.5` with the probe: the scorer (the default) and the rule chain (`--dart-define=TV_FOCUS_SCORER=rules`), so both were measured on the same day. Home ran four runs of each in B-A-A-B order twice, settings two of each, and each video run once per build. Thermal status was 0 throughout.
+
+**Not the same as on 2026-11-01**: `PiliPlus TV dev` is signed in now, so the video runs had `无痕模式` on, at the `1080P 60帧` default with hardware decoding. The video was `BV1kMxM6FECM`, played from about 28 minutes in, with its own danmaku and comments, so the video runs compare with M13.0's only roughly. The TV also runs a little slower than on the bench day: the rule chain's home `decide` p90 is 4.03 ms, against 3.48 ms then.
+
+Under the scorer, all times in ms. A step that scrolls is one where `ring` runs at least 3 ms past `decide`.
+
+| Run | Steps | `decide` p50 / p90 / p99 | Engine per frame p50 | `raster` p50 / p90 | `input` p50 / p90 | `work` p90 | `total` p50 / p90 | Plain steps `total` p90 | Scrolling steps `total` p90 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 608 | 3.27 / 4.13 / 6.07 | 0.08 | 15.1 / 17.8 | 5.3 / 6.9 | 23.5 | 36.9 / 44.3 | 43.6 | 65.1 (20 steps) |
+| `m13-settings` | 317 | 2.36 / 2.85 / 3.27 | 0.07 | 3.6 / 4.4 | 5.2 / 5.8 | 8.4 | 25.8 / 34.9 | 30.3 | 46.7 |
+| `m13-detail-idle` | 212 | 4.91 / 5.53 / 6.32 | 0.08 | 6.5 / 7.4 | 5.2 / 5.8 | 14.1 | 30.7 / 34.8 | 34.8 | None |
+| `m13-detail-play` | 192 | 5.07 / 7.96 / 11.92 | 0.09 | 11.3 / 19.7 | 8.9 / 14.8 | 28.6 | 36.0 / 51.5 | 51.5 | 53.3 (15 steps) |
+| `m13-comments-idle` | 211 | 5.89 / 6.58 / 7.71 | 0.09 | 5.6 / 6.9 | 5.2 / 6.0 | 15.0 | 46.8 / 53.4 | None | 53.4 |
+| `m13-comments-play` | 188 | 8.72 / 12.73 / 18.22 | 0.09 | 9.6 / 19.5 | 9.7 / 17.0 | 33.1 | 66.9 / 85.4 | None | 85.4 |
+
+The rule chain on the same day:
+
+| Run | Steps | `decide` p50 / p90 / p99 | `work` p90 | `total` p90 | Plain / scrolling `total` p90 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 618 | 3.32 / 4.03 / 4.68 | 21.9 | 42.2 | 42.1 / 59.6 (4 steps) |
+| `m13-settings` | 318 | 2.36 / 2.90 / 3.64 | 8.5 | 36.4 | 30.5 / 46.0 |
+| `m13-detail-idle` | 211 | 4.96 / 5.70 / 6.23 | 13.4 | 34.2 | 34.2 / None |
+| `m13-detail-play` | 193 | 5.06 / 8.77 / 13.28 | 30.0 | 54.1 | 53.9 / 69.7 |
+| `m13-comments-idle` | 209 | 6.04 / 6.72 / 7.29 | 14.5 | 52.0 | None / 52.0 |
+| `m13-comments-play` | 188 | 9.22 / 13.03 / 19.04 | 35.7 | 84.7 | None / 84.7 |
+
+**Against the gate**, under the scorer:
+
+| Measure | Runs | Limit | M13.5 | Holds | M13.0 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `decide`, p90 | Home, settings, both paused runs | 6 ms | 2.85–6.58 ms | All but comments paused (6.58) | All but comments paused (7.65) |
+| `decide`, p99 | All six | 16.7 ms | 3.27–18.22 ms | All but comments playing (18.22) | All but comments playing (20.59) |
+| `engine`, p50 | All six | 0.1 ms | 0.07–0.09 ms | Yes | Yes |
+| `work`, p90 | Settings, both paused runs | 16.7 ms | 8.4, 14.1, 15.0 ms | Yes | All but comments paused (17.8) |
+| `total`, p90, steps that don't scroll | Settings, detail paused | 35 ms | 30.3, 34.8 ms | Yes | Yes |
+| `total`, p90, steps that scroll | Comments paused | 55 ms | 53.4 ms | Yes | No (70.3) |
+
+So four of the six limits hold, two of them newly. The two misses are both `decide` on the comments list. The rule chain misses them by more on the same day (6.72 and 19.04 ms), and the time is in the walk over the scope's nodes before either rule set runs, which M13.4 and M13.5 didn't change. The scrolling limit holds at 55 ms, so it doesn't fall back to 72 ms. By the user's decision (2026-11-05), M13.5 switches anyway, and `M13.5a` makes that walk cheaper on the comments list, with its own bench, before M13 is done.
 
 ## What These Runs Can't Show
 
