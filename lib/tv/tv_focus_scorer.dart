@@ -2,16 +2,18 @@ part of 'tv_navigation.dart';
 
 // The scorer (M13.4): one scoring function over a snapshot of the candidates,
 // with column memory, in place of the rule chain in `_findVerticalCandidate`
-// and `_findHorizontalCandidate`. It's behind [TvFocusTraversalPolicy.scorer]
-// until M13.5 switches it on; see `docs/tv/PLAN.md`.
+// and `_findHorizontalCandidate`. It's the default since M13.5, and the rule
+// chain stays one release behind a hidden switch
+// ([TvFocusTraversalPolicy.scorer]) until M13.6 removes it; see
+// `docs/tv/PLAN.md`.
 
 /// Which rules pick the target of a D-pad move.
 enum TvFocusScorer {
-  /// The rule chain, the default until M13.5.
+  /// The old rule chain, behind a hidden switch for one release (M13.5).
   rules,
 
   /// One scoring function over a snapshot of the candidates, with column
-  /// memory (M13.4).
+  /// memory (M13.4). The default since M13.5.
   scored,
 }
 
@@ -85,6 +87,9 @@ class _TvCandidate {
   /// Whether it's one of [owner]'s own actions: inside it in the focus tree,
   /// or laid wholly over it.
   bool ownedWholly = false;
+
+  /// Whether it was scored in this decision.
+  bool considered = false;
 }
 
 /// The scoring weights, in logical pixels.
@@ -129,28 +134,37 @@ class _TvColumnMemory {
 /// The groups around [node], nearest first: each list the user can scroll
 /// (its [ScrollableState]), and each tab bar, navigation rail and focus
 /// traversal group (its [Element]).
-List<Object> _tvGroupsOf(FocusNode node) {
+///
+/// With [until], the walk stops at the first of those groups it meets, and
+/// leaves it out. Every group further out is around that one too, so the
+/// result is the groups around [node] that aren't in [until], at the cost of
+/// a short walk when [node] shares a list with the node [until] came from.
+List<Object> _tvGroupsOf(FocusNode node, {List<Object>? until}) {
   final BuildContext? context = node.context;
   if (context == null || !context.mounted) return const <Object>[];
   final List<Object> groups = <Object>[];
   context.visitAncestorElements((Element element) {
+    final Object group;
     if (element is StatefulElement && element.state is ScrollableState) {
       final ScrollableState scrollable = element.state as ScrollableState;
-      if (TvFocusTraversalPolicy._canUserScroll(scrollable)) {
-        groups.add(scrollable);
+      if (!TvFocusTraversalPolicy._canUserScroll(scrollable)) return true;
+      group = scrollable;
+    } else {
+      final Widget widget = element.widget;
+      if (widget is! TabBar &&
+          widget is! NavigationRail &&
+          widget is! FocusTraversalGroup) {
+        return true;
       }
-      return true;
+      group = element;
     }
-    final Widget widget = element.widget;
-    if (widget is TabBar ||
-        widget is NavigationRail ||
-        widget is FocusTraversalGroup) {
-      groups.add(element);
-    }
+    if (until != null && until.contains(group)) return false;
+    groups.add(group);
     return true;
   });
   return groups;
 }
+
 
 extension _TvScorerPolicy on TvFocusTraversalPolicy {
   /// [rect] clipped to the lists around it and the screen.
@@ -266,27 +280,28 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     };
   }
 
-  /// Whether [c] is in [group], one of the focused node's groups: by its
-  /// lists for a list, and by where it lies for a tab bar, rail or focus
-  /// traversal group.
-  static bool _inGroup(
-    _TvCandidate c,
-    Object group,
-    _TvTraversalCache cache,
-  ) {
-    if (group is ScrollableState) {
-      if (c.vertical == group || c.horizontal == group) return true;
-      // A list further out than the nearest one on each axis. A candidate
-      // that isn't in one of the focused node's lists is scored at what shows
-      // of it, so where it lies says whether it's inside.
-      final Rect? r = cache.scrollableRect(group);
-      return r != null && r.contains(c.rect.center);
-    }
+  /// Where [group], one of the focused node's groups, lies, or null if it
+  /// isn't laid out. Looked up once per decision.
+  static Rect? _groupRect(Object group, _TvTraversalCache cache) {
+    if (group is ScrollableState) return cache.scrollableRect(group);
     final RenderObject? ro = (group as Element).renderObject;
-    return ro is RenderBox &&
-        ro.attached &&
-        ro.hasSize &&
-        cache.boxRect(ro).contains(c.rect.center);
+    return ro is RenderBox && ro.attached && ro.hasSize
+        ? cache.boxRect(ro)
+        : null;
+  }
+
+  /// Whether [c] is in [group], one of the focused node's groups, which lies
+  /// at [groupRect]: by its lists for a list, and by where it lies for a tab
+  /// bar, rail or focus traversal group.
+  static bool _inGroup(_TvCandidate c, Object group, Rect? groupRect) {
+    // A list further out than the nearest one on each axis. A candidate that
+    // isn't in one of the focused node's lists is scored at what shows of it,
+    // so where it lies says whether it's inside.
+    if (group is ScrollableState &&
+        (c.vertical == group || c.horizontal == group)) {
+      return true;
+    }
+    return groupRect != null && groupRect.contains(c.rect.center);
   }
 
   /// The score of [c] at [r], seen from [f]: lower is better.
@@ -296,7 +311,7 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     Rect f,
     TraversalDirection direction,
     List<Object> focusedGroups,
-    _TvTraversalCache cache,
+    List<Rect?> groupRects,
   ) {
     final bool vertical =
         direction == TraversalDirection.up ||
@@ -335,8 +350,8 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
         ? cStart - fStart
         : ((cStart + cEnd) - (fStart + fEnd)).abs() / 2.0;
     int left = 0;
-    for (final Object group in focusedGroups) {
-      if (!_inGroup(c, group, cache)) left++;
+    for (int i = 0; i < focusedGroups.length; i++) {
+      if (!_inGroup(c, focusedGroups[i], groupRects[i])) left++;
     }
     return along +
         _TvScoreWeights.across * gap +
@@ -408,8 +423,36 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     // The focused node's own card, when it's a button inside one.
     FocusNode? focusedOwner;
     final bool focusedIsAction = cache.enclosingActionOf(focusedChild) != null;
+    // A focus ancestor with no tile or card above it in the element tree
+    // can't be a card or tile itself, unless its own widget is a card, so
+    // it's passed over without measuring it, which would walk to the root.
+    // So the focused node's element ancestors are kept by depth, with the
+    // depth of the outermost tile or card among them.
+    List<Element?> chain = const <Element?>[];
+    int outermost = 1 << 30;
+    final BuildContext? fContext = focusedChild.context;
+    if (focusedIsAction && fContext is Element && fContext.mounted) {
+      chain = List<Element?>.filled(fContext.depth, null);
+      fContext.visitAncestorElements((Element element) {
+        if (element.depth < chain.length) chain[element.depth] = element;
+        final Widget widget = element.widget;
+        if (tvListTiles.isGroup(widget) || tvCards.isGroup(widget)) {
+          outermost = element.depth;
+        }
+        return true;
+      });
+    }
     for (final FocusNode ancestor
         in focusedIsAction ? focusedChild.ancestors : const <FocusNode>[]) {
+      final BuildContext? ac = ancestor.context;
+      if (ac is Element &&
+          ac.mounted &&
+          ac.depth < chain.length &&
+          identical(chain[ac.depth], ac) &&
+          outermost >= ac.depth &&
+          !tvCards.isGroup(ac.widget)) {
+        continue;
+      }
       if (cache.isEffectivelyFocusable(ancestor) &&
           TvFocusTraversalPolicy._isPrimaryContainer(ancestor, cache) &&
           TvFocusTraversalPolicy._isEmbeddedSecondaryOf(
@@ -432,18 +475,10 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     };
     bool isContainer(FocusNode node) =>
         node == focusedChild || node == treeOwner || byNode.containsKey(node);
-    // What shows of a container: a card cut off by its list can only own
-    // the actions over its visible part.
-    Rect shownOf(FocusNode node) => node == focusedChild
-        ? f
-        : byNode[node]?.rect ??
-              _visibleRect(
-                cache.rectOf(node),
-                cache.verticalScrollableOf(node),
-                cache.horizontalScrollableOf(node),
-                screen,
-                cache,
-              );
+    // The cards a small action can be laid over, with what shows of each: a
+    // card cut off by its list can only own the actions over its visible
+    // part. Built once, on the first small action without an owner.
+    List<(FocusNode, Rect)>? containers;
     for (final _TvCandidate c in kept) {
       for (final FocusNode ancestor in c.node.ancestors) {
         if (!isContainer(ancestor)) continue;
@@ -459,12 +494,12 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
         }
       }
       if (c.owner != null || !tvCards.isMicroAction(c.raw)) continue;
-      for (final FocusNode container in <FocusNode>[
-        focusedChild,
-        ...byNode.keys,
-      ]) {
+      containers ??= <(FocusNode, Rect)>[
+        (focusedChild, f),
+        for (final _TvCandidate k in kept) (k.node, k.rect),
+      ];
+      for (final (FocusNode container, Rect cr) in containers) {
         if (container == c.node) continue;
-        final Rect cr = shownOf(container);
         if (tvCards.isSecondaryIn(c.raw, cr)) {
           c
             ..owner = container
@@ -561,7 +596,8 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     // the focused list, such as 播放全部 or the reply button, counts as lying
     // just past the list's end, so it's reached once nothing in the list is
     // left in this direction (bug 2).
-    final List<Object> focusedGroups = _tvGroupsOf(focusedChild);
+    final List<Object> focusedGroups =
+        cache.groupsOf(focusedChild) ?? _tvGroupsOf(focusedChild);
     // The groups that cost to leave: every list, and a tab bar, rail or focus
     // traversal group only inside the nearest list, where what shows of a
     // candidate says whether it's in one.
@@ -575,18 +611,27 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
             i < firstList)
           focusedGroups[i],
     ];
+    final List<Rect?> groupRects = <Rect?>[
+      for (final Object g in costGroups) _groupRect(g, cache),
+    ];
     final ScrollableState? alongList = horizontalMove ? fH : fV;
     final Rect? alongRect = cache.scrollableRect(alongList);
     _TvCandidate? best;
     double bestScore = double.infinity;
     bool listAhead = false;
-    final Map<FocusNode, double> scored = <FocusNode, double>{};
     final List<_TvCandidate> own = <_TvCandidate>[];
     final List<_TvCandidate> floating = <_TvCandidate>[];
 
     void consider(_TvCandidate c, Rect at, Rect from) {
-      final double score = _score(c, at, from, direction, costGroups, cache);
-      scored[c.node] = score;
+      final double score = _score(
+        c,
+        at,
+        from,
+        direction,
+        costGroups,
+        groupRects,
+      );
+      c.considered = true;
       scores?.add(TvFocusScore(node: c.node, rect: c.rect, score: score));
       if (score < bestScore) {
         best = c;
@@ -680,24 +725,124 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
     // 4. Column memory: entering a list focus left before returns to the
     // node it left from, if that node is still there in this direction.
     _memory.remember(focusedGroups, focusedChild);
-    final List<Object> entered = <Object>[
-      for (final Object g in _tvGroupsOf(winner.node))
-        if (!focusedGroups.contains(g)) g,
-    ];
+    final List<Object> entered = _tvGroupsOf(
+      winner.node,
+      until: focusedGroups,
+    );
     if (entered.isNotEmpty) {
       final FocusNode? remembered = _memory[entered.last];
-      if (remembered != null &&
-          remembered != winner.node &&
-          scored.containsKey(remembered)) {
-        final _TvCandidate c = byNode[remembered]!;
+      final _TvCandidate? c = remembered == null ? null : byNode[remembered];
+      if (c != null && remembered != winner.node && c.considered) {
         if (_hasArea(
           _visibleRect(c.raw, c.vertical, c.horizontal, screen, cache),
         )) {
           return finish(remembered, fromMemory: true);
         }
       }
+      // 5. With nothing to return to, focus coming into a tab bar from one of
+      // its own pages lands on the tab that's showing, if that tab lies over
+      // the focused node (the user's decision in M13.5). Otherwise it's the
+      // tab the score picked, such as the one straight above a card.
+      final FocusNode? showing = _showingTab(
+        entered,
+        focusedChild,
+        allNodes,
+        byNode,
+        screen,
+        cache,
+      );
+      if (showing != null) {
+        final Rect r = byNode[showing]!.rect;
+        final bool over = horizontalMove
+            ? math.min(r.bottom, f.bottom) - math.max(r.top, f.top) > 0.0
+            : math.min(r.right, f.right) - math.max(r.left, f.left) > 0.0;
+        if (over) return finish(showing);
+      }
     }
     return finish(winner.node);
+  }
+
+  /// The controller of [tabBar], if [focusedChild] is on one of its pages.
+  /// It walks to the root, but only on a move into a tab bar.
+  static TabController? _controllerOfPageOf(
+    Element tabBar,
+    FocusNode focusedChild,
+  ) {
+    final TabController? controller =
+        (tabBar.widget as TabBar).controller ??
+        DefaultTabController.maybeOf(tabBar);
+    if (controller == null) return null;
+    final BuildContext? context = focusedChild.context;
+    if (context == null || !context.mounted) return null;
+    bool onPage = false;
+    context.visitAncestorElements((Element element) {
+      final Widget widget = element.widget;
+      if (widget is TabBarView &&
+          identical(
+            widget.controller ?? DefaultTabController.maybeOf(element),
+            controller,
+          )) {
+        onPage = true;
+        return false;
+      }
+      return true;
+    });
+    return onPage ? controller : null;
+  }
+
+  /// The tab that's showing in the first tab bar of [entered], if
+  /// [focusedChild] is on one of that tab bar's pages, and that tab was
+  /// scored in this decision and shows. The tabs are the candidates inside
+  /// the tab bar, in focus order, one per tab.
+  FocusNode? _showingTab(
+    List<Object> entered,
+    FocusNode focusedChild,
+    List<FocusNode> allNodes,
+    Map<FocusNode, _TvCandidate> byNode,
+    Rect? screen,
+    _TvTraversalCache cache,
+  ) {
+    Element? tabBar;
+    for (final Object g in entered) {
+      if (g is Element && g.widget is TabBar) {
+        tabBar = g;
+        break;
+      }
+    }
+    if (tabBar == null) return null;
+    final TabController? controller = _controllerOfPageOf(tabBar, focusedChild);
+    if (controller == null) return null;
+    final Element bar = tabBar;
+    final List<FocusNode> tabs = <FocusNode>[
+      for (final FocusNode node in allNodes)
+        if (_isUnder(node, bar)) node,
+    ];
+    if (tabs.length != controller.length) return null;
+    final _TvCandidate? c = byNode[tabs[controller.index]];
+    if (c == null ||
+        !c.considered ||
+        !_hasArea(
+          _visibleRect(c.raw, c.vertical, c.horizontal, screen, cache),
+        )) {
+      return null;
+    }
+    return c.node;
+  }
+
+  /// Whether [node] is inside [ancestor] in the widget tree.
+  static bool _isUnder(FocusNode node, Element ancestor) {
+    final BuildContext? context = node.context;
+    if (context is! Element || !context.mounted) return false;
+    if (context.depth <= ancestor.depth) return false;
+    bool under = false;
+    context.visitAncestorElements((Element element) {
+      if (identical(element, ancestor)) {
+        under = true;
+        return false;
+      }
+      return element.depth > ancestor.depth;
+    });
+    return under;
   }
 }
 

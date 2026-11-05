@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:hive_ce/hive.dart';
 
 class _TvTextInputGateControl with TextInputControl {
@@ -35,6 +36,39 @@ abstract final class TvPlatform {
   static bool _hasTouchscreen = true;
   static bool _gateInstalled = false;
   static FocusNode? _unlockedNode;
+
+  /// The settings key of the hidden switch back to the old focus rules, kept
+  /// for one release after M13.5: `rules` picks them, and anything else, or
+  /// no key, picks the scorer. The remote sequence in `TvNavigation` sets it,
+  /// and it can also be set through 关于 → 导入/导出设置.
+  static const String focusScorerKey = 'tvFocusScorer';
+
+  static String? _storedFocusScorer;
+
+  /// The hidden switch's value, read at [initialize] on a TV.
+  static String? get storedFocusScorer => _storedFocusScorer;
+
+  /// The hidden switch's value in [settingBox], or null if it isn't a string.
+  static String? readFocusScorer(Box<dynamic> settingBox) {
+    final Object? value = settingBox.get(focusScorerKey);
+    return value is String ? value : null;
+  }
+
+  /// Saves the hidden switch, after the remote sequence flipped it, and says
+  /// which rules are on now.
+  static void saveFocusScorer({required bool rules}) {
+    _storedFocusScorer = rules ? 'rules' : 'scored';
+    try {
+      GStorage.setting.put(focusScorerKey, _storedFocusScorer);
+    } catch (_) {
+      // GStorage.setting may not be initialized in isolated widget tests.
+    }
+    try {
+      SmartDialog.showToast(rules ? '已切换到旧的焦点规则' : '已切换到新的焦点规则');
+    } catch (_) {
+      // SmartDialog may not be set up in isolated widget tests.
+    }
+  }
 
   /// Default TV-friendly settings. Every TV launch seeds the ones whose key is
   /// not set yet; a value the user chose is never overwritten.
@@ -107,6 +141,11 @@ abstract final class TvPlatform {
 
     if (isTv) {
       await _seedTvDefaultsIfNeeded();
+      try {
+        _storedFocusScorer = readFocusScorer(GStorage.setting);
+      } catch (_) {
+        // GStorage.setting may not be initialized in isolated widget tests.
+      }
       _installSoftKeyboardGate();
     }
   }

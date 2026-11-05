@@ -179,9 +179,32 @@ class _TvTraversalCache {
   bool isEffectivelyFocusable(FocusNode node) =>
       evaluateNode(node).isFocusable;
 
+  FocusNode? _groupsNode;
+  List<Object>? _groups;
+
+  /// [isEffectivelyFocusable] for the focused node of a scored decision,
+  /// whose walk also records the node's groups for [groupsOf], so the scorer
+  /// doesn't walk to the root a second time.
+  bool isFocusableRecordingGroups(FocusNode node) {
+    if (_nodeMeta.containsKey(node)) return isEffectivelyFocusable(node);
+    final List<Object> groups = <Object>[];
+    final bool focusable = evaluateNode(node, groups: groups).isFocusable;
+    // A focusable node's walk reaches the root, so the list is complete.
+    if (focusable) {
+      _groupsNode = node;
+      _groups = groups;
+    }
+    return focusable;
+  }
+
+  /// The groups [isFocusableRecordingGroups] recorded for [node], if any.
+  List<Object>? groupsOf(FocusNode node) =>
+      identical(node, _groupsNode) ? _groups : null;
+
   _TvNodeMeta evaluateNode(
     FocusNode node, {
     bool includeAncestorsIfUnfocusable = false,
+    List<Object>? groups,
   }) {
     final _TvNodeMeta? cached = _nodeMeta[node];
     if (cached != null &&
@@ -277,6 +300,7 @@ class _TvTraversalCache {
         final scrollable = element.state as ScrollableState;
         if (TvFocusTraversalPolicy._canUserScroll(scrollable)) {
           insideScrollable = true;
+          groups?.add(scrollable);
           if (verticalScrollable == null &&
               (scrollable.axisDirection == AxisDirection.down ||
                   scrollable.axisDirection == AxisDirection.up)) {
@@ -354,6 +378,12 @@ class _TvTraversalCache {
       }
       if (enclosingWrap == null && widget is Wrap) {
         enclosingWrap = element;
+      }
+      if (groups != null &&
+          (widget is TabBar ||
+              widget is NavigationRail ||
+              widget is FocusTraversalGroup)) {
+        groups.add(element);
       }
 
       if (!focusable) return true;
@@ -557,12 +587,25 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
   final _TvPolicyFrameState _frameState = _TvPolicyFrameState();
   final _TvColumnMemory _memory = _TvColumnMemory();
 
-  /// Which rules pick the target of a D-pad move: the rule chain unless the
-  /// build passes `--dart-define=TV_FOCUS_SCORER=scored`. Tests set it.
-  static TvFocusScorer scorer =
-      const String.fromEnvironment('TV_FOCUS_SCORER') == 'scored'
-      ? TvFocusScorer.scored
-      : TvFocusScorer.rules;
+  /// Which rules pick the target of a D-pad move: the scorer, since M13.5.
+  /// The rule chain stays one release behind a hidden switch: the settings
+  /// key [TvPlatform.focusScorerKey], set by the remote sequence in
+  /// [TvNavigation]. A build that passes `--dart-define=TV_FOCUS_SCORER=rules`
+  /// (or `scored`) starts on those rules whatever the key says. Read on the
+  /// first D-pad move, after [TvPlatform.initialize]. Tests set it.
+  static TvFocusScorer scorer = resolveScorer(
+    const String.fromEnvironment('TV_FOCUS_SCORER'),
+    TvPlatform.storedFocusScorer,
+  );
+
+  /// The rules a build starts on: the build's [define] if it names one,
+  /// otherwise the hidden switch's [stored] value, otherwise the scorer.
+  @visibleForTesting
+  static TvFocusScorer resolveScorer(String define, String? stored) =>
+      switch (define.isNotEmpty ? define : stored) {
+        'rules' => TvFocusScorer.rules,
+        _ => TvFocusScorer.scored,
+      };
 
   /// Whether the scorer keeps each decision's scores in [debugLastDecision],
   /// for the debug overlay: on with `--dart-define=TV_FOCUS_SCORES=true`.
@@ -603,14 +646,28 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     Duration duration = Duration.zero,
     Curve curve = Curves.ease,
     Axis? onlyAxis,
+    bool onlyIfFits = false,
   }) {
     BuildContext current = context;
     RenderObject? firstTarget;
+    bool checkFit = onlyIfFits;
     ScrollableState? scrollable = Scrollable.maybeOf(context);
     while (scrollable != null) {
       final RenderObject? target = current.findRenderObject();
       if (_canUserScroll(scrollable) &&
           (onlyAxis == null || scrollable.position.axis == onlyAxis)) {
+        // With [onlyIfFits], nothing is revealed when the node is taller
+        // than the first list it's revealed in, the nearest on [onlyAxis].
+        if (checkFit) {
+          checkFit = false;
+          final RenderObject? box = context.findRenderObject();
+          if (box is! RenderBox ||
+              !box.hasSize ||
+              (onlyAxis == Axis.horizontal ? box.size.width : box.size.height) >
+                  scrollable.position.viewportDimension) {
+            return;
+          }
+        }
         if (target != null && target.attached) {
           double? pinnedSliverPrecedingExtent;
           final RenderObject? scrollableRo = scrollable.context
@@ -1270,14 +1327,14 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
         context != null &&
         context.mounted &&
         (direction == TraversalDirection.left ||
-            direction == TraversalDirection.right) &&
-        _fitsInVerticalList(context)) {
+            direction == TraversalDirection.right)) {
       _ensureVisibleInUserScrollables(
         context,
         alignmentPolicy: direction == TraversalDirection.left
             ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
             : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
         onlyAxis: Axis.vertical,
+        onlyIfFits: true,
       );
     }
     final double afterScroll = _sumUserScrollPixels(node.context);
@@ -1289,23 +1346,6 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     node.consumeKeyboardToken();
   }
 
-  /// Whether the node at [context] fits inside the nearest vertical list the
-  /// user can scroll around it.
-  static bool _fitsInVerticalList(BuildContext context) {
-    final RenderObject? box = context.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return false;
-    ScrollableState? scrollable = Scrollable.maybeOf(context);
-    while (scrollable != null) {
-      if (_canUserScroll(scrollable) &&
-          scrollable.position.axis == Axis.vertical) {
-        return box.size.height <= scrollable.position.viewportDimension;
-      }
-      final BuildContext next = scrollable.context;
-      scrollable = next.mounted ? Scrollable.maybeOf(next) : null;
-    }
-    return false;
-  }
-
   @override
   bool inDirection(FocusNode currentNode, TraversalDirection direction) {
     final FocusScopeNode? nearestScope = currentNode.nearestScope;
@@ -1313,7 +1353,10 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     nearestScope.directionalTraversalEdgeBehavior = TraversalEdgeBehavior.stop;
     return _withCache((_TvTraversalCache cache) {
       final FocusNode? focusedChild = nearestScope.focusedChild;
-      if (focusedChild == null || !cache.isEffectivelyFocusable(focusedChild)) {
+      if (focusedChild == null ||
+          !(scorer == TvFocusScorer.scored
+              ? cache.isFocusableRecordingGroups(focusedChild)
+              : cache.isEffectivelyFocusable(focusedChild))) {
         final FocusNode? firstFocus =
             (focusedChild == null
                 ? findFirstFocusInDirection(currentNode, direction)
@@ -2118,6 +2161,43 @@ class _TvPass {
   final bool clearRing;
 }
 
+/// The remote sequence that flips the hidden switch between the scorer and
+/// the old rule chain (M13.5, for one release): Up, Up, Down, Down, Left,
+/// Right, Left, Right, each press within [maxGapMs] of the one before. Each
+/// press still moves focus as usual.
+class TvSwitchSequence {
+  static const List<LogicalKeyboardKey> keys = <LogicalKeyboardKey>[
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+  ];
+
+  static const int maxGapMs = 1500;
+
+  final List<LogicalKeyboardKey> _recent = <LogicalKeyboardKey>[];
+  int? _lastMs;
+
+  /// Adds a key press at [nowMs], and returns whether it completes the
+  /// sequence.
+  bool add(LogicalKeyboardKey key, int nowMs) {
+    if (_lastMs != null && nowMs - _lastMs! > maxGapMs) _recent.clear();
+    _lastMs = nowMs;
+    _recent.add(key);
+    if (_recent.length > keys.length) _recent.removeAt(0);
+    if (_recent.length < keys.length) return false;
+    for (int i = 0; i < keys.length; i++) {
+      if (_recent[i] != keys[i]) return false;
+    }
+    _recent.clear();
+    return true;
+  }
+}
+
 class _TvNavigationState extends State<TvNavigation>
     with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
@@ -2164,6 +2244,7 @@ class _TvNavigationState extends State<TvNavigation>
   late final Stopwatch _repeatClock =
       WidgetsBinding.instance.samplingClock.stopwatch()..start();
   int? _lastDirectionalStepMs;
+  final TvSwitchSequence _switchSequence = TvSwitchSequence();
 
   /// A ring pass and a reconcile pass of another reason can each be pending
   /// once. A later request finds its kind pending and leaves it as it is.
@@ -2901,6 +2982,14 @@ class _TvNavigationState extends State<TvNavigation>
         _lastDirectionalStepMs = nowMs;
       } else if (event is KeyDownEvent) {
         _lastDirectionalStepMs = _repeatClock.elapsedMilliseconds;
+        if (_switchSequence.add(key, _lastDirectionalStepMs!)) {
+          final bool rules =
+              TvFocusTraversalPolicy.scorer == TvFocusScorer.scored;
+          TvFocusTraversalPolicy.scorer = rules
+              ? TvFocusScorer.rules
+              : TvFocusScorer.scored;
+          TvPlatform.saveFocusScorer(rules: rules);
+        }
       }
       return KeyEventResult.ignored;
     }
