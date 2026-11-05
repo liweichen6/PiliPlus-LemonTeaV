@@ -1249,5 +1249,19 @@ void main() {
         (dpadUp, 'inner 3'),
       ]);
     });
+
+    testWidgets('the rail keeps no memory: Left from the grid lands level '
+        'with the card, not on the avatar focus left the rail from', (
+      tester,
+    ) async {
+      final _HomeScene s = _HomeScene();
+      await _pump(tester, s.build());
+      await focusForPath(tester, s.rail.avatar);
+      await tester.sendKeyEvent(dpadRight);
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), isNot('avatar'));
+      await focusForPath(tester, s.card(1, 0));
+      await walkPath(tester, 'card 1.0', [(dpadLeft, '首页|动态|我的')]);
+    });
   });
 }

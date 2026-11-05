@@ -106,15 +106,22 @@ abstract final class _TvScoreWeights {
   static const double tie = 0.05;
 }
 
-/// Column memory: the node focus last left each group from.
+/// Column memory: the node focus last left each list or tab bar from. A
+/// navigation rail or a focus traversal group has none: the rail is a menu,
+/// and on `<vm-tv>` it kept the avatar focused at start-up, so every Left
+/// from the grid went there instead of the item level with the card.
 class _TvColumnMemory {
   final Expando<FocusNode> _last = Expando<FocusNode>('TvColumnMemory');
 
-  FocusNode? operator [](Object group) => _last[group];
+  static bool _remembers(Object group) =>
+      group is ScrollableState || (group as Element).widget is TabBar;
+
+  FocusNode? operator [](Object group) =>
+      _remembers(group) ? _last[group] : null;
 
   void remember(List<Object> groups, FocusNode node) {
     for (final Object group in groups) {
-      _last[group] = node;
+      if (_remembers(group)) _last[group] = node;
     }
   }
 }
