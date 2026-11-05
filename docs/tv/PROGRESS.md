@@ -127,7 +127,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ✅ Done (13 known failures, for bugs 2–4 and 6–10, until M13.4) | `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/M13_BASELINE.md` |
-| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<vm-tv>` 1.46 ms on home, 1.12 ms in settings) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<physical-tv>` 4.28 ms on home, 2.95 ms in settings, a little slower than the rule chain and inside the 6 ms limit) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
@@ -1869,4 +1869,20 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * A first scorer run (discarded) found the rail's memory problem above. After the fix the scorer moved on 162–164 of the run's keys, against 163–166 for the rule chain.
   * **On the device**: only arrow keys away from navigation. Select was pressed on the 我的 rail item, the gear and 音视频设置, each after a screenshot. No video was played and no setting changed. The old rules can't go Up from 我的's user card to the header buttons (the gear row), so they were reached from the top of the rail. That's a case like bug 6 that the scorer handles; it isn't in the inventory.
   * `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default. The emulator was synced and stopped.
-* **Next**: `M13.5` (switch), on the user's go-ahead.
+* **Timing and Walks on `<physical-tv>`**, at the user's request, on 32-bit `-Pdev` release builds of the same source as on `<vm-tv>`, with the probe. Thermal status was 0 throughout. The same orders, keys, starts and screenshot checks as on `<vm-tv>` were used. `decide` in ms:
+
+| Run | Scorer | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 619 | 3.285 | 3.33 | 4.07 | 4.79 |
+| Home | Scorer | 609 | 3.467 | 3.36 | 4.28 | 6.64 |
+| Settings | Rule chain | 316 | 2.316 | 2.28 | 2.86 | 3.20 |
+| Settings | Scorer | 316 | 2.458 | 2.44 | 2.95 | 3.52 |
+
+  * **Home run means**: rule chain 3.294, 3.268, 3.289, 3.288; scorer 3.513, 3.427, 3.428, 3.499. Every scorer run is slower than every rule-chain run (permutation test, p = 0.03, the smallest possible with four runs each). So on the TV the scorer costs about 0.18 ms a decision, 5–6 %, which `<vm-tv>`'s noise hid. Settings shows the same direction (+6 % mean). `engine` per frame is 60–83 µs in every run.
+  * **Against the budget**: `decide` p90 stays under 6 ms on both screens, and p99 under 16.7 ms. The rule chain's home p90 today is 4.07 ms, against 3.48 ms on the M13.0 bench day, so the TV runs slower today than then. Comments and the video page weren't timed: they need a video open, and the comments run is where `decide` misses the budget today.
+  * **Where the extra time likely goes**: the scorer walks the focused node's and the winner's ancestors to the root to find their groups, and looks up group rects per candidate. That's a lead for M13.5, not measured.
+  * **Walks** on the scorer build, with a screenshot after every key (28 keys over two walks, from a fresh start on home):
+    * Down ×3, Up, Right ×2, Left ×2, Up, Down, Right ×4, Down, Up, across rows partly under the tab bar. Every card the ring landed on was scrolled fully into view (bug 10), and Right or Left never landed on a tab (bug 8).
+    * Right to card 0.1, Up to the tabs, then Down back to card 0.1 (bug 9). Up again, Right along the tabs to 分区, and Down still returned to card 0.1. Left ×2 to the rail landed on `search`, the rail item level with the first card, and Right returned to card 0.0. Up from card 0.1 landed on `直播`, the first tab over the card, not the one straight above it. M13.3's path allows any tab over the card.
+  * **On the TV**: arrow keys only, apart from Select on the 我的 rail item, the gear and 音视频设置 (twice each), each after a screenshot. No video was played and no setting changed. The `m12` folder the run script made in the TV's temp folder was removed. `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default, and stopped. The TV is on its home screen, and adb was disconnected.
+* **Next**: `M13.5` (switch), on the user's go-ahead. The scorer's extra 0.18 ms on the TV is worth cutting before or during it.
