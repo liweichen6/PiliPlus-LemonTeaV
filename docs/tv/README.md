@@ -55,7 +55,7 @@
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) 会在每个合并到 `main` 的 Pull Request 上以及每次发布前运行：
 1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
 2. 对 `lib/tv`、接入 TV 层的上游文件（`lib/main.dart`、`lib/pages/video/widgets/player_focus.dart`、`lib/utils/connectivity_utils.dart`）以及 TV 测试执行 `flutter analyze --no-pub --no-fatal-infos`。error 与 warning 会使检查失败；info 不会，因此上游文件中的 lint 提示不会阻止发布。
-3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart`。
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`。
 
 > **仓库设置（仓库所有者操作）**：在 GitHub → **Settings** → **Branches** 中保护 `main` 分支，并将状态检查 **TV analyze and tests** 设为必需，使检查未通过的 Pull Request 无法合并。
 
@@ -77,8 +77,8 @@ git merge --no-edit upstream/main
 # 4. 重新应用补丁，执行静态分析与 TV 自动化测试验证兼容性
 ./tool/tv_patch.sh apply
 # （与 tv-checks.yml 中的命令相同）
-flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart
-flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart
+flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart test/tv_path_harness.dart
+flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
 
 # 5. 提交或推送前还原补丁，确保 SDK 与工作区干净
 ./tool/tv_patch.sh revert
