@@ -55,8 +55,8 @@ What the workflow does:
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) runs on every pull request into `main` and before every release:
 1. Applies all patches with `lib/scripts/patch.ps1 android` (a patch that no longer applies after a Flutter bump fails here).
 2. `flutter analyze --no-pub --no-fatal-infos` on `lib/tv`, the upstream files that hook into it (`lib/main.dart`, `lib/pages/video/widgets/player_focus.dart`, `lib/utils/connectivity_utils.dart`) and the TV tests. Errors and warnings fail the check; infos don't, so an upstream lint info in a hook file cannot block a release.
-3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`.
-4. The same tests again with `--dart-define=TV_FOCUS_SCORER=scored`, under the focus scorer that M13.4 adds behind a flag. The recorded D-pad paths' known failures don't apply to it.
+3. `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart`, under the focus scorer, the default since M13.5. The recorded D-pad paths' known failures don't apply to it.
+4. The same tests again with `--dart-define=TV_FOCUS_SCORER=rules`, under the old rule chain, which stays one release behind a hidden switch until M13.6 removes it. The known failures apply to it.
 
 > **Repository setting (owner)**: in GitHub → **Settings** → **Branches**, protect `main` and require the status check **TV analyze and tests**, so a pull request cannot merge while it is red.
 
@@ -80,7 +80,7 @@ git merge --no-edit upstream/main
 # (the same commands as tv-checks.yml)
 flutter analyze --no-pub --no-fatal-infos lib/tv lib/main.dart lib/pages/video/widgets/player_focus.dart lib/utils/connectivity_utils.dart test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart test/tv_path_harness.dart
 flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
-flutter test --no-pub --dart-define=TV_FOCUS_SCORER=scored test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
+flutter test --no-pub --dart-define=TV_FOCUS_SCORER=rules test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart
 
 # 5. Revert patches before committing or pushing
 ./tool/tv_patch.sh revert
@@ -136,6 +136,9 @@ Built APKs are written to `build/app/outputs/flutter-apk/`:
 
 > **Tip (Forcing TV Mode on a Touchscreen Device / Emulator)**:
 > Pass `--dart-define=PILI_FORCE_TV=true` during `flutter run` or `flutter build apk` to force the TV control layer on a device that reports a touchscreen.
+
+> **Tip (Going Back to the Old Focus Rules)**:
+> Since M13.5 a D-pad move is picked by one scoring function with column memory. For one release the old rule chain stays behind a hidden switch: press **Up, Up, Down, Down, Left, Right, Left, Right** on the remote, each press within 1.5 s of the last, and a toast says which rules are on. The choice is kept in the setting `tvFocusScorer` (`rules` or `scored`), which 关于 → 导入/导出设置 can also set, and is read at start-up. A build with `--dart-define=TV_FOCUS_SCORER=rules` (or `scored`) starts on those rules whatever the setting says. If you need the old rules, please say why in an issue: M13.6 removes them.
 
 > **Tip (Debugging Playback on a TV)**:
 > `tool/tv_m12/` holds the tools from M12's crash-debug track. `run.sh` runs one test over adb and records logcat, the kernel log and a sampler on the development machine, so they survive a kernel panic; `probe_app.sh` installs a small test app that plays a local file on a `SurfaceView` or a `TextureView`; `postpanic.sh` collects the evidence after a panic. They read `ANDROID_SERIAL`, `M12_MEDIA` and `M12_RUNS` from the environment. Some runs can shut the TV down: see [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
