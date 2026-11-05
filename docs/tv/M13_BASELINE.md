@@ -304,7 +304,7 @@ The rule chain on the same day:
 | `total`, p90, steps that don't scroll | Settings, detail paused | 35 ms | 30.3, 34.8 ms | Yes | Yes |
 | `total`, p90, steps that scroll | Comments paused | 55 ms | 53.4 ms | Yes | No (70.3) |
 
-So four of the six limits hold, two of them newly. The two misses are both `decide` on the comments list. The rule chain misses them by more on the same day (6.72 and 19.04 ms), and the time is in the walk over the scope's nodes before either rule set runs, which M13.4 and M13.5 didn't change. The scrolling limit holds at 55 ms, so it doesn't fall back to 72 ms. By the user's decision (2026-11-05), M13.5 switches anyway, and `M13.5a` makes that walk cheaper on the comments list, with its own bench, before M13 is done.
+So four of the six limits hold, two of them newly. The two misses are both `decide` on the comments list. The rule chain misses them by more on the same day (6.72 and 19.04 ms), and the time is in the walk over the scope's nodes before either rule set runs, which M13.4 and M13.5 didn't change. The scrolling limit holds at 55 ms, so it doesn't fall back to 72 ms. By the user's decision (2026-11-05), M13.5 switches anyway, and `M13.5a` was added to make that walk cheaper on the comments list. Its one attempt was slower on `<physical-tv>` and was reverted, and the user closed the task, so the comments list stays over these two limits. `PROGRESS.md` has the numbers.
 
 ## What These Runs Can't Show
 
