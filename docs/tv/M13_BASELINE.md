@@ -1,6 +1,6 @@
 # M13.0: D-Pad Baseline and Focus Bug Inventory
 
-**Status**: ✅ Done. The six runs are done on `<vm-tv>` and on `<physical-tv>`, the inventory's causes are done on `<vm-tv>`, and the user confirmed the budget below on 2026-11-01. The inventory stays open for bugs they remember.
+**Status**: ✅ Done. The six runs are done on `<vm-tv>` and on `<physical-tv>`, the inventory's causes are done on `<vm-tv>`, and the user confirmed the budget below on 2026-11-01. The inventory stays open for bugs they remember. M13.5's bench is at the end of this file: the scorer meets four of the six limits, and misses `decide` on the comments list, which `M13.5a` takes on.
 
 M13 rebuilds the focus engine, but nobody has timed a D-pad step on a TV. The only figure, about 3.2 ms per step, came from a development Mac. So this task answers one question first: **how much of the lag is the engine's?** Anything that turns out to be something else, such as rendering, heavy upstream widgets or video decoding, becomes its own item instead of being folded into M13.
 
@@ -44,7 +44,7 @@ Then undo both before committing. The probe must never ship:
 git apply -R tool/tv_m13/logging.patch
 ```
 
-The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. `M13.1` changed that file's imports, so the patch was regenerated then, with the same hooks. It applies to the `tv_navigation.dart` it's committed with, and a branch without `M13.1` needs the version before it.
+The patch adds `lib/tv/tv_step_probe.dart`, and six hooks and an import in `lib/tv/tv_navigation.dart`. `M13.1` changed that file's imports, so the patch was regenerated then, with the same hooks. `M13.2` renamed the per-frame callback from `_syncFocusRectAfterLayout` to `_onFrame`, so it was regenerated again, still with the same hooks: `engine` still times all of `_onPersistentFrame`. It applies to the `tv_navigation.dart` it's committed with, and an older branch needs the version committed with it.
 
 ## What a Step Shows
 
@@ -200,9 +200,12 @@ The user's list so far. They expect to add more as they remember it. Each one ge
 | 4 | 稍后再看 | Focus a `×` in the right column and press Up | Focus stays in its column | Focus lands on the left-column card of the same row | `jump` | Yes, twice, on `<vm-tv>`. Found in M13.0 | The rule compares the `×` with card centres, and that card's centre is above it |
 | 5 | Horizontal rows, such as `最近追剧` in `pgc` | Focus `查看更多` under a row and press Up | Focus lands on a card, and the row scrolls to show all of it | Focus lands on a card cut off by the right edge, the row stays where it is, and the ring runs off the screen | `lost ring` | Yes, on `<vm-tv>`. Found in M13.0a, fixed in `M13.0b` | A move reveals the card with one policy, and that policy checks only one end of a row. It's task `M13.0b` |
 | 6 | User page | Press Down into a tab's content, then Up to its first row, and press Up again | Focus reaches the tabs and `编辑资料` | Up does nothing, however often it's pressed, and only Back leaves | `stuck` | Yes, on `<vm-tv>`. Found in M13.0a | `_findVerticalCandidate` only accepts a target whose list is above the focused one, and the outer list wraps it |
-| 7 | Side rail on 我的, with several sections on | With a section scrolled sideways and the page scrolled down, press Left to the rail, then Up from `首页` | Focus moves one item at a time, to search and then the bell | Up lands on the avatar, and Down from the avatar lands on `首页`, so search and the bell can't be reached until the page moves | `jump`, `stuck` | Yes, on `<vm-tv>`, on the `M13.0a` and `M13.0b` builds. Found in M13.0b | Not known. Only the key run below is proven |
+| 7 | Side rail on 我的, with several sections on | With a section scrolled sideways and the page scrolled down, press Left to the rail, then Up from `首页` | Focus moves one item at a time, to search and then the bell | Up lands on the avatar, and Down from the avatar lands on `首页`, so search and the bell can't be reached until the page moves | `jump`, `stuck` | Yes, on `<vm-tv>`, on the `M13.0a` and `M13.0b` builds. Found in M13.0b | Likely found in M13.3, in a widget scene: a card scrolled out of its row lies under the rail and "contains" search and the bell, so the rule for small buttons inside a card drops them. Not proven on a device |
+| 8 | Home grid, scrolled so a row sits partly under the tab bar | Focus a card in that row and press Right (or Left) | Focus lands on the next card in the row | Focus lands on a tab, such as `直播` or `影视` | `jump` | Yes, on `<physical-tv>` during M13.2, on the builds before and after it. Recorded in M13.3 | The horizontal rule measures the card by its whole rect, so the tabs above the list overlap its band, and the tab nearest its edge is closer than the next card |
+| 9 | Home tabs, settings, and other lists side by side | Leave a list (Up from a card to the tabs, Left from a setting to the categories), then come back | Focus returns to the item it left the list from; with nothing to return to, the item right next to it | Down from a tab lands on the first card of the row, and Left from a setting lands on the category level with it | `jump` | Yes, on `<physical-tv>` during M13.2 (Down from `影视` to the left column), and in M13.3's scenes | The rules pick by position only, and on Down from outside a list they prefer the first item of the row. This is the column memory M13.4 adds |
+| 10 | Home grid, and any vertical list | Press Left or Right onto a card cut off by the list's top or bottom edge | The list scrolls to show the whole card | The list stays where it is, so the ring sits under the tab bar or runs off the bottom of the screen | `lost ring` | In M13.3's scenes. Not tried on a device | A move reveals a card with one policy picked from the direction, and Left and Right don't correct a card cut off along the list, the vertical counterpart of bug 5 |
 
-Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 1 and 2 were proven with throwaway builds on `<vm-tv>`. Those builds aren't on any branch, and M13.0 changes no app code.
+Kind is `jump`, `lost ring`, `lag` or `stuck`. Bugs 8–10 were added in M13.3, and every bug from 2 on is a known failure among the recorded paths (`test/tv_paths_test.dart` and `test/tv_player_hud_test.dart`) until M13.4. M13.4's scorer, behind a flag until M13.5, passes every one of those paths, so bugs 2–4 and 6–10 are fixed under it; with the rule chain, the default until M13.5, they stay known failures. How each one is fixed is in `PROGRESS.md`. Bugs 1 and 2 were proven with throwaway builds on `<vm-tv>`. Those builds aren't on any branch, and M13.0 changes no app code.
 
 **Bug 1**: `lib/pages/mine/view.dart` puts each section's horizontal list inside one vertical `ListView`. `_ensureVisibleInUserScrollables` walks up the scrollables, but passes the focused card to each one. `ensureVisible` then measures against the card's nearest viewport, the horizontal list, so the outer list gets the wrong offset and stays where it is. Focus goes off screen, `_computeFocusedRect` hides the ring, and `inDirection` pulls the off-screen rect back to the list's edge, so Down only bounces between cards in that row. The lead about lazy building was wrong: the section was built, and the page just didn't scroll to it.
 
@@ -250,7 +253,58 @@ The fix passes each level its own child, as `Scrollable.ensureVisible` does. It'
 
 **Bug 6**: read from the code, not yet proven with a test. Past the focused list, `_findVerticalCandidate` keeps a target in another scrollable only if that scrollable's rect is above the focused one. The tabs and `编辑资料` are in the `ExtendedNestedScrollView` around the focused list, whose rect runs to the bottom of the screen, so they're dropped and Up has no target. It's on both builds. It's in the rule chain that M13.4 replaces, and a patch would touch every nested page, including the video page, so it's left for M13.4, with a recorded path in M13.3.
 
-**Bug 7**: the cause isn't known. This run shows it, from a fresh start with all four `我的页卡片` sections on and focus on the 我的 rail item: Select, Right, Down ×9, Up ×9, Down ×5, Right ×5, Up, Down, Down ×3, Right, Up, Left ×5, then Up from `动态` to `首页`, and Up again. It's the same on the `M13.0a` and `M13.0b` builds. The steps in the table are a summary of that run, and they haven't been tried on their own. With no section scrolled sideways, the rail walks correctly on the `M13.0a` build, and a scrolled row on `影视` doesn't trigger it, so a scrolled row alone isn't the cause. `origin/main` couldn't be compared, because bug 1 stops it reaching that page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that hasn't been tested. It gets a recorded path in M13.3, and the fix belongs in M13.4 unless the cause turns out to be outside the rule chain.
+**Bug 7**: the cause was unknown in M13.0. This run shows it, from a fresh start with all four `我的页卡片` sections on and focus on the 我的 rail item: Select, Right, Down ×9, Up ×9, Down ×5, Right ×5, Up, Down, Down ×3, Right, Up, Left ×5, then Up from `动态` to `首页`, and Up again. It's the same on the `M13.0a` and `M13.0b` builds. The steps in the table are a summary of that run, and they haven't been tried on their own. With no section scrolled sideways, the rail walks correctly on the `M13.0a` build, and a scrolled row on `影视` doesn't trigger it, so a scrolled row alone isn't the cause. `origin/main` couldn't be compared, because bug 1 stops it reaching that page position. From the code, neither fix changes which target the rules pick, only how far lists scroll, but that hasn't been tested. It gets a recorded path in M13.3, and the fix belongs in M13.4 unless the cause turns out to be outside the rule chain.
+
+  In M13.3 a widget scene of 我的 reproduced it with a shorter run: Right into 收藏, Down to 观看记录, Right ×5 along that row, Down to 稍后再看, Left to the rail, then Up from `首页` skips search. In the scene, the first card of the scrolled row sits at x −114 to 66, under the rail, right where search and the bell are. `_filterOutEmbeddedSecondaryActions` drops a small button (`isMicroAction`) whose rect lies inside any candidate's rect, and it runs before the rules drop candidates hidden by their own row. So the off-screen card swallows the rail's small buttons, and only the avatar, above it, is left. Which buttons are skipped depends on where that card sits: the scene's path skips only search, the inventory's run skipped both. This hasn't been checked on a device. It's in the rule chain, so the fix belongs in M13.4.
+
+**Bug 8**: seen on `<physical-tv>` during M13.2, and the same on the build before it. `_findHorizontalCandidate` takes the focused card's rect without clipping it to its list, and a candidate's distance is `max(0, gap)`. A tab whose left edge lies just past a cut-off card's right edge, and whose centre is to the right of it, is 1.5 px away against the next card's 16 px. Left from a card in the right column lands on `影视` the same way.
+
+**Bug 9**: Down from a tab into the grid lands on the first card of the row by design (`preferLeadingOnRow`), and Left or Right into a list picks the item level with the focused one. The user's decision in M13.3 (2026-11-04): returning to a list should restore the item focus left it from, and with nothing to restore, the item right next to the focused one. That's the column memory in M13.4, so it isn't fixed on its own.
+
+**Bug 10**: found while recording the home paths in M13.3. `M13.0b` gave horizontal rows the policy for both ends on Up and Down, and left Left and Right with one policy for the vertical list. So Right onto a card cut off at the top, and Left onto one cut off at the bottom, leave it cut off. Up and Down onto the same cards reveal them.
+
+**Not reproduced**: on `<physical-tv>` during M13.2, one Left from the grid seemed to go straight to the rail. In M13.3's home scene, Left steps one column at a time, also from a card cut off at the top or the bottom, and reaches the rail only from the first column. That path is recorded as passing. If it happens again, note the column it started from.
+
+## Results of the M13.5 Bench, on `<physical-tv>`
+
+One more bench on 2026-11-05, as the gate asks, with the same six runs. Two `-Pdev` release builds of `M13.5` with the probe: the scorer (the default) and the rule chain (`--dart-define=TV_FOCUS_SCORER=rules`), so both were measured on the same day. Home ran four runs of each in B-A-A-B order twice, settings two of each, and each video run once per build. Thermal status was 0 throughout.
+
+**Not the same as on 2026-11-01**: `PiliPlus TV dev` is signed in now, so the video runs had `无痕模式` on, at the `1080P 60帧` default with hardware decoding. The video was `BV1kMxM6FECM`, played from about 28 minutes in, with its own danmaku and comments, so the video runs compare with M13.0's only roughly. The TV also runs a little slower than on the bench day: the rule chain's home `decide` p90 is 4.03 ms, against 3.48 ms then.
+
+Under the scorer, all times in ms. A step that scrolls is one where `ring` runs at least 3 ms past `decide`.
+
+| Run | Steps | `decide` p50 / p90 / p99 | Engine per frame p50 | `raster` p50 / p90 | `input` p50 / p90 | `work` p90 | `total` p50 / p90 | Plain steps `total` p90 | Scrolling steps `total` p90 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 608 | 3.27 / 4.13 / 6.07 | 0.08 | 15.1 / 17.8 | 5.3 / 6.9 | 23.5 | 36.9 / 44.3 | 43.6 | 65.1 (20 steps) |
+| `m13-settings` | 317 | 2.36 / 2.85 / 3.27 | 0.07 | 3.6 / 4.4 | 5.2 / 5.8 | 8.4 | 25.8 / 34.9 | 30.3 | 46.7 |
+| `m13-detail-idle` | 212 | 4.91 / 5.53 / 6.32 | 0.08 | 6.5 / 7.4 | 5.2 / 5.8 | 14.1 | 30.7 / 34.8 | 34.8 | None |
+| `m13-detail-play` | 192 | 5.07 / 7.96 / 11.92 | 0.09 | 11.3 / 19.7 | 8.9 / 14.8 | 28.6 | 36.0 / 51.5 | 51.5 | 53.3 (15 steps) |
+| `m13-comments-idle` | 211 | 5.89 / 6.58 / 7.71 | 0.09 | 5.6 / 6.9 | 5.2 / 6.0 | 15.0 | 46.8 / 53.4 | None | 53.4 |
+| `m13-comments-play` | 188 | 8.72 / 12.73 / 18.22 | 0.09 | 9.6 / 19.5 | 9.7 / 17.0 | 33.1 | 66.9 / 85.4 | None | 85.4 |
+
+The rule chain on the same day:
+
+| Run | Steps | `decide` p50 / p90 / p99 | `work` p90 | `total` p90 | Plain / scrolling `total` p90 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `m13-home` | 618 | 3.32 / 4.03 / 4.68 | 21.9 | 42.2 | 42.1 / 59.6 (4 steps) |
+| `m13-settings` | 318 | 2.36 / 2.90 / 3.64 | 8.5 | 36.4 | 30.5 / 46.0 |
+| `m13-detail-idle` | 211 | 4.96 / 5.70 / 6.23 | 13.4 | 34.2 | 34.2 / None |
+| `m13-detail-play` | 193 | 5.06 / 8.77 / 13.28 | 30.0 | 54.1 | 53.9 / 69.7 |
+| `m13-comments-idle` | 209 | 6.04 / 6.72 / 7.29 | 14.5 | 52.0 | None / 52.0 |
+| `m13-comments-play` | 188 | 9.22 / 13.03 / 19.04 | 35.7 | 84.7 | None / 84.7 |
+
+**Against the gate**, under the scorer:
+
+| Measure | Runs | Limit | M13.5 | Holds | M13.0 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `decide`, p90 | Home, settings, both paused runs | 6 ms | 2.85–6.58 ms | All but comments paused (6.58) | All but comments paused (7.65) |
+| `decide`, p99 | All six | 16.7 ms | 3.27–18.22 ms | All but comments playing (18.22) | All but comments playing (20.59) |
+| `engine`, p50 | All six | 0.1 ms | 0.07–0.09 ms | Yes | Yes |
+| `work`, p90 | Settings, both paused runs | 16.7 ms | 8.4, 14.1, 15.0 ms | Yes | All but comments paused (17.8) |
+| `total`, p90, steps that don't scroll | Settings, detail paused | 35 ms | 30.3, 34.8 ms | Yes | Yes |
+| `total`, p90, steps that scroll | Comments paused | 55 ms | 53.4 ms | Yes | No (70.3) |
+
+So four of the six limits hold, two of them newly. The two misses are both `decide` on the comments list. The rule chain misses them by more on the same day (6.72 and 19.04 ms), and the time is in the walk over the scope's nodes before either rule set runs, which M13.4 and M13.5 didn't change. The scrolling limit holds at 55 ms, so it doesn't fall back to 72 ms. By the user's decision (2026-11-05), M13.5 switches anyway, and `M13.5a` was added to make that walk cheaper on the comments list. Its one attempt was slower on `<physical-tv>` and was reverted, and the user closed the task, so the comments list stays over these two limits. `PROGRESS.md` has the numbers.
 
 ## What These Runs Can't Show
 

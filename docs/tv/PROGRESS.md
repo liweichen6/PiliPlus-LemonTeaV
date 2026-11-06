@@ -125,11 +125,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.0 | `M13.0b` | Fix Bug 5: Reveal Cut-Off Cards in Rows | ✅ Done | `lib/tv/tv_navigation.dart`, `test/tv_navigation_test.dart`, `<vm-tv>` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1` | Adapters for Upstream-Specific Knowledge (No Behavior Change) | ✅ Done | `lib/tv/adapters/`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `tool/tv_m13/logging.patch` |
 | **M13: Focus Engine** | Epic M13.1 | `M13.1a` | Tests for What the Adapters Carry | ✅ Done | `test/tv_navigation_test.dart` |
-| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ⏳ Planned | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart` |
-| **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ⏳ Planned | `test/tv_navigation_test.dart` |
-| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ⏳ Planned | `lib/tv/*` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ⏳ Planned | `lib/tv/*`, `<vm-tv>`, `docs/tv/*` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ⏳ Planned | `lib/tv/tv_navigation.dart` |
+| **M13: Focus Engine** | Epic M13.1 | `M13.2` | One Event-Driven Reconcile Loop; Inline Sheets on the Layer Stack | ✅ Done | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `tool/tv_m13/logging.patch` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.3` | Recorded D-Pad Paths for Key Screens | ✅ Done (13 known failures, for bugs 2–4 and 6–10, until M13.4) | `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/M13_BASELINE.md` |
+| **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<physical-tv>` 4.28 ms on home, 2.95 ms in settings, a little slower than the rule chain and inside the 6 ms limit) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ✅ Done (the scorer is the default; its extra cost is gone on settings and on like-for-like home steps on `<physical-tv>`; the bench meets four of six budget limits and misses `decide` on comments, for `M13.5a`) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_platform.dart`, `test/tv_paths_test.dart`, `test/tv_navigation_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.5a` | Make the Shared Candidate Walk Cheaper on the Comments List | ✅ Done (closed after one attempt by the user's decision; memoizing render-object work was 20 % slower on `<physical-tv>` and was reverted; `decide` on comments still misses the budget) | `lib/tv/tv_navigation.dart`, `<physical-tv>` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ✅ Done (rule chain, hidden switch and CI's second run removed; every remaining decision unchanged; 153 TV tests pass) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_platform.dart`, `test/tv_*.dart`, `.github/workflows/tv-checks.yml` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
@@ -1693,3 +1694,319 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * Signed-in `1080p` (`原画`), `2K` (`15000`) and `4K` (`20000` / `25000`) live streams and live → `4K60` video on `<physical-tv>`, because `PiliPlus TV dev` is currently signed out (`mid=0`) and Bilibili clamps unauthenticated live streams to `qn=150` (`854 × 480` / `540 × 960`) and videos to `1080P`.
 * **Cleanup**: `PiliPlus TV dev` is force-stopped with `4K 视频直通` back on (`默认画质: 1080P 60帧`, `直播默认画质: 原画`, `免登录1080P` on); temporary `/data/local/tmp/m12` and screenshot files are removed from `<physical-tv>`; `dumpsys -t 6 media.player` answered in `< 1 s`; the user's normal app wasn't touched; all 38 SDK and pub-cache patches are reverted.
 * **Next** (owner: user): optional signed-in 2K/4K live check on `<physical-tv>`, and upstream `main` sync when ready.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.2`): One Reconcile Loop, Inline Sheets on the Layer Stack
+* **Status**: ✅ Done. All 119 TV tests pass unchanged, the TV analyze step finds no issues, a differential trace matches the engine before `M13.2` line for line, and a D-pad step runs the same machine code as before.
+* **Branch**: `claude/tv-m13-2-reconcile-7332fc`, on top of `main` after `v2.2.0-fork.5907`. It lands through its pull request, and landing it publishes a release: the release job merges upstream first.
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, `lib/tv/adapters/tv_focus_adapter.dart`, `lib/tv/adapters/tv_sheet_adapter.dart`, `tool/tv_m13/logging.patch`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. Nothing in `test/` changed.
+* **One Reconcile Pass**: `_reconcile(pass)` in `_TvNavigationState` is now the only place that moves focus or the ring after an event. Its steps always run in one order: layers (modal, then the inline sheets) → whether the focused node is still valid → recovery → reveal → ring. A pass carries its reason, which picks the steps:
+
+| Reason | Trigger | Steps |
+| :--- | :--- | :--- |
+| `focus` | The focus listener, and app resume | All five |
+| `layers` | A frame found a modal layer opening, closing or losing focus | Layers |
+| `sheets` | A frame found an inline sheet with work | Layers, then validity and recovery |
+| `scope` | A frame found focus resting on a scope | Layers, then validity and recovery |
+| `invalid` | A frame found the focused node out of reach | Layers, then validity and recovery |
+| `select` | Select with nothing reachable focused | Layers, then recovery, at once |
+| `scroll` | A scroll notification | Validity, at once; the focus change it causes brings the rest |
+| `ring` | A frame found the ring out of date | Ring |
+
+  These replace seven post-frame closures in `_syncFocusRectAfterLayout`, the closure in `_onFocus`, and the recovery code in `_handleKeyEvent` and `_handleScrollNotification`. `_focusSyncScheduled` and `_rectSyncScheduled` became `_passPending` and `_ringPending`, with the same rules: the first request of a kind wins until it runs. Each recovery keeps the rules its trigger had, as a branch of step 3, for M13.4 to replace with the scorer and column memory.
+* **The Frame Check**: layout can move the focused node with no event (a scroll animation, a list that grows, a sheet that slides), so a persistent frame callback stays. It's now `_onFrame`, a check that reads a few cheap signals and asks for a pass when one changed. It never asks for a frame itself, so a still screen costs nothing, and per-frame work happens only while something else animates. This is how "it replaces the per-frame callback" was read, and the user agreed to it in the plan.
+* **Inline Sheets as a Non-Modal Layer**: the sheets' lifecycle moved out of `_TvNavigationState` into `_TvSheetLayers`, which `_TvFocusLayerStack` owns next to its modal records. `stack.reconcile()` runs the modal layers, then the sheets, as `_reconcileFocusLayers` did. Each tracked sheet is a `TvSheetLayer` (`tv_sheet_adapter.dart`), a `TvFocusLayer` with the new `isModal` set to `false`: it covers only its layout's body, which the adapter's `hides` keeps out of reach, focus moves in once (also when its content mounts late) unless the user went elsewhere first, nothing pulls focus back, and focus goes back to the trigger as soon as it starts closing. The modal stack's `occludes` still loops over modal records only. The lifecycle code moved with its rules unchanged; `_TvSheetRecord` now holds the layer instead of the sheet widget.
+* **The Status Listener**: a `TvSheetLayer` listens to its sheet's `AnimationController` and marks the sheets dirty on each status change. That's what lets a frame skip the sheets' bookkeeping (the walk up the focused node's ancestors, and the loops over tracked and known layouts) while every tracked sheet is settled and nothing changed. A skipped frame still checks, cheaply, that each tracked sheet is still the one in its layout, that no known layout shows a new sheet, and that every sheet layout around the focused node shows the same sheet in the same state. Focus changes, registrations and passes mark the sheets dirty too. Closing still gives focus back on the same frame as before: the listener wakes the bookkeeping, and the pass runs at the end of the frame, as the old per-frame check did.
+* **What Stayed the Same**: the rule chain and `inDirection`, `evaluateNode` and the traversal cache, the adapters' hot-path calls, `findRecoveryFocus` and `findFirstFocus`, the 45 ms repeat throttle, `_ensureVisibleInUserScrollables` with the bug 1 and bug 5 fixes, the 12-frame empty probe, the 500 ms settle window, the popup and overlay providers, and `TvNavigationObserver`. M7's one-frame ring wait on steps that scroll stays, so the baseline's 55 ms limit for scrolling steps isn't attempted here. Bugs 2, 3, 4, 6 and 7, the dead `InkResponse` check and `didPush`'s `ModalRoute.of` are untouched.
+* **One Assumption**: a skipped frame relies on the focused widget keeping its ancestors. If a `GlobalKey` moved the focused widget into or out of a sheet's slot with no focus change, the bookkeeping would only see it on the next event. Nothing in the app was found to do that.
+* **Tests**: 119 TV tests pass with no change to `test/`, including the `paths the adapters carry (M13.1a)` group, and the TV analyze step finds no issues.
+* **Differential Trace**: the `M13.1` trace test was lost with its worktree, so a new one was written and not committed. It drives seeded keys, Select, Back, scrolls, page switches, unfocus and app resume through four sets of scenes, and logs the focused node, the ring, every scroll offset and whether a frame is scheduled after every frame:
+  * tiles, cards with a `⋮` over them, both `ListTile` classes, a two-page `PageView`, and cards removed by Select (10 seeds);
+  * a player bar sliding in and out (4 seeds);
+  * inline sheets frame by frame, 18 frames per action (16 seeds): a plain sheet, a second layer with its own `MiniScaffold` and a third layer inside it, content that mounts late, a sheet with nothing focusable, a sheet opened late from the left column, the trigger removed while it's open, a popup menu over the page, and **one sheet replacing an open one**, the path no test covers;
+  * routes pushed and popped, a dialog route and a `SmartDialog` overlay (6 seeds);
+  * fixed scenes for the frame skip, in four sheet seeds: a second layer opened by code inside an open sheet, around the focused node, a sheet opened over an open one by code while focus is outside it, and focus asked for behind an open sheet.
+
+  Base and branch give the same 27,200 lines, byte for byte, and base gives the same lines on a second run.
+* **Mutants**: one break at a time, each run against the 119 tests and the trace (`M13.1`'s script, extended):
+  * The 29 from `M13.1` give the same result as in `M13.1a`: 25 fail a test, and the same four change nothing either can see (`no enclosing active sheet`, `all subtrees requestable`, `trigger not remembered`, the dead `InkResponse` check).
+  * 29 new ones break the pass, the sheet layer and the frame skip. 12 fail a test or change the trace, among them: no restore to the trigger, no body fallback, a replaced sheet keeping its promotion, the focus pass skipping the reveal, the frame's out-of-reach recovery dropped, select ignoring a pending scroll recovery, the frame skip ignoring its dirty flag, and **the sheet's status listener not reporting**, which the trace catches.
+  * Eight change nothing either can see, on paths the old engine had: a scroll's unfocus, remembering the focused node, the scope branch clearing the ring, the sheets pass's own recovery, app resume clearing the pending flags, dropping nested sheets on close, and noting a user who left a sheet waiting for content (twice: the note itself, and the layer's `contains` it uses). The first seven, broken the same way on the engine before `M13.2`, are just as invisible, so these are old blind spots, not new ones. They moved without change.
+  * The other nine are in the frame skip and the pass flags. The skip's single checks (tracked sheets, known layouts, the layouts around focus, the focused node, and settling only when every sheet is settled) each change nothing alone, because they cover each other. Tracked, known and around switched off together change the trace at the second-layer scene above. Setting the dirty flag on a focus change or on a pass also duplicates the focused-node check, and turning both off changes nothing either can see. `ring shares the pass flag` and `never skips` change nothing too; the second shouldn't.
+* **Speed, Machine Code**: the same `-Pdev` `--split-debug-info` builds of both, with the probe, disassembled. Instructions and direct calls:
+
+| Function | Instructions | Direct calls | Notes |
+| :--- | :--- | :--- | :--- |
+| `evaluateNode` and its closures | 1,768 → 1,768 | 70 → 70 | |
+| `_findVerticalCandidate` | 927 → 927 | 49 → 49 | |
+| `_findHorizontalCandidate` | 541 → 541 | 67 → 67 | |
+| `_filterOutEmbeddedSecondaryActions` | 376 → 376 | 30 → 30 | |
+| `_isEmbeddedSecondaryOf` | 71 → 71 | 5 → 5 | |
+| `inDirection` and its closures | 875 → 875 | 71 → 71 | |
+| `isEffectivelyFocusable` (both) | 15 → 15, 20 → 20 | 2 → 2, 4 → 4 | |
+| `_computeFocusedRect` | 202 → 202 | 17 → 17 | |
+| `_TvFocusLayerStack.occludes` | 71 → 81 | 5 → 5 | With no layer open, the path is the same instructions. With a dialog or popup open, each record costs one class-id compare more |
+| Per frame: `_syncFocusRectAfterLayout` and its helpers → `_onFrame`, `frameHasWork` and its helpers | 1,308 → 844 | 102 → 63 | Smaller, because the passes left it. With no sheet in play, a frame makes one call more (`frameHasWork`) |
+| Per focus change: `_onFocus` and its closure → `_onFocus`, `_requestReconcile`, `_reconcile` | 552 → 611 | 55 → 60 | One call more per focus change |
+| `_handleScrollNotification` | 106 → 37 | 12 → 4 | Its body moved into the pass: two calls more per notification |
+
+  The D-pad decision runs the same machine code. `occludes` first came out at 107 instructions with four calls more, because the compiler inlined the sheet layer's `occludes` into the modal loop, where a sheet never is. `TvSheetLayer.occludes` is now `vm:never-inline`, which leaves the one compare.
+* **Speed, Timing** on `<vm-tv>`, `decide` in ms and `engine` per frame in µs, with the same keys as `M13.0`, alternating builds in A-B-B-A order, on the final builds:
+  * Home, 8 runs and 491 steps each: mean 0.967 → 0.980, p50 0.97 → 0.98, p90 1.27 → 1.28, p99 1.46 → 1.46 (permutation test on run means, p = 0.80). `engine` p50 14.0 → 14.0.
+  * Settings, 音视频设置, 4 runs and 334 and 336 steps: mean 0.841 → 0.790, p50 0.87 → 0.80, p90 1.06 → 1.02. `engine` p50 12.5 → 13.0.
+  * Both follow the time of the session more than the build: home's base runs went from 0.885 to 1.016 over the session. The `decide` machine code is the same, so neither difference is the change.
+  * Not timed: comments and the video page, which need a video playing, and a frame with a sheet open. They rest on the machine code. Timing wasn't repeated on `<physical-tv>`.
+* **Device Pass** on `<vm-tv>`: the 12 timing runs, then the clean branch build: the home grid and the side rail with D-pad keys, then 我的 → the gear → 音视频设置 → the right pane, `CDN 设置` opened and closed with Back (focus went into the dialog, moved inside it, and came back to `CDN 设置`; the setting stayed 备用URL). A screenshot came before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on a build of this branch without the probe, and the emulator is stopped.
+* **Device Pass** on `<physical-tv>` (32-bit `-Pdev` builds of the base commit and of this branch, without the probe):
+  * Two fixed D-pad walks over the home grid from a fresh start, 23 and 18 keys: into the tabs, down the grid as it scrolls, Left across columns and onto the rail, up the rail to the avatar, back along the tabs, and Down from `影视`. A screenshot after every key, on both builds. The ring lands on the same item at every step in both, although the feed shows other videos on each start.
+  * In the free walk before them, Right from a top-row card half under the tab bar went to `影视`, Down from `影视` went to the left column, and one Left went to the rail. The fixed walks give the same moves on base, so they come from the old rules, not from `M13.2`. They're left for M13.3's recorded paths and M13.4.
+  * On this branch: 我的 → the gear → 音视频设置 → the right pane, then `CDN 设置` opened with Select, Down and Up inside the dialog, and closed with Back. Focus stayed in the dialog while it was open, came back to `CDN 设置`, and the setting stayed 备用URL.
+  * The dev app there is signed in now, so only arrow keys were used away from those Selects, and there was a screenshot before each Select. No video was played and no setting changed. `PiliPlus TV dev` is left on this branch's build and stopped, the TV is on its home screen, and nothing was pushed to it.
+* **Next**: `M13.3` (recorded D-pad paths), on the user's go-ahead.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.3`): Recorded D-Pad Paths
+* **Status**: ✅ Done. 144 TV tests pass: the 119 from before, unchanged, and 25 recorded paths, 13 of them known failures. The TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-3-paths-36ae14`, on top of `main` after PR 17 (`M13.2`) and the upstream merge after it.
+* **Files Changed**: `[NEW] test/tv_path_harness.dart`, `test/tv_paths_test.dart`; `[MODIFY] test/tv_player_hud_test.dart` (lines added only), `.github/workflows/tv-checks.yml` (analyze and test the new files), `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. No app code changed, and nothing in `lib/tv/`.
+* **How a Path Works** (`tv_path_harness.dart`): a path is a start node and a list of steps, each a key (the arrows, Select, or Back as the system back button) and the label of the node focus should land on. After each step the replay checks the focused node, that the ring is drawn on it, that all of the ring is on screen, and that the node isn't cut off by any list around it. Where more than one landing is right, a step lists them with `|`; there are four such steps, noted below. The expected path is the correct one, including the inventory's fixes.
+* **Known Failures**: a `KnownFailure` names its bug and the step that goes wrong, and either where the old rules land (`landsOn`) or that they land on the right node but leave it cut off (`cutOff`). The replay checks every step before it as usual, then checks that this step goes wrong in exactly that way. If the bug is fixed the test fails with "no longer shows: make it an ordinary step", and if it goes wrong some other way it fails too. So the old scorer keeps passing, and M13.4 drops each `KnownFailure` as its scorer fixes that step. Each test's name starts with `[known failure: bug N]`.
+* **The Scenes**: the real pages need GetX controllers, Hive and the network, so each scene copies its page's layout at the TV's logical size, 960×540, with the real containers where they're cheap: `NavigationRail` with the avatar, bell and search above it, the scrollable `TabBar`, `ExtendedNestedScrollView`, `SimpleScaffold`, `MiniScaffold`, upstream's `ListTile`, `SelectDialog`, `SliderDialog`, the home grid's `SliverGridDelegateWithExtentAndRatio` at the TV's card width, and the real `TvPlayerHud` with the HUD tests' fakes. Cards copy `VideoCardV`, `VideoCardH` and `VideoCardHLater`, comments copy `ReplyItemGrpc`. The video page's paths are in `tv_player_hud_test.dart` because the fakes are there.
+
+| Screen | Paths | Known failures |
+| :--- | :--- | :--- |
+| Home grid with the rail | Columns and rows, Left from the first column onto the rail, Up onto the tabs; the rail from `首页` to the avatar and back | Bug 8: Right and Left from a card cut off by the tab bar land on `直播` and `影视`. Bug 10: Right onto a card cut off at the top and Left onto one cut off at the bottom leave it cut off. Bug 9: Down from a tab lands on the row's first card, after leaving from another card and with no card to return to |
+| 我的, four sections | Down and Up through every section as the page scrolls (bug 1), a row walked to its end and back (bug 5) | Bug 7: with 观看记录 scrolled sideways, Up from `首页` skips search |
+| User page | A tab's list walked down and up as the header folds away | Bug 6: Up from the first row stays there |
+| Settings | The categories end to end; `SelectDialog` and `SliderDialog` opened, walked and closed with Back onto their tiles | Bug 9: Left from a setting lands on the category level with it, not the one it came from |
+| 稍后再看 | Columns, and Right onto a card's `×` | Bug 4: Up from a `×` in the right column lands on the left card of its row. Bug 2: Down from the last card doesn't reach `播放全部` |
+| Video page, split view | The quick strip, the introduction's actions, Right into the related list, Up onto its tabs | Bug 3: Right from a related card doesn't reach its `⋮` |
+| Comments | The first layer and its actions, `评论详情` and `对话列表` opened from it, Back to each trigger | Bug 2: Down from the last comment doesn't reach the reply button |
+| Player HUD | `播控` opens it, the D-pad walks its pills and the progress bar, Back closes it | None |
+
+* **The Three Moves From `<physical-tv>`**, decided with the user:
+  * Right from a top-row card half under the tab bar went to `影视`: wrong, reproduced in the scene, and it's bug 8. The rule measures the card by its whole rect, and a tab just past the card's edge counts as nearer than the next card.
+  * Down from `影视` went to the left column: wrong by the user's decision. Down should return to the card focus left the grid from, and with nothing to return to, go to the card under the tab. It's bug 9, M13.4's column memory, and the same rule makes Left in settings return to the wrong category.
+  * One Left from the grid went to the rail: not reproduced. In the scene, Left steps one column at a time, also from a card cut off at either edge, and reaches the rail only from the first column. That path passes.
+* **Found While Recording**:
+  * **Bug 10**: Left and Right onto a card cut off along its vertical list don't reveal it, the vertical counterpart of bug 5. `M13.0b` deliberately left Left and Right with one policy.
+  * **Bug 7's likely cause**: the scene reproduced it. The first card of the row scrolled sideways sits under the rail, at x −114 to 66, over search and the bell, and `_filterOutEmbeddedSecondaryActions` drops a small button inside any candidate's rect before the off-screen card itself is dropped. Not proven on a device.
+* **Steps With More Than One Right Landing**: Up from a card that every tab sits over (any tab); Up from the user page's first row (the tab focus left from, or the tab that's showing); Up from a `×` in bug 4 (the `×` or the card above); Back from the HUD (the strip's first pill, as today, or its trigger `播控`).
+* **Kept as Today, by Design**: a second-layer sheet puts focus on its close button first, as M9 decided. `SelectDialog` lands on its first option, so the path selects the first value, where the first and the chosen option are the same. Neither is in the inventory.
+* **Checks**: `flutter test --no-pub test/tv_navigation_test.dart test/tv_player_hud_test.dart test/tv_paths_test.dart` passes 144; no line of an existing test changed, only lines added to `tv_player_hud_test.dart`. The TV analyze step, with the two new files added, finds no issues. CI's `tv-checks.yml` now analyzes and runs them.
+* **Limits**: the scenes copy the pages' layout; they aren't the pages. A path can pass in a scene and fail on the device if a page differs, as bug 7's two runs show. No device run was needed or done.
+* **Next**: `M13.4` (scoring function and column memory behind a flag), on the user's go-ahead.
+
+---
+
+### [2026-11-04] Milestone M13 (Task `M13.4`): Scoring Function & Column Memory, Behind a Flag
+* **Status**: ✅ Done. Under the new scorer all 25 recorded paths pass with no known failures, and all 119 older tests pass unchanged. The rule chain stays the default and still passes with the 13 known failures. 152 TV tests pass under each scorer: the 144 from before and 8 new ones. On `<vm-tv>`, `decide` p90 under the scorer is 1.46 ms on home and 1.12 ms in settings, under the 1.75 ms stand-in for the budget. The TV analyze step finds no issues.
+* **Branch**: `claude/tv-m13-4-scorer-3c490b`, on top of `main` after PR 18 (`M13.3`). It lands through its pull request, and landing it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_focus_scorer.dart` (a part of `tv_navigation.dart`); `[MODIFY] lib/tv/tv_navigation.dart` (lines added only: the flag, the dispatch in `inDirection`, the bug 10 reveal, the overlay), `test/tv_path_harness.dart` (`walkPath` ignores `known:` under the scorer), `test/tv_paths_test.dart` (lines added only), `.github/workflows/tv-checks.yml`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/M13_BASELINE.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. `tv_player_hud.dart` isn't touched.
+* **The Flag**: `TvFocusTraversalPolicy.scorer`, `TvFocusScorer.rules` or `TvFocusScorer.scored`. It defaults to `rules`, unless a build or test run passes `--dart-define=TV_FOCUS_SCORER=scored`. Tests can set it while the app runs. `inDirection` builds the same candidate list for both and hands it to one or the other, so the timing probe's `decide` covers both. Recovery, first focus and the reconcile loop are unchanged. M13.5 adds the hidden switch.
+* **The Snapshot**: built once per decision from the candidates `inDirection` already collects. Each candidate gets:
+  * **Its rect.** Along a list it shares with the focused node it keeps its whole rect, because it gets scrolled into view. Along any other list, or with no list, it must show as the rule chain asks (its centre inside, or half the list), and is clipped to that list and the screen. A node that doesn't show is dropped first, before anything else looks at it.
+  * **Its lists and its role.** An action belongs to the card or tile it's inside in the focus tree. A small action also belongs to the visible part of a card it's laid over.
+  * **The focused node's own measure.** It's measured by its visible part, so a card cut off by its list no longer reaches into the tab bar.
+* **The Score** (lower wins), over candidates past the focused node. A candidate sharing more than half its height with the focused node (its width, for Left and Right) is level with it, so it doesn't count as above or below.
+  * **The terms**: the gap along the move; the gap across it; how much of the narrower rect misses the other (weight 100 on Up and Down, 600 on Left and Right, where a level node comes first as in the rule chain); 1,000 for each group around the focused node that the candidate isn't in; and a small tie-break. The tie-break is reading order for a candidate wholly under a wider focused node on Up and Down, so a header leads to the start of its row; otherwise it's the offset between centres.
+  * **What's left out**: actions of other cards.
+  * **A floating control**: one over the focused list (in neither that list nor a list nested in it) counts as lying just past the list's end, so it's reached once nothing in the list is left in that direction.
+  * **Up inside the focused list**: measured by scroll order, so a pinned or floating header is placed where it sits in the list, as in the rule chain.
+* **Moves Inside a Tile or Card**: kept as the rule chain makes them.
+  * Right from a tile reaches its trailing control, and Left comes back.
+  * Left and Right move between a card's buttons, and Left from the first returns to the card.
+  * Right from a card reaches its own buttons only when nothing lies past it. A `⋮` laid wholly over its card counts as one of them, as in `VideoCardH`.
+* **Column Memory**: per group, for lists and tab bars. A group is a list the user can scroll, a `TabBar`, a `NavigationRail` or a `FocusTraversalGroup`. All of them count in the cost of leaving, but only lists and tab bars keep a memory. The plan named lists and `FocusTraversalGroup`. The tab bar was added because the user page's tab bar isn't a list. The rail was added because leaving it has to cost, or Up from `首页` goes to a card up and to the right.
+  * **No memory for the rail**: on `<vm-tv>` the rail remembered the avatar, which has focus at start-up. So every Left from the grid went to the avatar, and the timing run parked there, where Left and Up do nothing. The overlay showed it. The rail is a menu, so Left now lands level with the card, as in the rule chain and M13.3's home path. A `FocusTraversalGroup` keeps no memory either.
+  * **Saving**: at each scored decision, every group around the focused node remembers it.
+  * **Restoring**: when the winner is in groups the focused node isn't in, the outermost of them is checked. If it remembers a node that's still a candidate in this direction and shows on screen, that node wins instead.
+  * **What it doesn't see**: memory is written only on D-pad moves, not on Select, touch or recovery.
+* **Bug 10**: on Left and Right, under the scorer, `_focusNode` reveals a second time along the vertical list, with the policy for its other end, as `M13.0b` does for rows on Up and Down. It's skipped for a node taller than the list, so tall cards and pinned headers keep the one policy.
+* **How Each Bug Is Fixed**:
+
+| Bug | What fixes it |
+| :--- | :--- |
+| 2 | A floating control counts as just past the end of the list under it |
+| 3 | A `⋮` laid wholly over its card counts as the card's own |
+| 4 | A candidate level with the `×` isn't above it |
+| 6 | No rule asks for a target's list to be above or below the focused one |
+| 7 | A card scrolled out of its row is dropped before it can own the rail's buttons, and it owns only by its visible part |
+| 8 | The focused card is measured by its visible part, and leaving the grid costs |
+| 9 | Column memory, and the centre offset when there's nothing to return to |
+| 10 | The second reveal on Left and Right |
+
+* **The Debug Overlay**: `--dart-define=TV_FOCUS_SCORES=true` (or `TvFocusTraversalPolicy.debugRecordScores` in a test) keeps each decision in `debugLastDecision`. A second `CustomPaint`, under the ring so the ring stays the last painter, outlines each candidate with its score, or with why it was dropped: `off` (doesn't show), `dir` (not in the direction) or `sec` (another card's action). The winner is green, and marked `(memory)` when memory chose it. Without the define it isn't built, and the scorer keeps no scores. With it on, all 151 tests still pass under the scorer.
+* **Tests**:
+  * The given command passes under the rule chain. The same command with `--dart-define=TV_FOCUS_SCORER=scored` passes under the scorer, where `walkPath` drops each `KnownFailure`. CI runs both.
+  * Eight new tests in a `scorer and column memory (M13.4)` group in `tv_paths_test.dart`. One checks that the rail keeps no memory, so Left from the grid lands level with the card after focus left the rail from the avatar (it fails without that change). The others are: switching the flag while the app runs; memory kept while moving along the tabs; memory skipped once its card is scrolled out of view; Left back to the category after moving down the page beside it; Up back to the tab in a tab bar that isn't a list; the overlay's data and painter; and a list nested in the focused list, entered in order rather than passed over like a floating button (it fails without that check). No existing test line changed. The harness's `walkPath` changed so it can drop known failures.
+* **Mutants**, under the scorer, one at a time, each run against all the TV tests. All 15 fail at least one test: the focused node unclipped; ownership by whole rects; no memory; no floating controls; no level rule; every `⋮` counted as the card's own; no tab bar or rail groups; every group costing; Up not by scroll order; the Left and Right overlap weight at 100; no cost for leaving; no bug 10 reveal; no reading-order tie; no own-button fallback; no moves between a card's buttons.
+* **Three Older Tests Shaped the Weights**: none had to change.
+  * The account dialog needed the nearest row to beat a far node that overlaps, so the overlap weight on Up and Down is 100.
+  * A reply card's header isn't a button, so Right from a card looks only at its buttons, as in the rule chain.
+  * A floating sort header in the comments needed scroll order on Up and the level-first weight on Left and Right.
+* **Decided While Building, to Check With the User**:
+  * **The home grid's `⋮` stays out of reach.** `VideoCardV`'s `⋮` hangs past the card's corner, and M13.3's home path records Right from the last column as staying put, so only a `⋮` wholly over its card counts as the card's own. The related list's `VideoCardH` `⋮` is reached (bug 3).
+  * **With no memory, Up from the user page's first row lands on its first tab (`主页`).** It doesn't land on the one that's showing. The path allows either the tab focus came from or the showing one, and with memory it gets the one focus came from.
+* **Speed**, measured locally in the widget tests (JIT, on the development Mac), so these are relative only. Each decision was run 20 times in place over every path and older test, with both scorers.
+  * The scoring step itself takes 11–17 µs at p50 and 40–54 µs at p90, against 3–9 µs and 15–32 µs for the rule chain.
+  * All of `decide` takes 202–463 µs at p50 and 737–857 µs at p90 under either scorer, by test file. The two scorers differ less than runs of the same one.
+  * So the scorer adds a few percent to `decide`. Nearly all of `decide` is the walk over the scope's nodes before either scorer runs, which M13.4 didn't change. M13.4 isn't the speed fix the budget asks for: the comments run's `decide` p90 of 7.65 ms on `<physical-tv>` would need that walk made cheaper.
+* **Limits**: the weights were tuned on the recorded scenes and the older tests, which copy the pages but aren't the pages. M13.5's device pass is where a page that differs would show.
+* **Timing on `<vm-tv>`**: the user's go-ahead came after the commits above. Two `-Pdev` release builds of this branch with `tool/tv_m13/logging.patch`, the same source with and without `--dart-define=TV_FOCUS_SCORER=scored`, installed in turn.
+  * Home ran in B-A-A-B order twice, eight runs of 120 s with M13.0's keys. Settings (音视频设置, the right pane) ran B-A-A-B, four runs of 90 s. Each home run started from a fresh launch with the ring on the first card, and each settings run on `CDN 设置`, each checked by screenshot. `decide` in ms:
+
+| Run | Scorer | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 657 | 1.096 | 1.14 | 1.49 | 1.78 |
+| Home | Scorer | 650 | 1.005 | 1.01 | 1.46 | 2.23 |
+| Settings | Rule chain | 338 | 0.815 | 0.80 | 1.09 | 1.41 |
+| Settings | Scorer | 337 | 0.874 | 0.87 | 1.12 | 1.55 |
+
+  * Run means on home: rule chain 1.138, 0.957, 1.128, 1.165; scorer 1.099, 0.977, 0.955, 0.988 (permutation test, p = 0.14). In settings: rule chain 0.823, 0.808; scorer 0.884, 0.864 (p = 0.33, the smallest possible with two runs each). Neither difference is clear of the noise. M13.2 measured home at p90 1.27–1.28 ms in its session, so the session moves the numbers about as much as the build does. `engine` per frame is 12–26 µs in every run.
+  * Both are under the 1.75 ms stand-in for the budget's 6 ms on `<physical-tv>`. Comments and the video page weren't timed, because they need a video open. That's where the budget fails today, and M13.4 doesn't change the shared walk that dominates there.
+  * A first scorer run (discarded) found the rail's memory problem above. After the fix the scorer moved on 162–164 of the run's keys, against 163–166 for the rule chain.
+  * **On the device**: only arrow keys away from navigation. Select was pressed on the 我的 rail item, the gear and 音视频设置, each after a screenshot. No video was played and no setting changed. The old rules can't go Up from 我的's user card to the header buttons (the gear row), so they were reached from the top of the rail. That's a case like bug 6 that the scorer handles; it isn't in the inventory.
+  * `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default. The emulator was synced and stopped.
+* **Timing and Walks on `<physical-tv>`**, at the user's request, on 32-bit `-Pdev` release builds of the same source as on `<vm-tv>`, with the probe. Thermal status was 0 throughout. The same orders, keys, starts and screenshot checks as on `<vm-tv>` were used. `decide` in ms:
+
+| Run | Scorer | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 619 | 3.285 | 3.33 | 4.07 | 4.79 |
+| Home | Scorer | 609 | 3.467 | 3.36 | 4.28 | 6.64 |
+| Settings | Rule chain | 316 | 2.316 | 2.28 | 2.86 | 3.20 |
+| Settings | Scorer | 316 | 2.458 | 2.44 | 2.95 | 3.52 |
+
+  * **Home run means**: rule chain 3.294, 3.268, 3.289, 3.288; scorer 3.513, 3.427, 3.428, 3.499. Every scorer run is slower than every rule-chain run (permutation test, p = 0.03, the smallest possible with four runs each). So on the TV the scorer costs about 0.18 ms a decision, 5–6 %, which `<vm-tv>`'s noise hid. Settings shows the same direction (+6 % mean). `engine` per frame is 60–83 µs in every run.
+  * **Against the budget**: `decide` p90 stays under 6 ms on both screens, and p99 under 16.7 ms. The rule chain's home p90 today is 4.07 ms, against 3.48 ms on the M13.0 bench day, so the TV runs slower today than then. Comments and the video page weren't timed: they need a video open, and the comments run is where `decide` misses the budget today.
+  * **Where the extra time likely goes**: the scorer walks the focused node's and the winner's ancestors to the root to find their groups, and looks up group rects per candidate. That's a lead for M13.5, not measured.
+  * **Walks** on the scorer build, with a screenshot after every key (28 keys over two walks, from a fresh start on home):
+    * Down ×3, Up, Right ×2, Left ×2, Up, Down, Right ×4, Down, Up, across rows partly under the tab bar. Every card the ring landed on was scrolled fully into view (bug 10), and Right or Left never landed on a tab (bug 8).
+    * Right to card 0.1, Up to the tabs, then Down back to card 0.1 (bug 9). Up again, Right along the tabs to 分区, and Down still returned to card 0.1. Left ×2 to the rail landed on `search`, the rail item level with the first card, and Right returned to card 0.0. Up from card 0.1 landed on `直播`, the first tab over the card, not the one straight above it. M13.3's path allows any tab over the card.
+  * **On the TV**: arrow keys only, apart from Select on the 我的 rail item, the gear and 音视频设置 (twice each), each after a screenshot. No video was played and no setting changed. The `m12` folder the run script made in the TV's temp folder was removed. `PiliPlus TV dev` is left on a build of this branch without the probe, with the rule chain as default, and stopped. The TV is on its home screen, and adb was disconnected.
+* **Next**: `M13.5` (switch), on the user's go-ahead. The scorer's extra 0.18 ms on the TV is cut there, by the user's decision.
+
+### [2026-11-05] Milestone M13 (Task `M13.5`): The Scorer Is the Default, the Old Rules Behind a Hidden Switch
+* **Status**: ✅ Done. The scorer is the default, the rule chain stays behind a hidden switch, and the scorer's extra cost is cut. 159 TV tests pass under the scorer and again under the old rules, and the TV analyze step finds no issues. On `<vm-tv>` the scorer is level with the rule chain, and the device pass there passed. On `<physical-tv>` it's level in settings and on the home steps both rule sets make alike. The bench meets four of the six budget limits and misses `decide` on the comments list, as the rule chain does by more. By the user's decision M13.5 switches anyway, and `M13.5a` takes on the comments list.
+* **Branch**: `claude/tv-m13-5-switch-3deaca`, on top of `main` after PR 19 (`M13.4`). It lands through its pull request, and landing it publishes a release.
+* **Files Changed**: `[MODIFY] lib/tv/tv_focus_scorer.dart` (the cost cuts, the showing tab, comments), `lib/tv/tv_navigation.dart` (the default, the remote sequence, the focused node's groups in `evaluateNode`'s walk, the fit check in the reveal), `lib/tv/tv_platform.dart` (the stored switch and its toast), `test/tv_paths_test.dart` and `test/tv_navigation_test.dart` (lines added only), `.github/workflows/tv-checks.yml`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. `tv_player_hud.dart` isn't touched.
+* **The Switch**:
+  * `TvFocusTraversalPolicy.scorer` starts from `resolveScorer`: a build's `--dart-define=TV_FOCUS_SCORER=rules` or `scored` if given; otherwise the setting `tvFocusScorer` (`rules` picks the old rules), which `TvPlatform.initialize` reads on a TV; otherwise the scorer.
+  * **The hidden switch**: the remote sequence Up, Up, Down, Down, Left, Right, Left, Right, each press within 1.5 s of the last, flips the rules while the app runs, saves the setting and shows `已切换到旧的焦点规则` or `已切换到新的焦点规则`. Each press still moves focus as usual. The setting can also be set through 关于 → 导入/导出设置. The README says how, and asks anyone who needs the old rules to say why, because M13.6 removes them.
+  * It's a setting and a sequence, not a build define alone, so a user of a release can switch back without a new build.
+* **The Scorer's Cost**, cut with every pick unchanged. A throwaway probe (never committed) wrote each decision of every TV test to a file, the focused node and the winner by rect and label, with the decision repeated 9 or 15 times in place for its timing. The trace was the same before and after each change, under both scorers, in all three test files. Local times (JIT, on the development Mac) are relative only.
+  * **Where it went** (p50 per decision, in µs, in `tv_paths_test.dart`): snapshot 3.7, roles 3.9, the focused node's groups 2.3, scoring 1.1, column memory 2.5. The roles step had the heavy tail: in `tv_navigation_test.dart` a focused button's search for its card took 3,354 of the step's 4,043 µs over the file, because it measured every focusable focus ancestor, and measuring one walks to the root.
+  * **Not done as planned**: recording groups in `evaluateNode`'s walk for every node. It would add type checks to the walk over the scope's nodes for both scorers, which is most of `decide`, to save two walks of one node. Only the focused node's walk records them, and only under the scorer.
+  * **The cuts**:
+    * The focused node's groups come from its own walk in `evaluateNode` (`isFocusableRecordingGroups`), instead of a second walk to the root.
+    * The winner's groups walk stops at the first group it shares with the focused node. Every group further out is around both, so the groups it enters are the same.
+    * A focused button's card is looked for only among focus ancestors that can be a card or tile: one walk of the focused node's elements finds the outermost tile or card, and an ancestor above it, whose own widget isn't a card, is passed over without measuring it.
+    * The cards a small action can lie over are listed once per decision instead of once per action, the group rects are looked up once per decision instead of once per candidate, and the per-decision map of scores is a flag on each candidate.
+    * Bug 10's reveal checks whether the node fits in its own walk over the lists, instead of a separate walk first.
+  * **After** (p50 / p90 per decision, µs; sum over each file):
+
+| File | Scorer before | Scorer after | Rule chain |
+| :--- | :--- | :--- | :--- |
+| `tv_navigation_test.dart` | 12 / 52; 7,373 | 7 / 20; 2,926 | 3 / 31; 2,780 |
+| `tv_paths_test.dart` | 18 / 42; 4,072 | 12 / 22; 2,251 | 8 / 22; 1,894 |
+| `tv_player_hud_test.dart` | 12 / 44; 1,643 | 8 / 22; 993 | 4 / 14; 518 |
+
+  * By part (`tv_paths_test.dart`, p50): the groups step went from 2.3 to 0.3 µs, memory from 2.5 to 1.1 and scoring from 1.1 to 0.5. The roles step lost its tail (3,354 µs over the navigation file to about 1,280 for the whole step).
+  * Bug 10's reveal, which runs inside `decide` on every Left and Right under the scorer (7 of the 11 home keys), took 7 µs at p50 and 16 at p90 per step, against 1 µs with no reveal. The fit check was about 2 µs of that. Folding it into the reveal cut its total by 30 %. Skipping the reveal when it would do nothing isn't done: a pinned header scrolls even when wholly on screen, and telling those apart costs the render walk the reveal makes anyway.
+  * **Mutants**, each run against all the TV tests: skipping every owner ancestor, the focused node's walk recording no lists, the fit check inverted, and the containers taken at their whole rect each fail. The winner's walk stopping at its first group passed every test at first: no test entered two nested lists at once. A new test covers it, and it fails now.
+* **The Showing Tab** (the user's decision): with nothing to return to, focus coming into a tab bar from one of its own pages (a `TabBarView` with the same controller) lands on the tab that's showing, if that tab lies over the focused node. Otherwise it's the tab the score picked. So Up from the user page's first row reaches the showing tab instead of `主页`. Landing on the showing tab from any page would have changed M13.3's home path, where Up from card 0.0 lands on `直播`, the tab straight above it, so the user picked the narrower rule. Down from `编辑资料` into the tabs still lands on the nearest one.
+* **Not changed** (the user's decision): the home grid's `VideoCardV` `⋮` stays out of reach, as M13.3's home path records.
+* **Tests**: 7 new, 159 in all.
+  * In a new `switch and the showing tab (M13.5)` group in `tv_paths_test.dart`: the starting rules from a define and a setting; the remote sequence, counted only whole and in time; the sequence flipping the rules while the app runs, and back; Up from a tab's first row landing on the showing tab; and two nested lists entered at once returning to the outer one's memory.
+  * In `tv_navigation_test.dart`: the setting read from a Hive box, and left unset by the TV defaults.
+  * No existing test line changed. CI runs the TV tests under the scorer, then again with `--dart-define=TV_FOCUS_SCORER=rules`, where `walkPath` keeps the 13 known failures.
+* **Timing on `<vm-tv>`**: two `-Pdev` release builds of this branch with `tool/tv_m13/logging.patch`, the same source with and without `--dart-define=TV_FOCUS_SCORER=rules`, installed in turn. Home ran in B-A-A-B order twice (scorer first), eight runs of 120 s with M13.0's keys, each from a fresh launch with the ring on the first card. Settings (音视频设置, the right pane) ran B-A-A-B, four runs of 90 s, each started on `CDN 设置`. Every start was checked by screenshot. `decide` in ms:
+
+| Run | Rules | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 659 | 1.012 | 0.99 | 1.49 | 2.01 |
+| Home | Scorer | 652 | 0.962 | 0.95 | 1.46 | 2.11 |
+| Settings | Rule chain | 339 | 0.811 | 0.76 | 1.20 | 1.87 |
+| Settings | Scorer | 338 | 0.820 | 0.78 | 1.21 | 1.72 |
+
+  * Run means on home: rule chain 1.077, 1.030, 0.916, 1.029; scorer 0.964, 0.945, 1.012, 0.928 (permutation test, p = 0.26). In settings: rule chain 0.831, 0.790; scorer 0.831, 0.810 (p = 0.67). `engine` per frame is 17–33 µs in every run. Both are under the 1.75 ms stand-in, and the difference is inside the noise, as in M13.4. Only `<physical-tv>` showed M13.4's cost, so it decides.
+* **Device Pass on `<vm-tv>`**, on a clean `-Pdev` release build of this branch (the scorer, no probe), with a screenshot after every key:
+  * **Home**: Down ×3, Up, Right ×2 and Left ×2 across rows partly under the tab bar landed on whole cards and never on a tab (bugs 8 and 10). From a fresh start the ring is on the avatar, and Right lands on `直播`, the tab level with it. After a start through `直播`, Up from card 0.1 returned to `直播` (memory), Right ×2 along the tabs reached `热门`, and Down returned to card 0.1 (bug 9). Left ×2 reached the rail's `search`, the item level with the card, Right returned to card 0.0, and Up returned to `热门`. From a start through the rail, with no tab remembered, Up from card 0.1 landed on `推荐`, the showing tab, which lies over that card.
+  * **我的**, with all four `我的页卡片` sections on (a setting put back afterwards): Down walked every section. With `观看记录` scrolled five cards sideways, Down returned to the `稍后再看` card focus had left that row from, Left reached the rail, and Up stepped `我的`, `动态`, `首页`, search, the bell one at a time (bug 7). Right from the avatar returned to the page's last card. Up walked the page back to the user card and on to the header buttons, which the old rules couldn't do in M13.4.
+  * **The user page** (Select on the user card): Down reached `编辑资料`, then the tab `收藏` and the content; Up came back through the tabs to `编辑资料`, the stats and search (bug 6).
+  * **Settings**: the `我的页卡片` dialog, a slider (`查看大图质量`) and a popup (`主题模式`) each took focus when opened, and Back or `确定` returned it to the tile. Nothing was changed apart from the section setting, which is back to `我的收藏` alone.
+  * **稍后再看**: Up from a `×` in the right column stayed in that column (bug 4), Down past the last card reached `播放全部`, and Up returned to the card it came from (bug 2). Back returned focus to the shortcut. No Select inside the list, and it still holds 37 videos.
+  * **The switch**: the sequence on a settings page showed `已切换到旧的焦点规则`. After a restart the old rules were on (Right from the avatar went to the header row, as the rule chain does), so the setting was kept. The sequence again showed `已切换到新的焦点规则`, and after a restart Right from the avatar went to the user card again.
+  * Not walked: the video page and comments (bug 3), which need a video open.
+  * **On the device**: arrow keys, Select only on the 我的 rail item, the gear, 外观设置 and 音视频设置, the user card, the `稍后再看` shortcut and the dialog rows named above, each after a screenshot. No video was played. `PiliPlus TV dev` is left on the clean build of this branch, with the scorer on, and the emulator was synced and stopped.
+* **Timing on `<physical-tv>`**, on 32-bit builds of the same source as on `<vm-tv>`, with the same orders, keys, starts and screenshot checks. Thermal status was 0 throughout. `decide` in ms:
+
+| Run | Rules | Steps | Mean | p50 | p90 | p99 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Home | Rule chain | 618 | 3.271 | 3.32 | 4.03 | 4.68 |
+| Home | Scorer | 608 | 3.361 | 3.27 | 4.13 | 6.07 |
+| Settings | Rule chain | 318 | 2.416 | 2.36 | 2.90 | 3.64 |
+| Settings | Scorer | 317 | 2.389 | 2.36 | 2.85 | 3.27 |
+
+  * **Settings**, where both rule sets make the same moves (317 and 318 steps): run means 2.379, 2.452 for the rule chain and 2.368, 2.411 for the scorer (p = 0.67). M13.4 measured the scorer 6 % slower there; now it's 1 % faster, inside the noise.
+  * **Home**: run means 3.279, 3.273, 3.254, 3.277 for the rule chain and 3.335, 3.372, 3.323, 3.415 for the scorer (p = 0.03), so +0.09 ms, half of M13.4's +0.18 ms. But the two don't make the same moves on home, so the means aren't like for like. On the keys both move alike, the scorer is level: Right 3.501 ms over 228 steps against 3.530 over 234, and Up 3.088 over 152 against 3.105 over 152. The rest differs: under the scorer, Down scrolls the grid under a ring that stays put 133 times (`moved=0 handled=1`, not timed), against 4 under the rule chain, and Left moves 209 times against 84, because the scorer's Left reaches the rail where the rule chain stops (220 presses with nothing to the left). Plain and scrolling steps are both a little slower, so it isn't the scroll inside `decide` either. Bug 10's reveal still runs on every Left and Right; locally it's about as long as the scoring step.
+  * **p99 on home**: 6.07 ms under the scorer against 4.68, a tail from a few steps, still well under one frame.
+* **Walks on `<physical-tv>`**, on the scorer build, with a screenshot after every key, from a fresh start on home: Down ×3, Up, Right ×2, Left ×2, Up ×2, Right, Down, Left ×2, Right. Every card the ring landed on was whole, with the grid scrolled to show it (bug 10), and no Left or Right landed on a tab (bug 8). Up ×2 walked back to card 0.0, Left ×2 from the second column reached the rail item level with the card, and Right returned to the card. The showing tab and the other pages were walked on `<vm-tv>` only.
+* **The Bench on `<physical-tv>`** (the six M13.0 runs, on both builds the same day): written up in `M13_BASELINE.md`. Under the scorer:
+  * Holds: `decide` p90 on home (4.13), settings (2.85) and the paused detail page (5.53); `decide` p99 everywhere but playing comments; `engine` (0.07–0.09); `work` p90 on settings, paused detail and paused comments (8.4, 14.1, 15.0, the last of which failed in M13.0 at 17.8); `total` p90 on plain steps (30.3, 34.8); and `total` p90 on scrolling comments at 53.4, under the 55 ms limit that M13.0 missed at 70.3.
+  * Misses: `decide` p90 on paused comments, 6.58 ms against 6 (rule chain 6.72, M13.0 7.65), and `decide` p99 on playing comments, 18.22 ms against 16.7 (rule chain 19.04, M13.0 20.59). Both are in the walk over the scope's nodes, which both rule sets share.
+  * **Decision** (the user, 2026-11-05): switch anyway, and add `M13.5a` to make that walk cheaper on the comments list, with its own bench, before M13 is done.
+  * **How it ran**: `无痕模式` on (for this session only) before the video, `默认画质` read as `1080P 60帧` and not changed, `BV1kMxM6FECM` opened by link. It resumed near its end, so Left in fullscreen seeked back to about 28 minutes. Escape left fullscreen for the split view. Per build: the related list while playing, comments while playing, Select on `播/暂` to pause (checked with two identical screenshots 4 s apart), comments paused, the related list paused, 120 s each with M13.0's keys. The rule-chain build needed 无痕模式 again after it was installed, and it was checked by the avatar's badge.
+  * **Seen on the way**: under the rule chain, Down from the `评论` tab lands on the `最热` sort button, and Up from the share button goes straight to `返回` on the player bar; under the scorer Down lands on the first comment and Up goes to the tab. Neither was timed.
+* **On the TV**: arrow keys, Escape on the player, and Select only on the 我的 rail item, the gear, 音视频设置, 无痕模式, the two side tabs and `播/暂`, each after a screenshot. About 16 minutes of video played in all, in `无痕模式`, at 1080P60. No setting changed. Afterwards the clean build of this branch (the scorer, no probe) was installed, which closed the video and ended `无痕模式` (the avatar's badge was gone after a fresh start). The `m12` folder in the TV's temp folder was removed, `PiliPlus TV dev` was stopped, the TV is on its home screen, and adb was disconnected.
+* **Next**: `M13.5a` (the shared walk on the comments list), then `M13.6` one release after this lands, unless the hidden switch was needed.
+
+### [2026-11-05] Milestone M13 (Task `M13.5a`): A First Attempt at the Shared Walk, Measured Slower and Reverted
+* **Status**: ✅ Done, closed after one attempt by the user's decision (2026-11-05). The attempt kept every pick but made `decide` on the comments list about 20 % slower on `<physical-tv>`, so it was reverted, and nothing of it is on `main`. The two comments limits still miss, so that part of M13's "done when" stays open.
+* **Branch**: the attempt and its revert were made on top of PR 20 (`M13.5`) and never pushed. Only this entry and the status lines reach `main`, as a docs-only push, which builds no release.
+* **Where the time goes**, from a throwaway probe in the widget tests (JIT, on the development Mac, relative only): the walk over the scope's nodes before either rule set runs is 95 % of `decide`, and `evaluateNode` is about 80 %. Of `evaluateNode`, about 15 % is measuring rects (`localToGlobal`). The rest is the walk itself: each candidate walks its elements to the root with about 20 type checks per element, and candidates in one list share nearly all of that walk.
+* **What was tried** (one commit, with a debug `assert` that each new answer equals Flutter's own on every call in the widget tests):
+  * An ancestor's render object taken from the one carried up the walk, instead of walking down from each ancestor (`Element.renderObject`).
+  * Each render object's transform to the root built once per pass from its parent's, in the same order as `getTransformTo(null)`, so rects are equal to the bit.
+  * Whether a render object is hidden off screen (offstage, kept alive, a page not showing) kept per render object for the pass.
+  * Every decision of the TV tests picked the same node under both rule sets, all 160 tests passed, and the analyze step found no issues. A new test with two buttons on a kept-alive page failed on a broken memo and passed on the old code.
+  * The local probe already showed no gain: `decide` summed over the navigation tests went from 99.2 to 102.6 ms. It was taken to the device anyway, since the TV's costs differ.
+* **On `<physical-tv>`** (the user's go-ahead): A = PR 20's head, B = the attempt, 32-bit `-Pdev` release builds with the probe, run A, B, B, A. Comments only (the two limits that miss), 120 s per run with M13.0's keys, `BV1kMxM6FECM` from 27:15 in `无痕模式` at `1080P 60帧`, paused runs checked with two identical screenshots. Thermal status was 0 throughout. `decide` in ms:
+
+| Run | Build | Steps | Mean | p50 | p90 | p99 | Run means |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Comments paused | A (PR 20) | 421 | 5.952 | 5.93 | 6.49 | 7.13 | 5.999, 5.906 |
+| Comments paused | B (attempt) | 419 | 7.059 | 6.97 | 7.67 | 8.86 | 6.997, 7.122 |
+| Comments playing | A (PR 20) | 375 | 9.774 | 9.25 | 13.40 | 18.03 | 9.583, 9.965 |
+| Comments playing | B (attempt) | 374 | 11.826 | 11.38 | 15.54 | 21.53 | 11.603, 12.052 |
+
+  * Every B run was slower than every A run: +1.11 ms paused (+19 %) and +2.05 ms playing (+21 %). The A runs after B matched the ones before, so it isn't the TV drifting.
+  * **Why**, most likely: on the TV's 32-bit CPU, a hash lookup and insert per render object, and a 16-double matrix copy for each, cost more than the cheap walks and type checks they replaced. The candidates share most of their ancestors, but the first candidate of each pass still paid for every render object up to the root, and the cache lasts only one pass.
+  * **Today's A** (PR 20) misses the same two limits as M13.5's bench: `decide` p90 6.49 ms paused (limit 6) and p99 18.03 ms playing (limit 16.7).
+* **What's left**, both bigger than this attempt: fewer element visits, not cheaper ones.
+  * **Nearest first**: under the scorer, evaluate candidates in order of their raw distance along the move, and stop once the nearest one left can't beat the best score. It has to keep floating controls, column memory and the showing tab exact, and the rule chain would keep the full walk until M13.6.
+  * **Summaries per list**: walk above each list once per pass and combine the result with each candidate's walk below it. That's a rewrite of `evaluateNode`'s state machine, the most central code in the engine.
+* **On the TV**: arrow keys, Escape on the player, and Select only on the 我的 rail item, 无痕模式, the `评论` tab and `播/暂`, each after a screenshot. About 9 minutes of video played in all, in `无痕模式` at 1080P60. No setting changed. The TV had gone to sleep before the first run and was woken with `KEYCODE_WAKEUP`. Afterwards the clean `M13.5` build (PR 20) was installed, which ended `无痕模式` (checked by the avatar's badge). The `m12` folder was removed, `PiliPlus TV dev` was stopped, the TV is on its home screen, and adb was disconnected.
+* **Next**: `M13.6` (remove the old rules), one release after `M13.5`, unless the hidden switch was needed.
+
+### [2026-11-05] Milestone M13 (Task `M13.6`): The Old Rule Chain and Its Hidden Switch, Removed
+* **Status**: ✅ Done. The scorer is the only way a D-pad target is picked. The old rule chain, the hidden switch and CI's run under the old rules are gone. Every decision of the remaining TV tests picks the same node as on `main` before, 153 TV tests pass, and the TV analyze step finds no issues.
+* **When** (the user's decision): right after `M13.5` shipped as `v2.2.0.2-fork.5950`, the one release that carries the switch. Nobody needed it, so the next release ships the scorer alone.
+* **Branch**: `claude/tv-m13-6-remove-rules`, on top of `main` after `M13.5a`'s docs. It lands through its pull request, and landing it publishes a release.
+* **Files Changed**: `[MODIFY] lib/tv/tv_navigation.dart` (about 740 lines out), `lib/tv/tv_focus_scorer.dart` (the `TvFocusScorer` enum; comments), `lib/tv/tv_platform.dart` (the stored switch and its toast), `test/tv_path_harness.dart`, `test/tv_paths_test.dart`, `test/tv_player_hud_test.dart`, `test/tv_navigation_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/ARCHITECTURE.md`, `docs/tv/REVIEW.md`, `docs/tv/README.md`, `docs/tv/README.en.md`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`. `tv_player_hud.dart` isn't touched.
+* **Removed**:
+  * **The rule chain**: `_findVerticalCandidate`, `_pickFromClosestRow` (with `preferLeadingOnRow` and `adjacentColumnSpans`), `_findHorizontalCandidate` (with `embeddedCardActionFallback`), `_filterOutEmbeddedSecondaryActions`, and the dispatch to them in `inDirection`. `inDirection` now always hands its candidates to `_findScoredCandidate`.
+  * **`enclosingWrap`**: only the old horizontal rule read it, so `evaluateNode` no longer checks each ancestor for a `Wrap`.
+  * **The switch**: `TvFocusScorer`, `TvFocusTraversalPolicy.scorer` and `resolveScorer`, the remote sequence (`TvSwitchSequence`) and its toast, the `TV_FOCUS_SCORER` define, and `TvPlatform`'s reader and writer for the `tvFocusScorer` setting. A value left in a user's settings is no longer read; it does nothing. Bug 10's second reveal and the focused node's group recording, which ran only under the scorer, now run always.
+  * **CI**: the second test run, with `--dart-define=TV_FOCUS_SCORER=rules`.
+* **Kept**, because recovery and first focus use them too: `_isEmbeddedSecondaryOf`, `_isPrimaryContainer`, `_isEmbeddedSecondaryOfFocusableAncestor`, `_preferPrimaryInitialCandidates`, `isVisibleInEnclosingScrollables` and the visibility helpers. The scorer's debug overlay (`TV_FOCUS_SCORES`) stays.
+* **Proof**: the throwaway probe from M13.5 wrote every decision of the TV tests, the focused node and the winner by rect and label, on `main` and on the branch. All 565 decisions of the remaining tests are the same, in the same order. The 20 missing from the branch are the removed tests' moves: 4 from the flag test and 16 from the remote sequence's.
+* **Tests** (the user agreed to change existing test lines for this task):
+  * **Removed** (6): the flag picking the rules while the app runs; the starting rules from a define and a setting; the remote sequence counting only whole and in time; the sequence flipping the rules while the app runs; and, in `tv_navigation_test.dart`, the setting read from a Hive box and left unset by the TV defaults.
+  * **Known failures**: the 13 recorded paths that the old rules got wrong lose their `KnownFailure` markers and are titled `[bug N]` instead of `[known failure: bug N]`. They pass as before. The harness's `walkPath` drops its `known:` parameter and the `KnownFailure` class.
+  * **Kept as they were**: every other test, including the M13.4 and M13.5 scorer tests, minus the lines that pinned the scorer in their groups' setup. The M13.5 group is renamed `the showing tab and nested lists (M13.5)`.
+* **Tools**: `tool/tv_m13/logging.patch` still applies, with its hunks at new line offsets.
+* **Not done on a device**: the change only deletes code that no build ran by default since M13.5, and every remaining decision is unchanged in the widget tests, so no device run was made.
+* **M13 as a whole**: with this, all its tasks are done. One part of its "done when" stays open by the user's decision: `decide` on the comments list is over the budget on `<physical-tv>` (`M13.5a`, closed after one attempt).

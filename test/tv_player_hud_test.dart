@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
+import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
@@ -28,6 +30,8 @@ import 'package:hive_ce/hive.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
+
+import 'tv_path_harness.dart';
 
 class FakePlayerState extends Fake implements PlayerState {
   @override
@@ -1653,6 +1657,8 @@ void main() {
       },
     );
   });
+
+  group('recorded D-pad paths (M13.3)', _recordedPaths);
 }
 
 /// The private `_TvHudPillButton` that owns the [label] text.
@@ -1677,3 +1683,488 @@ bool _pillHasPrimaryFocus(String label) {
       .isNotEmpty;
 }
 
+// ---------------------------------------------------------------------------
+// Recorded D-pad paths (M13.3) for the video page in split view, its
+// comments in three layers, and the player HUD. The harness and what a known
+// failure is are in `tv_path_harness.dart`; the other screens' paths are in
+// `tv_paths_test.dart`.
+//
+// The scene copies `VideoDetailPage`'s landscape layout at the TV's logical
+// size: the real `TvPlayerHud` over the player, the introduction under it,
+// and a `MiniScaffold` on the right with the tab bar over the related list
+// and the comments. Related cards are `VideoCardH`, with the `⋮` laid beside
+// the card's `InkWell` in a `Stack`. Comments are `ReplyItemGrpc`, with their
+// actions inside the card's `InkWell`, under a floating reply button. The
+// second layer (`评论详情`) and the third (`对话列表`) open as inline sheets.
+
+class _VideoPageScene {
+  _VideoPageScene()
+    : outer = GlobalKey<MiniScaffoldState>(),
+      inner = GlobalKey<MiniScaffoldState>(),
+      title = pathNode('title'),
+      actions = [
+        for (final String a in ['点赞', '投币', '收藏', '稍后', '分享']) pathNode(a),
+      ],
+      related = List<FocusNode>.generate(8, (i) => pathNode('related $i')),
+      relatedMenus = List<FocusNode>.generate(8, (i) => pathNode('⋮ $i')),
+      sort = pathNode('sort'),
+      comments = List<FocusNode>.generate(8, (i) => pathNode('comment $i')),
+      commentReplies = List<FocusNode>.generate(
+        8,
+        (i) => pathNode('回复 $i'),
+      ),
+      commentLikes = List<FocusNode>.generate(8, (i) => pathNode('点赞 $i')),
+      replyFab = pathNode('发表评论'),
+      secondClose = pathNode('close 评论详情'),
+      replies = List<FocusNode>.generate(6, (i) => pathNode('reply $i')),
+      dialogue = pathNode('查看对话'),
+      thirdClose = pathNode('close 对话列表'),
+      thirdItems = List<FocusNode>.generate(4, (i) => pathNode('dialogue $i'));
+
+  final GlobalKey<MiniScaffoldState> outer;
+  final GlobalKey<MiniScaffoldState> inner;
+  final FocusNode title;
+  final List<FocusNode> actions;
+  final List<FocusNode> related;
+  final List<FocusNode> relatedMenus;
+  final FocusNode sort;
+  final List<FocusNode> comments;
+  final List<FocusNode> commentReplies;
+  final List<FocusNode> commentLikes;
+  final FocusNode replyFab;
+  final FocusNode secondClose;
+  final List<FocusNode> replies;
+  final FocusNode dialogue;
+  final FocusNode thirdClose;
+  final List<FocusNode> thirdItems;
+
+  Widget _sheetHeader(String text, FocusNode close) => SizedBox(
+    height: 45,
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(text),
+        IconButton(
+          focusNode: close,
+          tooltip: '关闭',
+          icon: const Icon(Icons.close, size: 20),
+          onPressed: Get.back,
+        ),
+      ],
+    ),
+  );
+
+  void _openThird() {
+    inner.currentState!.showBottomSheet(
+      constraints: const BoxConstraints(),
+      (context) => ColoredBox(
+        color: Colors.black,
+        child: Column(
+          children: [
+            _sheetHeader('对话列表', thirdClose),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final FocusNode n in thirdItems)
+                    SizedBox(
+                      height: 90,
+                      child: InkWell(
+                        focusNode: n,
+                        onTap: () {},
+                        child: Text(n.debugLabel!),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSecond() {
+    outer.currentState!.showBottomSheet(
+      constraints: const BoxConstraints(),
+      (context) => ColoredBox(
+        color: Colors.black,
+        child: MiniScaffold(
+          key: inner,
+          body: Column(
+            children: [
+              _sheetHeader('评论详情', secondClose),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (int i = 0; i < replies.length; i++)
+                      InkWell(
+                        focusNode: replies[i],
+                        onTap: () {},
+                        child: SizedBox(
+                          height: 110,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('reply $i'),
+                              const Spacer(),
+                              if (i == 1)
+                                SizedBox(
+                                  height: 32,
+                                  child: TextButton(
+                                    focusNode: dialogue,
+                                    onPressed: _openThird,
+                                    child: const Text('查看对话'),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _related() => CustomScrollView(
+    slivers: [
+      SliverList.builder(
+        itemCount: related.length,
+        itemBuilder: (context, i) => SizedBox(
+          height: 100,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              InkWell(
+                focusNode: related[i],
+                onTap: () {},
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const AspectRatio(
+                        aspectRatio: 16 / 10,
+                        child: Placeholder(),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text('related $i')),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 12,
+                width: 29,
+                height: 29,
+                child: IconButton(
+                  focusNode: relatedMenus[i],
+                  padding: EdgeInsets.zero,
+                  iconSize: 17,
+                  onPressed: () {},
+                  icon: const Icon(Icons.more_vert_outlined),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _comments() => SimpleScaffold(
+    fab: Padding(
+      padding: const EdgeInsets.only(
+        right: kFloatingActionButtonMargin,
+        bottom: kFloatingActionButtonMargin,
+      ),
+      child: FloatingActionButton(
+        focusNode: replyFab,
+        heroTag: null,
+        onPressed: () {},
+        tooltip: '发表评论',
+        child: const Icon(Icons.reply),
+      ),
+    ),
+    body: CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              focusNode: sort,
+              onPressed: () {},
+              child: const Text('按热度'),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.only(bottom: 100),
+          sliver: SliverList.builder(
+            itemCount: comments.length,
+            itemBuilder: (context, i) => InkWell(
+              focusNode: comments[i],
+              onTap: _openSecond,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 34, child: Text('user  10-09')),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('comment $i'),
+                    ),
+                    Row(
+                      children: [
+                        const SizedBox(width: 36),
+                        SizedBox(
+                          height: 32,
+                          child: TextButton(
+                            focusNode: commentReplies[i],
+                            onPressed: _openSecond,
+                            child: const Text('回复'),
+                          ),
+                        ),
+                        const Spacer(),
+                        SizedBox(
+                          height: 32,
+                          child: TextButton(
+                            focusNode: commentLikes[i],
+                            onPressed: () {},
+                            child: const Text('点赞'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget build(FakePlPlayerController pl, {int tab = 0}) => GetMaterialApp(
+    navigatorObservers: [FlutterSmartDialog.observer],
+    builder: FlutterSmartDialog.init(
+      builder: (context, child) => TvNavigation(child: child!),
+    ),
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.deepPurple,
+        brightness: Brightness.dark,
+      ),
+    ),
+    home: Scaffold(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 560,
+            child: Column(
+              children: [
+                SizedBox(
+                  width: 560,
+                  height: 315,
+                  child: TvPlayerHud(
+                    plPlayerController: pl,
+                    onSendDanmaku: () {},
+                    child: Container(color: Colors.black),
+                  ),
+                ),
+                SizedBox(
+                  width: 560,
+                  height: 225,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: InkWell(
+                          focusNode: title,
+                          onTap: () {},
+                          child: const SizedBox(
+                            height: 60,
+                            child: Text('title'),
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            for (final FocusNode a in actions)
+                              InkWell(
+                                focusNode: a,
+                                onTap: () {},
+                                child: SizedBox(
+                                  width: 80,
+                                  height: 60,
+                                  child: Text(a.debugLabel!),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 400,
+            height: 540,
+            child: DefaultTabController(
+              length: 2,
+              initialIndex: tab,
+              child: MiniScaffold(
+                key: outer,
+                body: Column(
+                  children: [
+                    const SizedBox(
+                      height: 46,
+                      child: TabBar(
+                        tabs: [
+                          Tab(text: '相关视频'),
+                          Tab(text: '评论'),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: TabBarView(children: [_related(), _comments()]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<_VideoPageScene> _pumpVideoPage(
+  WidgetTester tester, {
+  bool fullScreen = false,
+  int tab = 0,
+}) async {
+  useTvScreen(tester);
+  final _VideoPageScene scene = _VideoPageScene();
+  final FakePlPlayerController pl = FakePlPlayerController()
+    ..isFullScreen.value = fullScreen;
+  await tester.pumpWidget(scene.build(pl, tab: tab));
+  await tester.pumpAndSettle();
+  return scene;
+}
+
+void _recordedPaths() {
+  testWidgets('split view: the quick strip, the introduction and the related '
+      'list beside them', (tester) async {
+    await _pumpVideoPage(tester);
+    await walkPath(tester, '全屏', [
+      (dpadRight, '播/暂'),
+      (dpadRight, '播控'),
+      (dpadRight, '返回'),
+      (dpadLeft, '播控'),
+      (dpadLeft, '播/暂'),
+      (dpadLeft, '全屏'),
+      (dpadDown, 'title'),
+      (dpadDown, '点赞'),
+      (dpadRight, '投币'),
+      (dpadRight, '收藏'),
+      (dpadRight, '稍后'),
+      (dpadRight, '分享'),
+      (dpadRight, 'related 3'),
+      (dpadUp, 'related 2'),
+      (dpadUp, 'related 1'),
+      (dpadUp, 'related 0'),
+      (dpadUp, '相关视频'),
+      (dpadRight, '评论'),
+    ]);
+  });
+
+  testWidgets(
+    '[bug 3] Right from a related card reaches its ⋮',
+    (tester) async {
+      final _VideoPageScene s = await _pumpVideoPage(tester);
+      await focusForPath(tester, s.related[1]);
+      await walkPath(tester, 'related 1', [
+        (dpadRight, '⋮ 1'),
+        (dpadLeft, 'related 1'),
+      ]);
+    },
+  );
+
+  testWidgets('comments: the first layer, its actions, the second layer '
+      '(评论详情) and the third (对话列表), and Back to each trigger', (
+    tester,
+  ) async {
+    final _VideoPageScene s = await _pumpVideoPage(tester, tab: 1);
+    await focusForPath(tester, s.comments[0]);
+    await walkPath(tester, 'comment 0', [
+      (dpadDown, 'comment 1'),
+      (dpadUp, 'comment 0'),
+      (dpadUp, 'sort'),
+      (dpadDown, 'comment 0'),
+      (dpadRight, '回复 0'),
+      (dpadRight, '点赞 0'),
+      (dpadRight, '点赞 0'),
+      (dpadLeft, '回复 0'),
+      (dpadLeft, 'comment 0'),
+      (dpadDown, 'comment 1'),
+      (dpadSelect, 'close 评论详情'),
+      (dpadDown, 'reply 0'),
+      (dpadDown, 'reply 1'),
+      (dpadRight, '查看对话'),
+      (dpadSelect, 'close 对话列表'),
+      (dpadDown, 'dialogue 0'),
+      (dpadDown, 'dialogue 1'),
+      (dpadBack, '查看对话'),
+      (dpadUp, 'reply 0'),
+      (dpadBack, 'comment 1'),
+      (dpadDown, 'comment 2'),
+    ]);
+  });
+
+  testWidgets('[bug 2] Down from the last comment reaches the '
+      'reply button', (tester) async {
+    final _VideoPageScene s = await _pumpVideoPage(tester, tab: 1);
+    await focusForPath(tester, s.comments[5]);
+    await walkPath(tester, 'comment 5', [
+      (dpadDown, 'comment 6'),
+      (dpadDown, 'comment 7'),
+      (dpadDown, '发表评论'),
+    ]);
+  });
+
+  testWidgets('player HUD: 播控 opens it, the D-pad moves through it, and '
+      'Back closes it', (tester) async {
+    await _pumpVideoPage(tester);
+    await walkPath(tester, '全屏', [
+      (dpadRight, '播/暂'),
+      (dpadRight, '播控'),
+      (dpadSelect, '暂停'),
+      (dpadRight, '全屏播放'),
+      (dpadRight, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadLeft, '弹幕: 开'),
+      (dpadUp, '00:30'),
+      (dpadUp, '关闭面板'),
+      (dpadDown, '00:30'),
+      // The HUD puts focus back on the strip's first pill today; its
+      // trigger would be right too.
+      (dpadBack, '全屏|播控'),
+    ]);
+  });
+}
