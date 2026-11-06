@@ -2,7 +2,7 @@
 // rail, the user page, settings with their dialogs, and 稍后再看. The paths
 // for the video page (split view, comments and the player HUD) are in
 // `tv_player_hud_test.dart`, which has the player's fakes. How a path is
-// replayed, and what a known failure is, is in `tv_path_harness.dart`.
+// replayed is in `tv_path_harness.dart`.
 //
 // The real pages need GetX controllers, Hive and the network, so each scene
 // copies its page's layout at the TV's logical size, using the same containers
@@ -18,7 +18,6 @@ import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/grid.dart'
     show SliverGridDelegateWithExtentAndRatio;
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -800,31 +799,31 @@ void main() {
       return s;
     }
 
-    testWidgets('[known failure: bug 8] Right from a card cut off by the tab '
+    testWidgets('[bug 8] Right from a card cut off by the tab '
         'bar steps to the next card, not onto a tab', (tester) async {
       await cutOffRow(tester, 0);
       await walkPath(tester, 'card 2.0', [
         (dpadRight, 'card 2.1'),
-      ], known: const KnownFailure(bug: 8, step: 1, landsOn: '直播'));
+      ]);
     });
 
-    testWidgets('[known failure: bug 8] Left from a card cut off by the tab '
+    testWidgets('[bug 8] Left from a card cut off by the tab '
         'bar steps to the next card, not onto a tab', (tester) async {
       await cutOffRow(tester, 2);
       await walkPath(tester, 'card 2.2', [
         (dpadLeft, 'card 2.1'),
-      ], known: const KnownFailure(bug: 8, step: 1, landsOn: '影视'));
+      ]);
     });
 
-    testWidgets('[known failure: bug 10] Right onto a card cut off by the '
+    testWidgets('[bug 10] Right onto a card cut off by the '
         'tab bar scrolls the grid to show it', (tester) async {
       await cutOffRow(tester, 1);
       await walkPath(tester, 'card 2.1', [
         (dpadRight, 'card 2.2'),
-      ], known: const KnownFailure.cutOff(bug: 10, step: 1));
+      ]);
     });
 
-    testWidgets('[known failure: bug 10] Left onto a card cut off by the '
+    testWidgets('[bug 10] Left onto a card cut off by the '
         'bottom edge scrolls the grid to show it', (tester) async {
       final _HomeScene s = _HomeScene();
       await _pump(tester, s.build());
@@ -833,10 +832,10 @@ void main() {
       await tester.pumpAndSettle();
       await walkPath(tester, 'card 1.1', [
         (dpadLeft, 'card 1.0'),
-      ], known: const KnownFailure.cutOff(bug: 10, step: 1));
+      ]);
     });
 
-    testWidgets('[known failure: bug 9] Down from a tab returns to the card '
+    testWidgets('[bug 9] Down from a tab returns to the card '
         'focus left the grid from', (tester) async {
       final _HomeScene s = _HomeScene();
       await _pump(tester, s.build());
@@ -845,17 +844,17 @@ void main() {
         // Every tab is over this card, so any of them is right.
         (dpadUp, _homeTabs.join('|')),
         (dpadDown, 'card 0.1'),
-      ], known: const KnownFailure(bug: 9, step: 2, landsOn: 'card 0.0'));
+      ]);
     });
 
-    testWidgets('[known failure: bug 9] Down from a tab, with no card to '
+    testWidgets('[bug 9] Down from a tab, with no card to '
         'return to, lands on the card under the tab', (tester) async {
       final _HomeScene s = _HomeScene();
       await _pump(tester, s.build());
       await _focusText(tester, '热门');
       await walkPath(tester, '热门', [
         (dpadDown, 'card 0.1'),
-      ], known: const KnownFailure(bug: 9, step: 1, landsOn: 'card 0.0'));
+      ]);
     });
   });
 
@@ -898,7 +897,7 @@ void main() {
       ]);
     });
 
-    testWidgets('[known failure: bug 7] with a row scrolled sideways, the '
+    testWidgets('[bug 7] with a row scrolled sideways, the '
         'rail steps one item at a time from 首页 to the avatar', (
       tester,
     ) async {
@@ -922,13 +921,12 @@ void main() {
           (dpadUp, 'bell'),
           (dpadUp, 'avatar'),
         ],
-        known: const KnownFailure(bug: 7, step: 14, landsOn: 'bell'),
       );
     });
   });
 
   group('user page (M13.3)', () {
-    testWidgets('[known failure: bug 6] Up from the first row of a tab '
+    testWidgets('[bug 6] Up from the first row of a tab '
         'reaches the tabs, then 编辑资料', (tester) async {
       final _MemberScene s = _MemberScene();
       await _pump(tester, s.build());
@@ -945,7 +943,6 @@ void main() {
           (dpadUp, '收藏|投稿'),
           (dpadUp, '编辑资料'),
         ],
-        known: const KnownFailure(bug: 6, step: 5, landsOn: 'row 0'),
       );
     });
 
@@ -963,7 +960,7 @@ void main() {
   });
 
   group('settings with their dialogs (M13.3)', () {
-    testWidgets('[known failure: bug 9] Right enters the page beside the '
+    testWidgets('[bug 9] Right enters the page beside the '
         'categories, and Left returns to the category it came from', (
       tester,
     ) async {
@@ -981,7 +978,6 @@ void main() {
           (dpadLeft, 'tile 1'),
           (dpadLeft, '音视频设置'),
         ],
-        known: const KnownFailure(bug: 9, step: 6, landsOn: '隐私设置'),
       );
     });
 
@@ -1051,17 +1047,17 @@ void main() {
       ]);
     });
 
-    testWidgets('[known failure: bug 4] Up from a × in the right column '
+    testWidgets('[bug 4] Up from a × in the right column '
         'stays in that column', (tester) async {
       final _LaterScene s = _LaterScene();
       await _pump(tester, s.build());
       await focusForPath(tester, s.remove(1, 1));
       await walkPath(tester, '× 1.1', [
         (dpadUp, '× 0.1|card 0.1'),
-      ], known: const KnownFailure(bug: 4, step: 1, landsOn: 'card 1.0'));
+      ]);
     });
 
-    testWidgets('[known failure: bug 2] Down from the last card reaches '
+    testWidgets('[bug 2] Down from the last card reaches '
         '播放全部', (tester) async {
       final _LaterScene s = _LaterScene();
       await _pump(tester, s.build());
@@ -1073,40 +1069,11 @@ void main() {
           for (int r = 1; r < 6; r++) (dpadDown, 'card $r.1'),
           (dpadDown, '播放全部'),
         ],
-        known: const KnownFailure(bug: 2, step: 6, landsOn: 'card 5.1'),
       );
     });
   });
 
   group('scorer and column memory (M13.4)', () {
-    late TvFocusScorer before;
-    setUp(() {
-      before = TvFocusTraversalPolicy.scorer;
-      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
-    });
-    tearDown(() => TvFocusTraversalPolicy.scorer = before);
-
-    testWidgets('the flag picks the rules while the app runs', (
-      tester,
-    ) async {
-      final _HomeScene s = _HomeScene();
-      await _pump(tester, s.build());
-
-      TvFocusTraversalPolicy.scorer = TvFocusScorer.rules;
-      await focusForPath(tester, s.card(0, 2));
-      await walkPath(tester, 'card 0.2', [
-        (dpadUp, _homeTabs.join('|')),
-        (dpadDown, 'card 0.0'),
-      ]);
-
-      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
-      await focusForPath(tester, s.card(0, 2));
-      await walkPath(tester, 'card 0.2', [
-        (dpadUp, _homeTabs.join('|')),
-        (dpadDown, 'card 0.2'),
-      ]);
-    });
-
     testWidgets('moving along the tabs keeps the grid\'s memory', (
       tester,
     ) async {
@@ -1266,96 +1233,7 @@ void main() {
     });
   });
 
-  group('switch and the showing tab (M13.5)', () {
-    late TvFocusScorer before;
-    setUp(() {
-      before = TvFocusTraversalPolicy.scorer;
-      TvFocusTraversalPolicy.scorer = TvFocusScorer.scored;
-    });
-    tearDown(() => TvFocusTraversalPolicy.scorer = before);
-
-    test('the scorer is the default, and a build define or the hidden switch '
-        'picks the old rules', () {
-      TvFocusScorer resolve(String define, String? stored) =>
-          TvFocusTraversalPolicy.resolveScorer(define, stored);
-      expect(resolve('', null), TvFocusScorer.scored);
-      expect(resolve('', 'scored'), TvFocusScorer.scored);
-      expect(resolve('', 'something else'), TvFocusScorer.scored);
-      expect(resolve('', 'rules'), TvFocusScorer.rules);
-      expect(resolve('rules', null), TvFocusScorer.rules);
-      expect(resolve('rules', 'scored'), TvFocusScorer.rules);
-      expect(resolve('scored', 'rules'), TvFocusScorer.scored);
-      if (const String.fromEnvironment('TV_FOCUS_SCORER').isEmpty &&
-          TvPlatform.storedFocusScorer == null) {
-        expect(before, TvFocusScorer.scored);
-      }
-    });
-
-    test('the remote sequence counts only the whole sequence, in time', () {
-      const List<LogicalKeyboardKey> keys = TvSwitchSequence.keys;
-      final TvSwitchSequence sequence = TvSwitchSequence();
-      int now = 0;
-      bool press(LogicalKeyboardKey key, {int after = 100}) =>
-          sequence.add(key, now += after);
-
-      for (int i = 0; i < keys.length - 1; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-      expect(press(keys.last), isTrue);
-      // It starts again after a match.
-      expect(press(keys.last), isFalse);
-
-      // A third Up before the rest still counts.
-      expect(press(dpadUp), isFalse);
-      for (int i = 0; i < keys.length - 1; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-      expect(press(keys.last), isTrue);
-
-      // A pause longer than the limit starts it again.
-      for (int i = 0; i < 4; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-      expect(
-        press(keys[4], after: TvSwitchSequence.maxGapMs + 1),
-        isFalse,
-      );
-      for (int i = 5; i < keys.length; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-
-      // A wrong key in the middle doesn't count.
-      for (int i = 0; i < 4; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-      expect(press(dpadRight), isFalse);
-      for (int i = 4; i < keys.length; i++) {
-        expect(press(keys[i]), isFalse);
-      }
-    });
-
-    testWidgets('the remote sequence flips the rules while the app runs, and '
-        'back', (tester) async {
-      final _HomeScene s = _HomeScene();
-      await _pump(tester, s.build());
-      await focusForPath(tester, s.card(1, 1));
-      Future<void> sendSequence() async {
-        for (final LogicalKeyboardKey key in TvSwitchSequence.keys) {
-          await tester.sendKeyEvent(key);
-          await tester.pumpAndSettle();
-        }
-      }
-
-      await sendSequence();
-      expect(TvFocusTraversalPolicy.scorer, TvFocusScorer.rules);
-      expect(TvPlatform.storedFocusScorer, 'rules');
-      expect(ringProblem(tester), isNull);
-      await sendSequence();
-      expect(TvFocusTraversalPolicy.scorer, TvFocusScorer.scored);
-      expect(TvPlatform.storedFocusScorer, 'scored');
-      expect(ringProblem(tester), isNull);
-    });
-
+  group('the showing tab and nested lists (M13.5)', () {
     testWidgets('Up from the first row of a tab, with nothing remembered, '
         'lands on the tab that\'s showing, and Down returns', (tester) async {
       final _MemberScene s = _MemberScene();

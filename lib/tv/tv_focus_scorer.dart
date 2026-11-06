@@ -1,21 +1,9 @@
 part of 'tv_navigation.dart';
 
 // The scorer (M13.4): one scoring function over a snapshot of the candidates,
-// with column memory, in place of the rule chain in `_findVerticalCandidate`
-// and `_findHorizontalCandidate`. It's the default since M13.5, and the rule
-// chain stays one release behind a hidden switch
-// ([TvFocusTraversalPolicy.scorer]) until M13.6 removes it; see
+// with column memory, picks the target of every D-pad move. It became the
+// default in M13.5, and M13.6 removed the rule chain it replaced; see
 // `docs/tv/PLAN.md`.
-
-/// Which rules pick the target of a D-pad move.
-enum TvFocusScorer {
-  /// The old rule chain, behind a hidden switch for one release (M13.5).
-  rules,
-
-  /// One scoring function over a snapshot of the candidates, with column
-  /// memory (M13.4). The default since M13.5.
-  scored,
-}
 
 /// One candidate of a decision, for the debug overlay and its tests.
 @immutable
@@ -101,7 +89,7 @@ abstract final class _TvScoreWeights {
   static const double missingOverlap = 100.0;
 
   /// The same on Left and Right, where a node level with the focused one
-  /// comes first, as in the rule chain.
+  /// comes first, as it did in the old rule chain.
   static const double missingOverlapAcross = 600.0;
 
   /// For each list around the focused node that the candidate isn't in.
@@ -205,7 +193,7 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
 
   /// The part of [raw] that counts for a candidate, or null if it doesn't
   /// show. Along a list it shares with the focused node it's kept whole;
-  /// along any other list it must show as the rule chain asks (its centre
+  /// along any other list it must show as the old rule chain asked (its centre
   /// inside, or half of the list), and is clipped to it and to the screen.
   Rect? _shownRect(
     Rect raw,
@@ -542,7 +530,7 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
       return chosen;
     }
 
-    // 2. Moves inside a tile or card, as the rule chain makes them.
+    // 2. Moves inside a tile or card, as the old rule chain made them.
     if (horizontalMove) {
       final Element? focusedRow = cache.enclosingRowOf(focusedChild);
       if (focusedRow != null) {
@@ -663,7 +651,7 @@ extension _TvScorerPolicy on TvFocusTraversalPolicy {
       }
       // Up inside the focused list goes by scroll order: a pinned or
       // floating header is measured where it sits in the list, not where it's
-      // drawn, as the rule chain does.
+      // drawn, as the old rule chain did.
       final Rect from =
           direction == TraversalDirection.up &&
               alongList != null &&
