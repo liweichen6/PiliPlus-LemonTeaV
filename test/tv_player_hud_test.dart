@@ -2002,14 +2002,14 @@ void _recordedPaths() {
   });
 
   testWidgets(
-    '[known failure: bug 3] Right from a related card reaches its ⋮',
+    '[bug 3] Right from a related card reaches its ⋮',
     (tester) async {
       final _VideoPageScene s = await _pumpVideoPage(tester);
       await focusForPath(tester, s.related[1]);
       await walkPath(tester, 'related 1', [
         (dpadRight, '⋮ 1'),
         (dpadLeft, 'related 1'),
-      ], known: const KnownFailure(bug: 3, step: 1, landsOn: 'related 1'));
+      ]);
     },
   );
 
@@ -2044,7 +2044,7 @@ void _recordedPaths() {
     ]);
   });
 
-  testWidgets('[known failure: bug 2] Down from the last comment reaches the '
+  testWidgets('[bug 2] Down from the last comment reaches the '
       'reply button', (tester) async {
     final _VideoPageScene s = await _pumpVideoPage(tester, tab: 1);
     await focusForPath(tester, s.comments[5]);
@@ -2052,7 +2052,7 @@ void _recordedPaths() {
       (dpadDown, 'comment 6'),
       (dpadDown, 'comment 7'),
       (dpadDown, '发表评论'),
-    ], known: const KnownFailure(bug: 2, step: 3, landsOn: 'comment 7'));
+    ]);
   });
 
   testWidgets('player HUD: 播控 opens it, the D-pad moves through it, and '

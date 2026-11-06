@@ -153,38 +153,6 @@ void main() {
     });
   });
 
-  group('the hidden switch in the settings box (M13.5)', () {
-    late Directory tempDir;
-    late Box<dynamic> box;
-
-    setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('pili_tv_switch_test_');
-      Hive.init(tempDir.path);
-      box = await Hive.openBox<dynamic>('tv_switch_test');
-    });
-
-    tearDown(() async {
-      await box.close();
-      await Hive.close();
-      if (tempDir.existsSync()) {
-        await tempDir.delete(recursive: true);
-      }
-    });
-
-    test('reads the key, and nothing that isn\'t a string', () async {
-      expect(TvPlatform.readFocusScorer(box), isNull);
-      await box.put(TvPlatform.focusScorerKey, 'rules');
-      expect(TvPlatform.readFocusScorer(box), 'rules');
-      await box.put(TvPlatform.focusScorerKey, 1);
-      expect(TvPlatform.readFocusScorer(box), isNull);
-    });
-
-    test('seeding TV defaults leaves the switch unset', () async {
-      await TvPlatform.seedTvDefaultsToBox(box);
-      expect(box.containsKey(TvPlatform.focusScorerKey), isFalse);
-    });
-  });
-
   group('TvFocusTraversalPolicy & TvNavigation', () {
     setUp(() {
       TvPlatform.setTvModeForTesting(true);

@@ -48,7 +48,6 @@ class _TvNodeMeta {
     required this.enclosingRow,
     required this.enclosingCard,
     required this.enclosingAction,
-    required this.enclosingWrap,
   });
 
   final Rect rect;
@@ -60,7 +59,6 @@ class _TvNodeMeta {
   final Element? enclosingRow;
   final Element? enclosingCard;
   final Element? enclosingAction;
-  final Element? enclosingWrap;
 }
 
 class _TvTraversalCache {
@@ -173,8 +171,6 @@ class _TvTraversalCache {
   Element? enclosingActionOf(FocusNode node) =>
       _metaWithAncestors(node).enclosingAction;
 
-  Element? enclosingWrapOf(FocusNode node) =>
-      _metaWithAncestors(node).enclosingWrap;
 
   bool isEffectivelyFocusable(FocusNode node) =>
       evaluateNode(node).isFocusable;
@@ -224,7 +220,6 @@ class _TvTraversalCache {
         enclosingRow: null,
         enclosingCard: null,
         enclosingAction: null,
-        enclosingWrap: null,
       );
       _nodeMeta[node] = meta;
       return meta;
@@ -267,7 +262,6 @@ class _TvTraversalCache {
         enclosingRow: null,
         enclosingCard: null,
         enclosingAction: null,
-        enclosingWrap: null,
       );
       _nodeMeta[node] = meta;
       return meta;
@@ -284,7 +278,6 @@ class _TvTraversalCache {
     Element? enclosingRow;
     Element? enclosingCard;
     Element? enclosingAction;
-    Element? enclosingWrap;
 
     bool stopOrContinue() {
       if (includeAncestorsIfUnfocusable) return true;
@@ -375,9 +368,6 @@ class _TvTraversalCache {
       }
       if (enclosingAction == null && tvCards.isAction(widget)) {
         enclosingAction = element;
-      }
-      if (enclosingWrap == null && widget is Wrap) {
-        enclosingWrap = element;
       }
       if (groups != null &&
           (widget is TabBar ||
@@ -533,7 +523,6 @@ class _TvTraversalCache {
       enclosingRow: enclosingRow,
       enclosingCard: enclosingCard,
       enclosingAction: enclosingAction,
-      enclosingWrap: enclosingWrap,
     );
     _nodeMeta[node] = meta;
     return meta;
@@ -586,26 +575,6 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
       ReadingOrderTraversalPolicy();
   final _TvPolicyFrameState _frameState = _TvPolicyFrameState();
   final _TvColumnMemory _memory = _TvColumnMemory();
-
-  /// Which rules pick the target of a D-pad move: the scorer, since M13.5.
-  /// The rule chain stays one release behind a hidden switch: the settings
-  /// key [TvPlatform.focusScorerKey], set by the remote sequence in
-  /// [TvNavigation]. A build that passes `--dart-define=TV_FOCUS_SCORER=rules`
-  /// (or `scored`) starts on those rules whatever the key says. Read on the
-  /// first D-pad move, after [TvPlatform.initialize]. Tests set it.
-  static TvFocusScorer scorer = resolveScorer(
-    const String.fromEnvironment('TV_FOCUS_SCORER'),
-    TvPlatform.storedFocusScorer,
-  );
-
-  /// The rules a build starts on: the build's [define] if it names one,
-  /// otherwise the hidden switch's [stored] value, otherwise the scorer.
-  @visibleForTesting
-  static TvFocusScorer resolveScorer(String define, String? stored) =>
-      switch (define.isNotEmpty ? define : stored) {
-        'rules' => TvFocusScorer.rules,
-        _ => TvFocusScorer.scored,
-      };
 
   /// Whether the scorer keeps each decision's scores in [debugLastDecision],
   /// for the debug overlay: on with `--dart-define=TV_FOCUS_SCORES=true`.
@@ -1237,55 +1206,6 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     return primaryOnly.isNotEmpty ? primaryOnly : pool;
   }
 
-  /// Excludes embedded secondary action nodes whenever their enclosing primary
-  /// container node is also present in [candidates] and [focusedChild] is not
-  /// already that container.
-  static List<FocusNode> _filterOutEmbeddedSecondaryActions(
-    List<FocusNode> candidates,
-    FocusNode focusedChild,
-    _TvTraversalCache cache,
-  ) {
-    if (candidates.length <= 1) return candidates;
-
-    final Set<FocusNode> candidateSet = candidates.toSet();
-    final Set<FocusNode> excluded = <FocusNode>{};
-    final List<FocusNode> microNodes = <FocusNode>[];
-
-    for (final FocusNode node in candidates) {
-      if (node == focusedChild) continue;
-      bool excludedByAncestor = false;
-      for (final FocusNode ancestor in node.ancestors) {
-        if (ancestor == focusedChild || !candidateSet.contains(ancestor)) {
-          continue;
-        }
-        if (_isEmbeddedSecondaryOf(node, ancestor, cache)) {
-          excluded.add(node);
-          excludedByAncestor = true;
-          break;
-        }
-      }
-      if (excludedByAncestor) continue;
-      if (tvCards.isMicroAction(cache.rectOf(node))) {
-        microNodes.add(node);
-      }
-    }
-
-    for (final FocusNode secondary in microNodes) {
-      for (final FocusNode container in candidates) {
-        if (container == secondary || container == focusedChild) continue;
-        if (_isEmbeddedSecondaryOf(secondary, container, cache)) {
-          excluded.add(secondary);
-          break;
-        }
-      }
-    }
-
-    if (excluded.isEmpty) return candidates;
-    return candidates
-        .where((FocusNode node) => !excluded.contains(node))
-        .toList();
-  }
-
   void _focusNode(FocusNode node, TraversalDirection direction) {
     _frameState.lastPolicyScrolledNode = node;
     if (!_frameState.repeatLockedThisFrame) {
@@ -1321,10 +1241,9 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
         onlyAxis: Axis.horizontal,
       );
     }
-    // The same along a vertical list on Left and Right, under the scorer
-    // (bug 10), unless the node is taller than the list.
-    if (scorer == TvFocusScorer.scored &&
-        context != null &&
+    // The same along a vertical list on Left and Right (bug 10), unless the
+    // node is taller than the list.
+    if (context != null &&
         context.mounted &&
         (direction == TraversalDirection.left ||
             direction == TraversalDirection.right)) {
@@ -1354,9 +1273,7 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
     return _withCache((_TvTraversalCache cache) {
       final FocusNode? focusedChild = nearestScope.focusedChild;
       if (focusedChild == null ||
-          !(scorer == TvFocusScorer.scored
-              ? cache.isFocusableRecordingGroups(focusedChild)
-              : cache.isEffectivelyFocusable(focusedChild))) {
+          !cache.isFocusableRecordingGroups(focusedChild)) {
         final FocusNode? firstFocus =
             (focusedChild == null
                 ? findFirstFocusInDirection(currentNode, direction)
@@ -1376,8 +1293,6 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
       final Rect? focusedScrollableRect = cache.scrollableRect(
         focusedScrollable,
       );
-      final ScrollableState? focusedHorizScrollable = cache
-          .horizontalScrollableOf(focusedChild);
       final Rect target = cache.rectOf(focusedChild);
       final Rect rawVisualTarget = cache.visualRectOf(focusedChild);
       final Rect visualTarget =
@@ -1449,605 +1364,17 @@ class TvFocusTraversalPolicy extends FocusTraversalPolicy
           .toList();
       if (allNodes.isEmpty) return false;
 
-      if (scorer == TvFocusScorer.scored) {
-        final FocusNode? scored = _findScoredCandidate(
-          focusedChild: focusedChild,
-          visualTarget: visualTarget,
-          allNodes: allNodes,
-          direction: direction,
-          cache: cache,
-        );
-        if (scored == null) return false;
-        _focusNode(scored, direction);
-        return true;
-      }
-
-      final FocusNode? chosen = switch (direction) {
-        TraversalDirection.down || TraversalDirection.up =>
-          _findVerticalCandidate(
-            focusedChild: focusedChild,
-            target: target,
-            visualTarget: visualTarget,
-            focusedScrollable: focusedScrollable,
-            focusedScrollableRect: focusedScrollableRect,
-            focusedHorizScrollable: focusedHorizScrollable,
-            allNodes: allNodes,
-            direction: direction,
-            cache: cache,
-          ),
-        TraversalDirection.left || TraversalDirection.right =>
-          _findHorizontalCandidate(
-            focusedChild: focusedChild,
-            target: visualTarget,
-            focusedScrollable: focusedScrollable,
-            focusedScrollableRect: focusedScrollableRect,
-            focusedHorizScrollable: focusedHorizScrollable,
-            allNodes: allNodes,
-            direction: direction,
-            cache: cache,
-          ),
-      };
-
-      if (chosen != null) {
-        _focusNode(chosen, direction);
-        return true;
-      }
-      return false;
-    });
-  }
-
-  FocusNode? _findVerticalCandidate({
-    required FocusNode focusedChild,
-    required Rect target,
-    required Rect visualTarget,
-    required ScrollableState? focusedScrollable,
-    required Rect? focusedScrollableRect,
-    required ScrollableState? focusedHorizScrollable,
-    required List<FocusNode> allNodes,
-    required TraversalDirection direction,
-    required _TvTraversalCache cache,
-  }) {
-    final bool isDown = direction == TraversalDirection.down;
-    final Rect sameScrollableTarget = isDown ? visualTarget : target;
-    final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
-      allNodes,
-      focusedChild,
-    cache,
-    ).where((FocusNode node) {
-      if (focusedChild.ancestors.contains(node)) return false;
-      final ScrollableState? nodeHorizScrollable = cache.horizontalScrollableOf(
-        node,
+      final FocusNode? scored = _findScoredCandidate(
+        focusedChild: focusedChild,
+        visualTarget: visualTarget,
+        allNodes: allNodes,
+        direction: direction,
+        cache: cache,
       );
-      if (nodeHorizScrollable != null &&
-          nodeHorizScrollable != focusedHorizScrollable) {
-        final Rect? horizRect = cache.scrollableRect(nodeHorizScrollable);
-        if (horizRect != null &&
-            !_isRectVisibleHorizontallyInScrollable(
-              cache.rectOf(node),
-              horizRect,
-            )) {
-          return false;
-        }
-      }
+      if (scored == null) return false;
+      _focusNode(scored, direction);
       return true;
-    }).toList();
-
-    // 1. If currently inside a vertical scrollable, first traverse remaining
-    // items within the same scrollable in the requested direction.
-    if (focusedScrollable != null) {
-      final List<FocusNode> sameScrollable = primaryNodes.where((
-        FocusNode node,
-      ) {
-        if (cache.verticalScrollableOf(node) != focusedScrollable) return false;
-        final Rect r = cache.rectOf(node);
-        return isDown
-            ? r.center.dy >= sameScrollableTarget.bottom
-            : r.center.dy <= sameScrollableTarget.top;
-      }).toList();
-      if (sameScrollable.isNotEmpty) {
-        return _pickFromClosestRow(
-          referenceRect: sameScrollableTarget,
-          candidates: sameScrollable,
-          isDown: isDown,
-          preferLeadingOnRow: false,
-          cache: cache,
-        );
-      }
-    }
-
-    // 2. Otherwise, look for candidates outside the current scrollable (e.g.
-    // exiting a scrollable to 取消/确定 below or header actions above, or
-    // entering a scrollable from header/footer buttons).
-    final double exitBoundary = focusedScrollableRect != null
-        ? (isDown
-              ? math.max(
-                  math.min(visualTarget.bottom, focusedScrollableRect.bottom) -
-                      2.0,
-                  focusedScrollableRect.bottom - 4.0,
-                )
-              : math.min(
-                  math.max(visualTarget.top, focusedScrollableRect.top) + 2.0,
-                  focusedScrollableRect.top + 4.0,
-                ))
-        : (isDown ? visualTarget.bottom : visualTarget.top);
-
-    final Rect referenceHorizontalRect = focusedScrollableRect ?? visualTarget;
-    final List<FocusNode> externalCandidates = <FocusNode>[];
-    final List<FocusNode> fallbackScrollableCandidates = <FocusNode>[];
-
-    // Pre-calculate column-disjoint vertical band bounds to eliminate O(N^2) candidate scans.
-    final List<(double, double)> adjacentColumnSpans = <(double, double)>[];
-    for (final FocusNode other in primaryNodes) {
-      final Rect otherBounds =
-          cache.scrollableRect(cache.verticalScrollableOf(other)) ??
-          cache.rectOf(other);
-      final bool overlapsTargetVertically =
-          otherBounds.bottom > visualTarget.top + 1.0 &&
-          otherBounds.top < visualTarget.bottom - 1.0;
-      final bool disjointFromTargetHorizontally =
-          otherBounds.left >= visualTarget.right - 2.0 ||
-          otherBounds.right <= visualTarget.left + 2.0;
-      if (overlapsTargetVertically && disjointFromTargetHorizontally) {
-        adjacentColumnSpans.add((otherBounds.left, otherBounds.right));
-      }
-    }
-
-    for (final FocusNode node in primaryNodes) {
-      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
-      if (focusedScrollable != null && nodeScrollable == focusedScrollable) {
-        continue;
-      }
-      final Rect nr = cache.rectOf(node);
-      final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
-      if (nodeScrollable != null && nodeScrollableRect != null) {
-        final bool overlapsHorizontally =
-            referenceHorizontalRect.right > nodeScrollableRect.left + 2.0 &&
-            referenceHorizontalRect.left < nodeScrollableRect.right - 2.0;
-        if (!overlapsHorizontally) continue;
-        final bool scrollableInDirection = isDown
-            ? visualTarget.center.dy <= nodeScrollableRect.top + 4.0 ||
-                  nodeScrollableRect.top >= exitBoundary - 4.0
-            : visualTarget.center.dy >= nodeScrollableRect.bottom - 4.0 ||
-                  nodeScrollableRect.bottom <= exitBoundary + 4.0;
-        if (!scrollableInDirection) continue;
-        if (_isRectVisibleInScrollable(nr, nodeScrollableRect)) {
-          final bool nodeInDirection = isDown
-              ? nr.center.dy >= visualTarget.bottom
-              : nr.center.dy <= visualTarget.top;
-          if (nodeInDirection) {
-            externalCandidates.add(node);
-          }
-        } else {
-          fallbackScrollableCandidates.add(node);
-        }
-      } else {
-        if (focusedScrollableRect != null) {
-          final bool overlapsFocusedScrollableHorizontally =
-              nr.right > focusedScrollableRect.left + 2.0 &&
-              nr.left < focusedScrollableRect.right - 2.0;
-          if (!overlapsFocusedScrollableHorizontally) continue;
-        } else {
-          final bool overlapsTargetHorizontally =
-              nr.right > visualTarget.left - 4.0 &&
-              nr.left < visualTarget.right + 4.0;
-          if (!overlapsTargetHorizontally) {
-            // Reject candidates that belong to a separate side-by-side column
-            // which already has items or a scrollable at target's vertical band.
-            final bool belongsToAdjacentColumn = adjacentColumnSpans.any(
-              ((double, double) span) =>
-                  span.$2 > nr.left + 1.0 && span.$1 < nr.right - 1.0,
-            );
-            if (belongsToAdjacentColumn) continue;
-          }
-        }
-        final bool nodeInDirection = isDown
-            ? nr.center.dy >= exitBoundary &&
-                  nr.center.dy > visualTarget.center.dy
-            : nr.center.dy <= exitBoundary &&
-                  nr.center.dy < visualTarget.center.dy;
-        if (nodeInDirection) {
-          externalCandidates.add(node);
-        }
-      }
-    }
-
-    final List<FocusNode> pool = externalCandidates.isNotEmpty
-        ? externalCandidates
-        : fallbackScrollableCandidates;
-    if (pool.isEmpty) return null;
-
-    return _pickFromClosestRow(
-      referenceRect: visualTarget,
-      candidates: pool,
-      isDown: isDown,
-      preferLeadingOnRow: isDown && focusedScrollable == null,
-      cache: cache,
-    );
-  }
-
-  static FocusNode _pickFromClosestRow({
-    required Rect referenceRect,
-    required List<FocusNode> candidates,
-    required bool isDown,
-    required bool preferLeadingOnRow,
-    required _TvTraversalCache cache,
-  }) {
-    FocusNode closestVertical = candidates.first;
-    Rect closestRect = cache.rectOf(closestVertical);
-    for (final FocusNode node in candidates.skip(1)) {
-      final Rect nr = cache.rectOf(node);
-      if (isDown) {
-        if (nr.center.dy < closestRect.center.dy) {
-          closestVertical = node;
-          closestRect = nr;
-        }
-      } else {
-        if (nr.center.dy > closestRect.center.dy) {
-          closestVertical = node;
-          closestRect = nr;
-        }
-      }
-    }
-
-    final Rect rowBounds = closestRect;
-    final List<FocusNode> row = candidates.where((FocusNode node) {
-      final Rect r = cache.rectOf(node);
-      return r.top < rowBounds.bottom - 1.0 && r.bottom > rowBounds.top + 1.0;
-    }).toList();
-
-    if (row.length <= 1) return closestVertical;
-    row.sort(
-      (FocusNode a, FocusNode b) =>
-          cache.rectOf(a).left.compareTo(cache.rectOf(b).left),
-    );
-    if (preferLeadingOnRow && cache.verticalScrollableOf(row.first) != null) {
-      return row.first;
-    }
-
-    final List<FocusNode> overlapping = row.where((FocusNode node) {
-      final Rect r = cache.rectOf(node);
-      return r.right > referenceRect.left + 1.0 &&
-          r.left < referenceRect.right - 1.0;
-    }).toList();
-
-    if (overlapping.isNotEmpty) {
-      final Rect firstRect = cache.rectOf(overlapping.first);
-      if (overlapping.length > 1 &&
-          referenceRect.left <= firstRect.center.dx &&
-          referenceRect.right >= cache.rectOf(overlapping[1]).center.dx &&
-          referenceRect.width > firstRect.width * 1.5) {
-        return overlapping.first;
-      }
-      overlapping.sort(
-        (FocusNode a, FocusNode b) =>
-            (cache.rectOf(a).center.dx - referenceRect.center.dx)
-                .abs()
-                .compareTo(
-                  (cache.rectOf(b).center.dx - referenceRect.center.dx).abs(),
-                ),
-      );
-      return overlapping.first;
-    }
-
-    double horizontalGap(Rect r) {
-      if (r.right <= referenceRect.left) return referenceRect.left - r.right;
-      if (r.left >= referenceRect.right) return r.left - referenceRect.right;
-      return 0;
-    }
-
-    row.sort((FocusNode a, FocusNode b) {
-      final Rect ra = cache.rectOf(a);
-      final Rect rb = cache.rectOf(b);
-      final int cmp = horizontalGap(ra).compareTo(horizontalGap(rb));
-      if (cmp != 0) return cmp;
-      return (ra.center.dx - referenceRect.center.dx).abs().compareTo(
-        (rb.center.dx - referenceRect.center.dx).abs(),
-      );
     });
-    return row.first;
-  }
-
-  FocusNode? _findHorizontalCandidate({
-    required FocusNode focusedChild,
-    required Rect target,
-    required ScrollableState? focusedScrollable,
-    required Rect? focusedScrollableRect,
-    required ScrollableState? focusedHorizScrollable,
-    required List<FocusNode> allNodes,
-    required TraversalDirection direction,
-    required _TvTraversalCache cache,
-  }) {
-    final bool isRight = direction == TraversalDirection.right;
-
-    // 0. Support stepping between a row and its trailing focusable descendant
-    // (e.g. refresh IconButton or Switch).
-    final Element? focusedRow = cache.enclosingRowOf(focusedChild);
-    if (focusedRow != null) {
-      if (isRight) {
-        final List<FocusNode> trailingChildren = allNodes.where((
-          FocusNode node,
-        ) {
-          return node.ancestors.contains(focusedChild) &&
-              cache.enclosingRowOf(node) == focusedRow &&
-              tvListTiles.isSecondaryIn(cache.rectOf(node), target);
-        }).toList();
-        if (trailingChildren.isNotEmpty) {
-          trailingChildren.sort(
-            (FocusNode a, FocusNode b) =>
-                cache.rectOf(a).left.compareTo(cache.rectOf(b).left),
-          );
-          return trailingChildren.first;
-        }
-      } else {
-        final List<FocusNode> parentContainers = allNodes.where((
-          FocusNode node,
-        ) {
-          return focusedChild.ancestors.contains(node) &&
-              cache.enclosingRowOf(node) == focusedRow &&
-              tvListTiles.isSecondaryIn(target, cache.rectOf(node));
-        }).toList();
-        if (parentContainers.isNotEmpty) {
-          parentContainers.sort(
-            (FocusNode a, FocusNode b) =>
-                cache.rectOf(b).left.compareTo(cache.rectOf(a).left),
-          );
-          return parentContainers.first;
-        }
-      }
-    }
-
-    // 0b. Support stepping across sibling actions embedded inside a primary
-    // card and stepping Left from the leftmost action back to the enclosing
-    // card.
-    FocusNode? parentCard;
-    if (focusedRow == null && cache.enclosingActionOf(focusedChild) != null) {
-      for (final FocusNode ancestor in focusedChild.ancestors) {
-        if (cache.isEffectivelyFocusable(ancestor) &&
-            cache.enclosingCardOf(ancestor) != null &&
-            cache.enclosingActionOf(ancestor) == null &&
-            cache.enclosingRowOf(ancestor) == null &&
-            _isEmbeddedSecondaryOf(focusedChild, ancestor, cache)) {
-          parentCard = ancestor;
-          break;
-        }
-      }
-    }
-    if (parentCard != null) {
-      final List<FocusNode> siblingActions = allNodes.where((FocusNode node) {
-        if (!node.ancestors.contains(parentCard)) return false;
-        if (cache.enclosingActionOf(node) == null) return false;
-        final Rect r = cache.rectOf(node);
-        final bool sameBand =
-            r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
-        if (!sameBand) return false;
-        return isRight
-            ? r.center.dx > target.center.dx + 4.0
-            : r.center.dx < target.center.dx - 4.0;
-      }).toList();
-      if (siblingActions.isNotEmpty) {
-        siblingActions.sort(
-          (FocusNode a, FocusNode b) => isRight
-              ? cache.rectOf(a).left.compareTo(cache.rectOf(b).left)
-              : cache.rectOf(b).right.compareTo(cache.rectOf(a).right),
-        );
-        return siblingActions.first;
-      }
-      if (!isRight) {
-        return parentCard;
-      }
-    }
-
-    FocusNode? embeddedCardActionFallback() {
-      if (!isRight ||
-          focusedRow != null ||
-          cache.enclosingCardOf(focusedChild) == null ||
-          cache.enclosingActionOf(focusedChild) != null) {
-        return null;
-      }
-      final List<FocusNode> embeddedActions = allNodes.where((FocusNode node) {
-        return node.ancestors.contains(focusedChild) &&
-            cache.enclosingActionOf(node) != null &&
-            _isEmbeddedSecondaryOf(node, focusedChild, cache);
-      }).toList();
-      return _findFirstReadingOrderNode(embeddedActions, cache);
-    }
-
-    final List<FocusNode> primaryNodes = _filterOutEmbeddedSecondaryActions(
-      allNodes,
-      focusedChild,
-      cache,
-    ).where((FocusNode node) => !focusedChild.ancestors.contains(node)).toList();
-
-    // 1. If currently inside a horizontal scrollable, traverse remaining items
-    // within that horizontal scrollable before exiting to a sidebar.
-    if (focusedHorizScrollable != null) {
-      final List<FocusNode> sameHorizScrollable = primaryNodes.where((
-        FocusNode node,
-      ) {
-        if (cache.horizontalScrollableOf(node) != focusedHorizScrollable) {
-          return false;
-        }
-        final Rect r = cache.rectOf(node);
-        final bool sameRow =
-            r.bottom > target.top + 1.0 && r.top < target.bottom - 1.0;
-        if (!sameRow) return false;
-        return isRight
-            ? r.center.dx >= target.right
-            : r.center.dx <= target.left;
-      }).toList();
-      if (sameHorizScrollable.isNotEmpty) {
-        sameHorizScrollable.sort((FocusNode a, FocusNode b) {
-          final Rect ra = cache.rectOf(a);
-          final Rect rb = cache.rectOf(b);
-          final double distA = math.max(
-            0.0,
-            isRight ? ra.left - target.right : target.left - ra.right,
-          );
-          final double distB = math.max(
-            0.0,
-            isRight ? rb.left - target.right : target.left - rb.right,
-          );
-          final int cmp = distA.compareTo(distB);
-          if (cmp != 0) return cmp;
-          return (ra.center.dy - target.center.dy).abs().compareTo(
-            (rb.center.dy - target.center.dy).abs(),
-          );
-        });
-        return sameHorizScrollable.first;
-      }
-    }
-
-    final List<FocusNode> directionalNodes = primaryNodes.where((
-      FocusNode node,
-    ) {
-      final Rect nr = cache.rectOf(node);
-      final bool inHorizDirection = isRight
-          ? nr.center.dx >= target.right
-          : nr.center.dx <= target.left;
-      if (!inHorizDirection) return false;
-      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
-      if (nodeScrollable != null && nodeScrollable != focusedScrollable) {
-        final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
-        if (nodeScrollableRect != null &&
-            !_isRectVisibleInScrollable(nr, nodeScrollableRect)) {
-          return false;
-        }
-      }
-      final ScrollableState? nodeHorizScrollable = cache.horizontalScrollableOf(
-        node,
-      );
-      if (nodeHorizScrollable != null &&
-          nodeHorizScrollable != focusedHorizScrollable) {
-        final Rect? horizRect = cache.scrollableRect(nodeHorizScrollable);
-        if (horizRect != null &&
-            !_isRectVisibleHorizontallyInScrollable(nr, horizRect)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-
-    if (directionalNodes.isEmpty) return embeddedCardActionFallback();
-
-    // 2. Prefer candidates on the same visual row (vertically overlapping target).
-    final Rect scrollTarget = cache.rectOf(focusedChild);
-    final List<FocusNode> inBand = directionalNodes.where((FocusNode node) {
-      final Rect r = cache.rectOf(node);
-      final Rect bandTarget =
-          (focusedScrollable != null &&
-              cache.verticalScrollableOf(node) == focusedScrollable)
-          ? scrollTarget
-          : target;
-      return r.bottom > bandTarget.top + 1.0 &&
-          r.top < bandTarget.bottom - 1.0;
-    }).toList();
-
-    if (inBand.isNotEmpty) {
-      inBand.sort((FocusNode a, FocusNode b) {
-        final Rect ra = cache.rectOf(a);
-        final Rect rb = cache.rectOf(b);
-        final double distA = math.max(
-          0.0,
-          isRight ? ra.left - target.right : target.left - ra.right,
-        );
-        final double distB = math.max(
-          0.0,
-          isRight ? rb.left - target.right : target.left - rb.right,
-        );
-        final int cmp = distA.compareTo(distB);
-        if (cmp != 0) return cmp;
-        final int centerCmp = (ra.center.dx - target.center.dx).abs().compareTo(
-          (rb.center.dx - target.center.dx).abs(),
-        );
-        if (centerCmp != 0) return centerCmp;
-        return (ra.center.dy - target.center.dy).abs().compareTo(
-          (rb.center.dy - target.center.dy).abs(),
-        );
-      });
-      return inBand.first;
-    }
-
-    // 3. Only fall back to out-of-band candidates when crossing between
-    // genuinely side-by-side panels (not vertically stacked rows/sections).
-    final Element? focusedWrap = cache.enclosingWrapOf(focusedChild);
-    final List<FocusNode> sideBySide = directionalNodes.where((FocusNode node) {
-      final ScrollableState? nodeScrollable = cache.verticalScrollableOf(node);
-      if (focusedScrollable != null && nodeScrollable == focusedScrollable) {
-        return false;
-      }
-      if (focusedWrap != null && cache.enclosingWrapOf(node) == focusedWrap) {
-        return false;
-      }
-      final Rect nr = cache.rectOf(node);
-      if (nr.right > target.left + 1.0 && nr.left < target.right - 1.0) {
-        return false;
-      }
-      if (focusedScrollableRect != null) {
-        final bool overlapsFocusedScrollableVertically =
-            nr.center.dy >= focusedScrollableRect.top + 4.0 &&
-            nr.center.dy <= focusedScrollableRect.bottom - 4.0;
-        final bool outsideFocusedScrollableHorizontally = isRight
-            ? nr.left >= focusedScrollableRect.right - 2.0
-            : nr.right <= focusedScrollableRect.left + 2.0;
-        if (!overlapsFocusedScrollableVertically ||
-            !outsideFocusedScrollableHorizontally) {
-          return false;
-        }
-      }
-      final Rect? nodeScrollableRect = cache.scrollableRect(nodeScrollable);
-      if (nodeScrollableRect != null) {
-        final bool targetOverlapsNodeScrollableVertically =
-            target.center.dy >= nodeScrollableRect.top + 4.0 &&
-            target.center.dy <= nodeScrollableRect.bottom - 4.0;
-        final bool targetOutsideNodeScrollableHorizontally = isRight
-            ? nodeScrollableRect.left >= target.right - 2.0
-            : nodeScrollableRect.right <= target.left + 2.0;
-        if (!targetOverlapsNodeScrollableVertically ||
-            !targetOutsideNodeScrollableHorizontally) {
-          return false;
-        }
-      }
-      if (focusedScrollable == null && nodeScrollable == null) {
-        final double minY = math.min(target.bottom, nr.bottom);
-        final double maxY = math.max(target.top, nr.top);
-        final double gapLeft = isRight ? target.right : nr.right;
-        final double gapRight = isRight ? nr.left : target.left;
-        final bool separatedByIntermediateSection = primaryNodes.any((
-          FocusNode other,
-        ) {
-          if (other == node) return false;
-          final Rect r =
-              cache.scrollableRect(cache.verticalScrollableOf(other)) ??
-              cache.rectOf(other);
-          final bool verticallyBetween =
-              r.center.dy > minY - 2.0 && r.center.dy < maxY + 2.0;
-          final bool spansAcrossGap =
-              r.left < gapRight + 4.0 && r.right > gapLeft - 4.0;
-          return verticallyBetween && spansAcrossGap;
-        });
-        if (separatedByIntermediateSection) return false;
-      }
-      return true;
-    }).toList();
-
-    if (sideBySide.isEmpty) return embeddedCardActionFallback();
-
-    sideBySide.sort((FocusNode a, FocusNode b) {
-      final Rect ra = cache.rectOf(a);
-      final Rect rb = cache.rectOf(b);
-      final int vCmp = (ra.center.dy - target.center.dy).abs().compareTo(
-        (rb.center.dy - target.center.dy).abs(),
-      );
-      if (vCmp != 0) return vCmp;
-      final double hDistA = isRight
-          ? ra.left - target.right
-          : target.left - ra.right;
-      final double hDistB = isRight
-          ? rb.left - target.right
-          : target.left - rb.right;
-      return hDistA.compareTo(hDistB);
-    });
-    return sideBySide.first;
   }
 }
 
@@ -2161,43 +1488,6 @@ class _TvPass {
   final bool clearRing;
 }
 
-/// The remote sequence that flips the hidden switch between the scorer and
-/// the old rule chain (M13.5, for one release): Up, Up, Down, Down, Left,
-/// Right, Left, Right, each press within [maxGapMs] of the one before. Each
-/// press still moves focus as usual.
-class TvSwitchSequence {
-  static const List<LogicalKeyboardKey> keys = <LogicalKeyboardKey>[
-    LogicalKeyboardKey.arrowUp,
-    LogicalKeyboardKey.arrowUp,
-    LogicalKeyboardKey.arrowDown,
-    LogicalKeyboardKey.arrowDown,
-    LogicalKeyboardKey.arrowLeft,
-    LogicalKeyboardKey.arrowRight,
-    LogicalKeyboardKey.arrowLeft,
-    LogicalKeyboardKey.arrowRight,
-  ];
-
-  static const int maxGapMs = 1500;
-
-  final List<LogicalKeyboardKey> _recent = <LogicalKeyboardKey>[];
-  int? _lastMs;
-
-  /// Adds a key press at [nowMs], and returns whether it completes the
-  /// sequence.
-  bool add(LogicalKeyboardKey key, int nowMs) {
-    if (_lastMs != null && nowMs - _lastMs! > maxGapMs) _recent.clear();
-    _lastMs = nowMs;
-    _recent.add(key);
-    if (_recent.length > keys.length) _recent.removeAt(0);
-    if (_recent.length < keys.length) return false;
-    for (int i = 0; i < keys.length; i++) {
-      if (_recent[i] != keys[i]) return false;
-    }
-    _recent.clear();
-    return true;
-  }
-}
-
 class _TvNavigationState extends State<TvNavigation>
     with WidgetsBindingObserver {
   static const int _kDirectionalRepeatMinIntervalMs = 45;
@@ -2244,7 +1534,6 @@ class _TvNavigationState extends State<TvNavigation>
   late final Stopwatch _repeatClock =
       WidgetsBinding.instance.samplingClock.stopwatch()..start();
   int? _lastDirectionalStepMs;
-  final TvSwitchSequence _switchSequence = TvSwitchSequence();
 
   /// A ring pass and a reconcile pass of another reason can each be pending
   /// once. A later request finds its kind pending and leaves it as it is.
@@ -2982,14 +2271,6 @@ class _TvNavigationState extends State<TvNavigation>
         _lastDirectionalStepMs = nowMs;
       } else if (event is KeyDownEvent) {
         _lastDirectionalStepMs = _repeatClock.elapsedMilliseconds;
-        if (_switchSequence.add(key, _lastDirectionalStepMs!)) {
-          final bool rules =
-              TvFocusTraversalPolicy.scorer == TvFocusScorer.scored;
-          TvFocusTraversalPolicy.scorer = rules
-              ? TvFocusScorer.rules
-              : TvFocusScorer.scored;
-          TvPlatform.saveFocusScorer(rules: rules);
-        }
       }
       return KeyEventResult.ignored;
     }

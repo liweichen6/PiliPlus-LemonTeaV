@@ -7,11 +7,8 @@
 // list around it. The expected path is the correct behavior, including the
 // fixes from the M13.0 bug inventory (`docs/tv/M13_BASELINE.md`).
 //
-// A path the current rules get wrong is a known failure, labelled with its
-// bug: the replay checks every step before the bad one, then checks that the
-// bad step goes wrong exactly as the old rules make it. If the bug is fixed,
-// or goes wrong in some new way, the test fails and says so, so M13.4 sees
-// exactly which paths its scorer changes.
+// Until M13.6 removed the old rule chain, a path it got wrong was marked as
+// a known failure. The paths that were are named for their bug, `[bug N]`.
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,33 +38,6 @@ const Size tvScreen = Size(960, 540);
 /// One step of a recorded path: a key, and the label of the node focus should
 /// land on.
 typedef PathStep = (LogicalKeyboardKey key, String lands);
-
-/// A path the current rules get wrong, until M13.4.
-class KnownFailure {
-  /// Step [step] lands on [landsOn] instead of the expected node.
-  const KnownFailure({
-    required this.bug,
-    required this.step,
-    required String this.landsOn,
-  }) : cutOff = false;
-
-  /// Step [step] lands on the expected node, but leaves it cut off: the ring
-  /// isn't all on screen, or the node isn't all inside a list around it.
-  const KnownFailure.cutOff({required this.bug, required this.step})
-    : landsOn = null,
-      cutOff = true;
-
-  /// The bug's number in the inventory in `docs/tv/M13_BASELINE.md`.
-  final int bug;
-
-  /// The 1-based step that goes wrong.
-  final int step;
-
-  /// Where that step lands with the current rules.
-  final String? landsOn;
-
-  final bool cutOff;
-}
 
 /// Labels for a scene's own focus nodes. A node that a framework widget makes
 /// (a tab, a rail destination) is named by the first text under it.
@@ -201,13 +171,9 @@ String? ringProblem(WidgetTester tester) {
 Future<void> walkPath(
   WidgetTester tester,
   String start,
-  List<PathStep> path, {
-  KnownFailure? known,
-}) async {
+  List<PathStep> path,
+) async {
   expect(focusedLabel(), start, reason: 'the path starts somewhere else');
-  // The scorer (M13.4) has no known failures: every step must be right.
-  final KnownFailure? failure =
-      TvFocusTraversalPolicy.scorer == TvFocusScorer.rules ? known : null;
   String from = start;
   for (int i = 0; i < path.length; i++) {
     final (LogicalKeyboardKey key, String want) = path[i];
@@ -217,32 +183,10 @@ Future<void> walkPath(
     final String where =
         'step ${i + 1}, ${key == dpadBack ? 'Back' : key.keyLabel} from $from';
     final bool landed = want.split('|').contains(got);
-    if (failure != null && i + 1 == failure.step) {
-      final String fixed =
-          'bug ${failure.bug} no longer shows at $where: '
-          'make it an ordinary step';
-      if (failure.cutOff) {
-        expect(landed, isTrue, reason: '$where lands on $got, not $want');
-        expect(problem, isNotNull, reason: fixed);
-      } else {
-        expect(landed, isFalse, reason: fixed);
-        expect(
-          got,
-          failure.landsOn,
-          reason: 'bug ${failure.bug} now goes somewhere new at $where',
-        );
-      }
-      return;
-    }
     expect(landed, isTrue, reason: '$where lands on $got, not $want');
     expect(problem, isNull, reason: '$where, on $got');
     from = got;
   }
-  expect(
-    failure,
-    isNull,
-    reason: 'the known failure is past the end of the path',
-  );
 }
 
 /// Sets the test view to [tvScreen] for the rest of the test.
