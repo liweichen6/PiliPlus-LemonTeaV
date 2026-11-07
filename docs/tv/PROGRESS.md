@@ -136,6 +136,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Layout, Editable Groups & Editor | ✅ Done (the editor's design agreed 2026-11-07; released in `v2.2.0.2-fork.5998`; the changes after the first device try land by their own pull request, and merging it publishes a release) | `lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
+| **M15: Player HUD, Live** | Epic M15.1 | `M15.2` | Close or Minimize a SuperChat | ⏳ Planned (later; added by the user 2026-11-07) | `lib/tv/tv_player_hud.dart`, `LiveRoomController.fsSC` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M17 |
 
@@ -2116,3 +2117,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * **The top right in rows**: up to 3 rows of 6 icon-only buttons, aligned right. `⋮` takes the first row's last place, so the group's cap went from 4 to 17. The episode entry stands for up to three buttons, so a full group can spill into a fourth row.
   * **The title**: up to 3 lines, with `…` only when 3 can't hold it.
 * **Verification**: TV analyze clean over the CI file list; 194 TV tests pass. New or changed tests: the cap of 17 in the saved lists and in the editor (an 18th is refused); the rows (five buttons and `⋮` in the first, right edges aligned); `按钮在时间条上方` from the settings box and from the editor, with Up and Down between the buttons and the bar; a long title on exactly 3 lines with an ellipsis, and a short one on 1. No device run after these changes.
+
+### [2026-11-07] Milestone M15: Task `M15.2` Added
+* **Status**: ⏳ Planned. No code.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M15), `docs/tv/PROGRESS.md`.
+* **The request** (the user): a SuperChat can't be closed with the remote. On a phone it's swiped away; on the TV it stays until it expires.
+* **Found in upstream's code**:
+  * SuperChats exist only in live rooms; normal videos don't have them.
+  * In fullscreen with `全屏 SuperChat` on, the card is `LiveRoomController.fsSC`. It shows for up to 10 s, and its only close control is a touch `×`.
+  * In split view, the chat and the SuperChat list are two pages of a `PageView`.
+* **Next**: settled with the rest of the live HUD in `M15.1`, after M14.
