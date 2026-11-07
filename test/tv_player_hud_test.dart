@@ -2414,8 +2414,8 @@ void _actionTableTests() {
     expect(_ids(source, TvHudActionId.subtitle), isEmpty);
 
     scene.vdc.subtitles.addAll([
-      Subtitle(lan: 'zh', lanDoc: '中文'),
-      Subtitle(lan: 'en', lanDoc: 'English'),
+      Subtitle(id: 1, lan: 'zh', lanDoc: '中文'),
+      Subtitle(id: 2, lan: 'en', lanDoc: 'English'),
     ]);
     TvHudAction subtitle = _one(source, TvHudActionId.subtitle);
     expect(subtitle.label, '字幕: 关闭');
