@@ -101,6 +101,9 @@ class TvPlayerHud extends StatefulWidget {
   static const Key focusLabelKey = ValueKey<String>('tvHud:focusLabel');
   static const Key editorKey = ValueKey<String>('tvHud:editor');
   static const Key editorShowLabelsKey = ValueKey<String>('tvHud:editLabels');
+  static const Key editorButtonsAboveBarKey = ValueKey<String>(
+    'tvHud:editButtonsAboveBar',
+  );
   static const Key editorResetKey = ValueKey<String>('tvHud:editReset');
   static const Key editorResetConfirmKey = ValueKey<String>(
     'tvHud:editResetConfirm',
@@ -1012,10 +1015,11 @@ class _TvPlayerHudState extends State<TvPlayerHud>
               mainAxisSize: MainAxisSize.min,
               spacing: 2,
               children: [
+                // Up to three lines; `…` only when three can't hold it.
                 Text(
                   title,
                   key: TvPlayerHud.titleKey,
-                  maxLines: 1,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
@@ -1039,29 +1043,48 @@ class _TvPlayerHudState extends State<TvPlayerHud>
           ),
           // One Obx for the group: the actions' labels and availability read
           // the controllers' Rx values.
-          Obx(
-            () => Row(
-              key: TvPlayerHud.topRightGroupKey,
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: [
-                for (final TvHudActionId id in _groups.value.topRight)
-                  for (final TvHudAction action in resolveAction(id))
-                    _buildActionButton(action, iconOnly: true, compact: true),
-                _TvHudPillButton(
-                  key: TvPlayerHud.menuButtonKey,
-                  focusNode: _menuButtonFocusNode,
-                  compact: true,
-                  iconOnly: true,
-                  icon: Icons.more_vert_rounded,
-                  label: '更多',
-                  onPressed: _openMenu,
-                ),
-              ],
-            ),
-          ),
+          Obx(_buildTopRightGroup),
         ],
       ),
+    );
+  }
+
+  /// The top-right group: rows of [TvHudGroups.topRightRowSize] buttons,
+  /// aligned right, with `⋮` taking the first row's last place (the user,
+  /// 2026-11-07). The episode entry stands for up to three buttons, so a
+  /// full group can spill into a fourth row.
+  Widget _buildTopRightGroup() {
+    final List<Widget> buttons = [
+      for (final TvHudActionId id in _groups.value.topRight)
+        for (final TvHudAction action in resolveAction(id))
+          _buildActionButton(action, iconOnly: true, compact: true),
+    ];
+    const int rowSize = TvHudGroups.topRightRowSize;
+    final List<List<Widget>> rows = [
+      [
+        ...buttons.take(rowSize - 1),
+        _TvHudPillButton(
+          key: TvPlayerHud.menuButtonKey,
+          focusNode: _menuButtonFocusNode,
+          compact: true,
+          iconOnly: true,
+          icon: Icons.more_vert_rounded,
+          label: '更多',
+          onPressed: _openMenu,
+        ),
+      ],
+      for (int i = rowSize - 1; i < buttons.length; i += rowSize)
+        buttons.sublist(i, math.min(i + rowSize, buttons.length)),
+    ];
+    return Column(
+      key: TvPlayerHud.topRightGroupKey,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      spacing: 8,
+      children: [
+        for (final List<Widget> row in rows)
+          Row(mainAxisSize: MainAxisSize.min, spacing: 8, children: row),
+      ],
     );
   }
 
@@ -1115,12 +1138,15 @@ class _TvPlayerHudState extends State<TvPlayerHud>
                 right: 0,
                 bottom: 0,
                 child: Container(
-                  // Icon-only buttons draw their label under them.
+                  // Icon-only buttons draw their label under them, so a
+                  // bottom row at the very bottom needs the room.
                   padding: EdgeInsets.fromLTRB(
                     28,
                     36,
                     28,
-                    _groups.value.showLabels ? 24 : 34,
+                    _groups.value.showLabels || _groups.value.buttonsAboveBar
+                        ? 24
+                        : 34,
                   ),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
@@ -1137,6 +1163,10 @@ class _TvPlayerHudState extends State<TvPlayerHud>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     spacing: 14,
+                    // `按钮在时间条上方` puts the bottom row first.
+                    verticalDirection: _groups.value.buttonsAboveBar
+                        ? VerticalDirection.up
+                        : VerticalDirection.down,
                     children: [
                       if (!_pl.isLive)
                         _TvTimeBar(
