@@ -61,6 +61,9 @@ abstract final class TvPlatform {
     // even if upstream's own default ever changes; a user who switches it off
     // on a TV still loses the HUD.
     SettingBoxKey.keyboardControl: true,
+    // Loads the danmaku trend for the HUD's 高能进度条 (one small request per
+    // video); upstream's default is off.
+    SettingBoxKey.showDmChart: true,
   };
 
   /// Returns `true` when running on an Android TV / Leanback device or when

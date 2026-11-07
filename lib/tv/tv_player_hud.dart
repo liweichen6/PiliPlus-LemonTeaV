@@ -1,29 +1,41 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart' as pgc_ep;
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
+import 'package:PiliPlus/models_new/video/video_play_info/subtitle.dart';
 import 'package:PiliPlus/pages/common/common_intro_controller.dart';
 import 'package:PiliPlus/pages/live_room/controller.dart';
+import 'package:PiliPlus/pages/setting/models/play_settings.dart'
+    show showPlayerVolumeDialog;
 import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
+import 'package:PiliPlus/pages/video/widgets/header_control.dart'
+    show HeaderControlState;
+import 'package:PiliPlus/pages/video/widgets/header_mixin.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
-import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
-import 'package:PiliPlus/utils/connectivity_utils.dart';
+import 'package:PiliPlus/services/shutdown_timer_service.dart'
+    show shutdownTimerService;
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
+import 'package:media_kit/media_kit.dart' show Player;
+
+part 'tv_hud_actions.dart';
 
 /// Self-contained 10-foot Android TV player HUD & D-pad controller.
 ///
@@ -36,9 +48,10 @@ import 'package:material_ui/material_ui.dart';
 /// - In fullscreen mode (`isFullScreen`) or when the 10-foot HUD is open,
 ///   intercepts remote keys for direct `-10s / +10s` seeking (with hold
 ///   acceleration and centered OSD time preview), Play/Pause, and a full
-///   10-foot bottom transport bar (Play/Pause, Prev/Next, Episodes, Danmaku
-///   toggle & settings, Quality, Speed, Aspect Ratio, Like/Triple-Like, Coin,
-///   Favorite).
+///   10-foot bottom transport bar (Play/Pause, then buttons from the action
+///   table in `tv_hud_actions.dart`: episodes, danmaku toggle and settings,
+///   quality, subtitles, speed, aspect ratio, like/triple-like, coin,
+///   favorite). Settings panels are upstream's own (M14.2).
 class TvPlayerHud extends StatefulWidget {
   const TvPlayerHud({
     super.key,
@@ -49,6 +62,7 @@ class TvPlayerHud extends StatefulWidget {
     this.canPlay,
     this.onSkipSegment,
     this.onRefresh,
+    @visibleForTesting this.debugUpstream,
   });
 
   final Widget child;
@@ -58,6 +72,10 @@ class TvPlayerHud extends StatefulWidget {
   final ValueGetter<bool>? canPlay;
   final ValueGetter<bool>? onSkipSegment;
   final VoidCallback? onRefresh;
+
+  /// Replaces upstream's panels and dialogs in tests.
+  @visibleForTesting
+  final TvHudUpstream? debugUpstream;
 
   @override
   State<TvPlayerHud> createState() => _TvPlayerHudState();
@@ -71,7 +89,8 @@ bool _isSelectKey(LogicalKeyboardKey key) {
       key == LogicalKeyboardKey.gameButtonA;
 }
 
-class _TvPlayerHudState extends State<TvPlayerHud> {
+class _TvPlayerHudState extends State<TvPlayerHud>
+    with HeaderMixin<TvPlayerHud>, _TvHudActionTable {
   final FocusNode _surfaceFocusNode = FocusNode(
     debugLabel: 'TvPlayerHudSurface',
   );
@@ -95,10 +114,17 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
   DateTime? _lastSeekKeyTime;
   bool? _lastSeekForward;
 
+  @override
   PlPlayerController get _pl => widget.plPlayerController;
 
+  /// For upstream's `HeaderMixin` (its danmaku panel).
+  @override
+  PlPlayerController get plPlayerController => widget.plPlayerController;
+
+  @override
   bool get _hasPlayer => _pl.videoPlayerController != null;
 
+  @override
   bool get _isFullScreen => _pl.isFullScreen.value;
 
   bool get _canTriggerLongPressSpeed =>
@@ -164,6 +190,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return KeyEventResult.ignored;
   }
 
+  @override
   VideoDetailController? get _videoDetailCtr {
     if (widget.introController case final intro?) {
       try {
@@ -177,6 +204,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return null;
   }
 
+  @override
   LiveRoomController? get _liveRoomCtr {
     if (!_pl.isLive) return null;
     final tag = PlPlayerController.playOwner?.tag;
@@ -248,6 +276,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     });
   }
 
+  @override
   void _syncFocusForMode(
     bool isFullScreen, {
     bool forceSplitScreenQuickFocus = false,
@@ -291,6 +320,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     _resetAutoHideTimer();
   }
 
+  @override
   void _hideHud({bool restoreFocus = true}) {
     _autoHideTimer?.cancel();
     _cancelSelectHold();
@@ -305,6 +335,10 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     }
   }
 
+  @override
+  void _cancelAutoHideTimer() => _autoHideTimer?.cancel();
+
+  @override
   void _resetAutoHideTimer() {
     _autoHideTimer?.cancel();
     _autoHideTimer = Timer(const Duration(seconds: 5), () {
@@ -555,6 +589,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return '';
   }
 
+  @override
   List<({String label, BaseEpisodeItem item, bool isCurrent})>
   _collectEpisodes() {
     final result = <({String label, BaseEpisodeItem item, bool isCurrent})>[];
@@ -607,6 +642,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     return result;
   }
 
+  @override
   Future<void> _showTvDialog(Widget Function(BuildContext) builder) async {
     _hideHud(restoreFocus: false);
     await showDialog<void>(
@@ -616,371 +652,6 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     if (mounted) {
       _syncFocusForMode(_isFullScreen, forceSplitScreenQuickFocus: true);
     }
-  }
-
-  Future<void> _showEpisodeDialog() async {
-    final episodes = _collectEpisodes();
-    if (episodes.isEmpty) {
-      SmartDialog.showToast('当前视频无分P或剧集');
-      return;
-    }
-    await _showTvDialog((dialogContext) {
-      return _TvOptionListDialog(
-        title: '选集 (${episodes.length})',
-        items: [
-          for (final ep in episodes)
-            _TvDialogOptionItem(
-              title: ep.label,
-              selected: ep.isCurrent,
-              onSelect: () {
-                Navigator.of(dialogContext).pop();
-                if (widget.introController
-                    case final PgcIntroController pgcCtr) {
-                  pgcCtr.onChangeEpisode(ep.item);
-                } else if (widget.introController
-                    case final UgcIntroController ugcCtr) {
-                  ugcCtr.onChangeEpisode(ep.item);
-                }
-              },
-            ),
-        ],
-      );
-    });
-  }
-
-  Future<void> _showQualityDialog() async {
-    if (_pl.isLive) {
-      final liveCtr = _liveRoomCtr;
-      if (liveCtr == null || liveCtr.acceptQnList.isEmpty) {
-        SmartDialog.showToast('当前直播不支持切换画质');
-        return;
-      }
-      final currentQn = liveCtr.currentQn.value;
-      await _showTvDialog((dialogContext) {
-        return _TvOptionListDialog(
-          title: '选择直播画质',
-          items: [
-            for (final LiveQuality qn in liveCtr.acceptQnList)
-              _TvDialogOptionItem(
-                title: qn.desc,
-                selected: currentQn?.code == qn.code,
-                onSelect: () {
-                  Navigator.of(dialogContext).pop();
-                  liveCtr.changeQn(qn);
-                  SmartDialog.showToast('画质已切换为：${qn.desc}');
-                },
-              ),
-          ],
-        );
-      });
-      return;
-    }
-
-    final videoCtr = _videoDetailCtr;
-    if (videoCtr == null ||
-        videoCtr.isFileSource ||
-        videoCtr.data.dash == null ||
-        videoCtr.data.supportFormats == null) {
-      SmartDialog.showToast('当前视频不支持切换画质');
-      return;
-    }
-    final formats = videoCtr.data.supportFormats!;
-    final availableQa =
-        videoCtr.data.dash!.video?.map((e) => e.id).toSet() ?? const <int?>{};
-    final currentQaCode = videoCtr.currentVideoQa.value?.code;
-    await _showTvDialog((dialogContext) {
-      return _TvOptionListDialog(
-        title: '选择视频画质',
-        items: [
-          for (final fmt in formats)
-            if (fmt.quality != null && availableQa.contains(fmt.quality))
-              _TvDialogOptionItem(
-                title: fmt.newDesc ?? VideoQuality.fromCode(fmt.quality!).desc,
-                subtitle: fmt.format,
-                selected: currentQaCode == fmt.quality,
-                onSelect: () async {
-                  Navigator.of(dialogContext).pop();
-                  final quality = fmt.quality!;
-                  final newQa = VideoQuality.fromCode(quality);
-                  videoCtr
-                    ..plPlayerController.cacheVideoQa = newQa.code
-                    ..currentVideoQa.value = newQa
-                    ..updatePlayer();
-                  SmartDialog.showToast('画质已切换为：${newQa.desc}');
-                  if (!_pl.tempPlayerConf) {
-                    GStorage.setting.put(
-                      await ConnectivityUtils.isWiFi
-                          ? SettingBoxKey.defaultVideoQa
-                          : SettingBoxKey.defaultVideoQaCellular,
-                      quality,
-                    );
-                  }
-                },
-              ),
-        ],
-      );
-    });
-  }
-
-  Future<void> _showSpeedDialog() async {
-    if (_pl.isLive) return;
-    final speeds = _pl.speedList;
-    final currentSpeed = _pl.playbackSpeed;
-    await _showTvDialog((dialogContext) {
-      return _TvOptionListDialog(
-        title: '选择播放倍速',
-        items: [
-          for (final s in speeds)
-            _TvDialogOptionItem(
-              title: '${s}x',
-              selected: (s - currentSpeed).abs() < 0.01,
-              onSelect: () {
-                Navigator.of(dialogContext).pop();
-                _pl.setPlaybackSpeed(s);
-                SmartDialog.showToast('播放倍速：${s}x');
-              },
-            ),
-        ],
-      );
-    });
-  }
-
-  Future<void> _showVideoFitDialog() async {
-    final currentFit = _pl.videoFit.value;
-    await _showTvDialog((dialogContext) {
-      return _TvOptionListDialog(
-        title: '选择画面比例',
-        items: [
-          for (final fit in VideoFitType.values)
-            _TvDialogOptionItem(
-              title: fit.desc,
-              selected: fit == currentFit,
-              onSelect: () {
-                Navigator.of(dialogContext).pop();
-                _pl.toggleVideoFit(fit);
-                SmartDialog.showToast('画面比例：${fit.desc}');
-              },
-            ),
-        ],
-      );
-    });
-  }
-
-  Future<void> _showDanmakuSettingsDialog() async {
-    await _showTvDialog((dialogContext) {
-      return StatefulBuilder(
-          builder: (context, setDialogState) {
-            void applyDanmakuOption() {
-              _pl.danmakuController?.updateOption(
-                DanmakuOptions.get(
-                  notFullscreen: !_isFullScreen,
-                  speed: _pl.playbackSpeed,
-                ),
-              );
-              DanmakuOptions.save(_pl.danmakuOpacity.value);
-              setDialogState(() {});
-            }
-
-            const areas = [
-              (label: '1/4 屏', value: 0.25),
-              (label: '半屏', value: 0.5),
-              (label: '3/4 屏', value: 0.75),
-              (label: '满屏', value: 1.0),
-            ];
-            const opacities = [
-              (label: '25%', value: 0.25),
-              (label: '50%', value: 0.5),
-              (label: '75%', value: 0.75),
-              (label: '100%', value: 1.0),
-            ];
-            const scales = [
-              (label: '小 (0.8x)', value: 0.8),
-              (label: '标准 (1.0x)', value: 1.0),
-              (label: '大 (1.2x)', value: 1.2),
-              (label: '特大 (1.5x)', value: 1.5),
-            ];
-            const durations = [
-              (label: '慢 (12s)', value: 12.0),
-              (label: '标准 (8s)', value: 8.0),
-              (label: '快 (6s)', value: 6.0),
-            ];
-            const filters = [
-              (label: '滚动弹幕', type: 2),
-              (label: '顶部弹幕', type: 5),
-              (label: '底部弹幕', type: 4),
-              (label: '彩色弹幕', type: 6),
-            ];
-
-            return AlertDialog(
-              backgroundColor: const Color(0xF21A1C1E),
-              title: const Text(
-                '弹幕设置 (遥控器方向键选择)',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              content: SizedBox(
-                width: 560,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 14,
-                    children: [
-                      _buildSettingGroup(
-                        title: '显示区域',
-                        children: [
-                          for (var i = 0; i < areas.length; i++)
-                            _TvHudPillButton(
-                              autofocus: i == 0,
-                              label: areas[i].label,
-                              active:
-                                  (DanmakuOptions.danmakuShowArea -
-                                          areas[i].value)
-                                      .abs() <
-                                  0.05,
-                              onPressed: () {
-                                DanmakuOptions.danmakuShowArea = areas[i].value;
-                                applyDanmakuOption();
-                              },
-                            ),
-                        ],
-                      ),
-                      _buildSettingGroup(
-                        title: '不透明度',
-                        children: [
-                          for (final op in opacities)
-                            _TvHudPillButton(
-                              label: op.label,
-                              active:
-                                  (_pl.danmakuOpacity.value - op.value).abs() <
-                                  0.05,
-                              onPressed: () {
-                                _pl.danmakuOpacity.value = op.value;
-                                applyDanmakuOption();
-                              },
-                            ),
-                        ],
-                      ),
-                      _buildSettingGroup(
-                        title: '弹幕字号',
-                        children: [
-                          for (final sc in scales)
-                            _TvHudPillButton(
-                              label: sc.label,
-                              active:
-                                  (DanmakuOptions.danmakuFontScaleFS - sc.value)
-                                      .abs() <
-                                  0.05,
-                              onPressed: () {
-                                DanmakuOptions.danmakuFontScale = sc.value;
-                                DanmakuOptions.danmakuFontScaleFS = sc.value;
-                                applyDanmakuOption();
-                              },
-                            ),
-                        ],
-                      ),
-                      _buildSettingGroup(
-                        title: '弹幕速度',
-                        children: [
-                          for (final dur in durations)
-                            _TvHudPillButton(
-                              label: dur.label,
-                              active:
-                                  (DanmakuOptions.danmakuDuration - dur.value)
-                                      .abs() <
-                                  0.5,
-                              onPressed: () {
-                                DanmakuOptions.danmakuDuration = dur.value;
-                                applyDanmakuOption();
-                              },
-                            ),
-                        ],
-                      ),
-                      _buildSettingGroup(
-                        title: '屏蔽类型 (选中即屏蔽)',
-                        children: [
-                          for (final f in filters)
-                            _TvHudPillButton(
-                              label: f.label,
-                              active: DanmakuOptions.blockTypes.contains(
-                                f.type,
-                              ),
-                              onPressed: () {
-                                if (DanmakuOptions.blockTypes.contains(
-                                  f.type,
-                                )) {
-                                  DanmakuOptions.blockTypes.remove(f.type);
-                                } else {
-                                  DanmakuOptions.blockTypes.add(f.type);
-                                }
-                                DanmakuOptions.blockColorful = DanmakuOptions
-                                    .blockTypes
-                                    .contains(6);
-                                applyDanmakuOption();
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                _TvHudPillButton(
-                  label: '关闭',
-                  icon: Icons.check,
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildSettingGroup({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      spacing: 8,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: children,
-        ),
-      ],
-    );
-  }
-
-  void _toggleDanmaku() {
-    final newVal = !_pl.enableShowDanmakuAdaptive.value;
-    _pl.enableShowDanmakuAdaptive.value = newVal;
-    if (!_pl.tempPlayerConf) {
-      GStorage.setting.put(
-        _pl.isLive
-            ? SettingBoxKey.enableShowLiveDanmaku
-            : SettingBoxKey.enableShowDanmaku,
-        newVal,
-      );
-    }
-    SmartDialog.showToast(newVal ? '已开启弹幕' : '已关闭弹幕');
-    setState(() {});
   }
 
   @override
@@ -1113,8 +784,7 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                 compact: true,
                 icon: Icons.arrow_back_rounded,
                 label: '返回',
-                onPressed: () =>
-                    _pl.onPopInvokedWithResult(false, null),
+                onPressed: () => _pl.onPopInvokedWithResult(false, null),
               ),
             ],
           ),
@@ -1123,12 +793,50 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
     );
   }
 
+  /// The HUD's bottom row until M14.3 draws it from the saved list: the
+  /// buttons it had before the action table, plus 字幕.
+  static const List<TvHudActionId> _kBottomRow = [
+    TvHudActionId.episodes,
+    TvHudActionId.danmakuToggle,
+    TvHudActionId.danmakuSettings,
+    TvHudActionId.quality,
+    TvHudActionId.subtitle,
+    TvHudActionId.speed,
+    TvHudActionId.videoFit,
+    TvHudActionId.like,
+    TvHudActionId.coin,
+    TvHudActionId.favorite,
+  ];
+
+  Widget _buildActionButton(TvHudAction action) {
+    if (action.onHoldStart != null && action.onHoldEnd != null) {
+      final Animation<double>? tripleAnimation =
+          widget.introController?.tripleAnimation;
+      return _TvTripleLikePill(
+        key: action.key,
+        icon: action.icon,
+        label: action.label,
+        active: action.active,
+        tripleAnimation: tripleAnimation ?? kAlwaysDismissedAnimation,
+        onStartTriple: action.onHoldStart!,
+        onCancelTriple: action.onHoldEnd!,
+      );
+    }
+    return _TvHudPillButton(
+      key: action.key,
+      icon: action.icon,
+      label: action.label,
+      active: action.active,
+      onPressed: () {
+        _resetAutoHideTimer();
+        action.onPressed();
+      },
+    );
+  }
+
   Widget _buildFullHudOverlay({required bool isFullScreen}) {
     final title = _resolveTitle();
-    final episodes = _collectEpisodes();
     final intro = widget.introController;
-    final videoCtr = _videoDetailCtr;
-    final liveCtr = _liveRoomCtr;
 
     return Positioned.fill(
       child: FocusScope(
@@ -1239,169 +947,52 @@ class _TvPlayerHudState extends State<TvPlayerHud> {
                         ),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
-                        child: Row(
-                          spacing: 10,
-                          children: [
-                            // 1. Play / Pause
-                            _TvHudPillButton(
-                              focusNode: _playPauseFocusNode,
-                              autofocus: true,
-                              icon: _pl.playerStatus.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              label: _pl.playerStatus.isPlaying ? '暂停' : '播放',
-                              onKeyEvent: (_, event) =>
-                                  _handleSelectKeyWithLongPressSpeed(
-                                    event,
-                                    onShortPress: () {
-                                      _resetAutoHideTimer();
-                                      _togglePlayPause();
-                                    },
-                                  ),
-                              onFocusLost: _cancelSelectHold,
-                              onPressed: () {
-                                _resetAutoHideTimer();
-                                _togglePlayPause();
-                              },
-                            ),
-                            // 2. Fullscreen toggle (when opened in split-screen)
-                            if (!isFullScreen)
+                        // One Obx for the row: the actions' labels and
+                        // availability read the controllers' Rx values.
+                        child: Obx(
+                          () => Row(
+                            spacing: 10,
+                            children: [
+                              // Play / Pause (the time bar takes its keys in
+                              // M14.3).
                               _TvHudPillButton(
-                                icon: Icons.fullscreen_rounded,
-                                label: '全屏播放',
-                                onPressed: () {
-                                  _hideHud(restoreFocus: false);
-                                  _pl.triggerFullScreen(status: true);
-                                },
-                              ),
-                            // 3. Prev / Next / Episodes
-                            if (episodes.length > 1) ...[
-                              _TvHudPillButton(
-                                icon: Icons.skip_previous_rounded,
-                                label: '上一集',
+                                focusNode: _playPauseFocusNode,
+                                autofocus: true,
+                                icon: _pl.playerStatus.isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                label: _pl.playerStatus.isPlaying ? '暂停' : '播放',
+                                onKeyEvent: (_, event) =>
+                                    _handleSelectKeyWithLongPressSpeed(
+                                      event,
+                                      onShortPress: () {
+                                        _resetAutoHideTimer();
+                                        _togglePlayPause();
+                                      },
+                                    ),
+                                onFocusLost: _cancelSelectHold,
                                 onPressed: () {
                                   _resetAutoHideTimer();
-                                  if (!(intro?.prevPlay() ?? false)) {
-                                    SmartDialog.showToast('已经是第一集了');
-                                  }
+                                  _togglePlayPause();
                                 },
                               ),
-                              _TvHudPillButton(
-                                icon: Icons.skip_next_rounded,
-                                label: '下一集',
-                                onPressed: () {
-                                  _resetAutoHideTimer();
-                                  if (!(intro?.nextPlay() ?? false)) {
-                                    SmartDialog.showToast('已经是最后一集了');
-                                  }
-                                },
-                              ),
-                              _TvHudPillButton(
-                                icon: Icons.playlist_play_rounded,
-                                label: '选集 (${episodes.length})',
-                                onPressed: _showEpisodeDialog,
-                              ),
-                            ],
-                            // 4. Danmaku toggle & settings
-                            Obx(() {
-                              final dmOn =
-                                  _pl.enableShowDanmakuAdaptive.value;
-                              return _TvHudPillButton(
-                                icon: dmOn
-                                    ? Icons.subtitles_rounded
-                                    : Icons.subtitles_off_rounded,
-                                label: dmOn ? '弹幕: 开' : '弹幕: 关',
-                                active: dmOn,
-                                onPressed: () {
-                                  _resetAutoHideTimer();
-                                  _toggleDanmaku();
-                                },
-                              );
-                            }),
-                            _TvHudPillButton(
-                              icon: Icons.tune_rounded,
-                              label: '弹幕设置',
-                              onPressed: _showDanmakuSettingsDialog,
-                            ),
-                            // 5. Video / Live Quality
-                            if (_pl.isLive && liveCtr != null)
-                              Obx(
-                                () => _TvHudPillButton(
-                                  icon: Icons.hd_rounded,
-                                  label:
-                                      '画质: ${liveCtr.currentQn.value?.desc ?? '默认'}',
-                                  onPressed: _showQualityDialog,
-                                ),
-                              )
-                            else if (videoCtr != null &&
-                                !videoCtr.isFileSource)
-                              Obx(
-                                () => _TvHudPillButton(
-                                  icon: Icons.hd_rounded,
-                                  label:
-                                      '画质: ${videoCtr.currentVideoQa.value?.shortDesc ?? '自动'}',
-                                  onPressed: _showQualityDialog,
-                                ),
-                              ),
-                            // 6. Playback speed
-                            if (!_pl.isLive)
-                              _TvHudPillButton(
-                                icon: Icons.speed_rounded,
-                                label: '倍速: ${_pl.playbackSpeed}x',
-                                onPressed: _showSpeedDialog,
-                              ),
-                            // 7. Aspect Ratio / VideoFit
-                            Obx(
-                              () => _TvHudPillButton(
-                                icon: Icons.aspect_ratio_rounded,
-                                label: '画面: ${_pl.videoFit.value.desc}',
-                                onPressed: _showVideoFitDialog,
-                              ),
-                            ),
-                            // 8. Like / Hold-to-Triple-Like, Coin, Favorite
-                            if (intro != null && !_pl.isLive) ...[
-                              Obx(
-                                () => _TvTripleLikePill(
-                                  hasLike: intro.hasLike.value,
-                                  tripleAnimation: intro.tripleAnimation,
-                                  onStartTriple: () {
-                                    _autoHideTimer?.cancel();
-                                    _pl.tripling = true;
-                                    intro.onStartTriple();
-                                  },
-                                  onCancelTriple: (isTapUp) {
-                                    _pl.tripling = false;
-                                    intro.onCancelTriple(isTapUp);
-                                    _resetAutoHideTimer();
-                                  },
-                                ),
-                              ),
-                              Obx(
-                                () => _TvHudPillButton(
-                                  icon: Icons.monetization_on_rounded,
-                                  label: intro.hasCoin ? '已投币' : '投币',
-                                  active: intro.hasCoin,
+                              // Fullscreen (when opened in split screen).
+                              if (!isFullScreen)
+                                _TvHudPillButton(
+                                  icon: Icons.fullscreen_rounded,
+                                  label: '全屏播放',
                                   onPressed: () {
-                                    _hideHud();
-                                    intro.actionCoinVideo();
+                                    _hideHud(restoreFocus: false);
+                                    _pl.triggerFullScreen(status: true);
                                   },
                                 ),
-                              ),
-                              Obx(
-                                () => _TvHudPillButton(
-                                  icon: intro.hasFav.value
-                                      ? Icons.star_rounded
-                                      : Icons.star_border_rounded,
-                                  label: intro.hasFav.value ? '已收藏' : '收藏',
-                                  active: intro.hasFav.value,
-                                  onPressed: () {
-                                    _hideHud();
-                                    intro.showFavBottomSheet(context);
-                                  },
-                                ),
-                              ),
+                              for (final TvHudActionId id in _kBottomRow)
+                                for (final TvHudAction action in resolveAction(
+                                  id,
+                                ))
+                                  _buildActionButton(action),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -1584,6 +1175,7 @@ class _TvSeekBarState extends State<_TvSeekBar> {
 /// 10-foot pill button used across the TV player HUD and option dialogs.
 class _TvHudPillButton extends StatefulWidget {
   const _TvHudPillButton({
+    super.key,
     this.focusNode,
     this.autofocus = false,
     this.compact = false,
@@ -1701,13 +1293,18 @@ class _TvHudPillButtonState extends State<_TvHudPillButton> {
 /// Like / Hold-to-Triple-Like pill button for the 10-foot HUD.
 class _TvTripleLikePill extends StatefulWidget {
   const _TvTripleLikePill({
-    required this.hasLike,
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.active,
     required this.tripleAnimation,
     required this.onStartTriple,
     required this.onCancelTriple,
   });
 
-  final bool hasLike;
+  final IconData icon;
+  final String label;
+  final bool active;
   final Animation<double> tripleAnimation;
   final VoidCallback onStartTriple;
   final ValueChanged<bool> onCancelTriple;
@@ -1764,14 +1361,14 @@ class _TvTripleLikePillState extends State<_TvTripleLikePill> {
             decoration: BoxDecoration(
               color: _focused
                   ? primary
-                  : widget.hasLike
+                  : widget.active
                   ? primary.withValues(alpha: 0.35)
                   : const Color(0x33FFFFFF),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: _focused
                     ? Colors.white
-                    : widget.hasLike
+                    : widget.active
                     ? primary
                     : Colors.white24,
                 width: _focused ? 2.2 : 1.2,
@@ -1793,18 +1390,16 @@ class _TvTripleLikePillState extends State<_TvTripleLikePill> {
                   )
                 else
                   Icon(
-                    widget.hasLike
-                        ? Icons.thumb_up_alt_rounded
-                        : Icons.thumb_up_off_alt_rounded,
+                    widget.icon,
                     size: 18,
                     color: Colors.white,
                   ),
                 Text(
-                  widget.hasLike ? '已赞 (长按三连)' : '点赞 (长按三连)',
+                  widget.label,
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 14,
-                    fontWeight: _focused || widget.hasLike
+                    fontWeight: _focused || widget.active
                         ? FontWeight.w700
                         : FontWeight.w500,
                   ),
@@ -1821,13 +1416,16 @@ class _TvTripleLikePillState extends State<_TvTripleLikePill> {
 class _TvDialogOptionItem {
   const _TvDialogOptionItem({
     required this.title,
-    this.subtitle,
+    this.icon,
     required this.selected,
     required this.onSelect,
   });
 
   final String title;
-  final String? subtitle;
+
+  /// Replaces the radio icon, for a row that opens something instead of
+  /// choosing an option (such as `字幕设置` at the end of the track list).
+  final IconData? icon;
   final bool selected;
   final VoidCallback onSelect;
 }
@@ -1944,12 +1542,12 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
                     autofocus: index == autofocusIndex,
                     active: item.selected,
                     alignment: Alignment.centerLeft,
-                    icon: item.selected
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_off_rounded,
-                    label: item.subtitle != null && item.subtitle!.isNotEmpty
-                        ? '${item.title}  (${item.subtitle})'
-                        : item.title,
+                    icon:
+                        item.icon ??
+                        (item.selected
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded),
+                    label: item.title,
                     onPressed: item.onSelect,
                   ),
                 );

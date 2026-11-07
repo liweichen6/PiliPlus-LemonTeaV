@@ -3,22 +3,30 @@ import 'dart:io';
 
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
+import 'package:PiliPlus/models/user/danmaku_rule.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/models/video/play/url.dart' as play_url;
+import 'package:PiliPlus/models_new/video/video_play_info/subtitle.dart';
 import 'package:PiliPlus/pages/danmaku/danmaku_model.dart';
 import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
+import 'package:PiliPlus/pages/video/widgets/header_control.dart'
+    show TimeBatteryMixin;
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
-import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/tv/tv_player_hud.dart';
+import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -28,7 +36,7 @@ import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
-import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/media_kit.dart' hide Subtitle;
 
 import 'tv_path_harness.dart';
 
@@ -51,7 +59,7 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   final FakePlayer fakePlayer = FakePlayer();
 
   @override
-  Player? get videoPlayerController => fakePlayer;
+  Player? get videoPlayerController => noPlayer ? null : fakePlayer;
 
   @override
   final RxBool isFullScreen = false.obs;
@@ -207,6 +215,44 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
 
   @override
   int? cacheVideoQa;
+
+  @override
+  bool isPipMode = false;
+
+  @override
+  bool isFileSource = false;
+
+  @override
+  bool showDmChart = true;
+
+  @override
+  bool darkVideoPage = false;
+
+  @override
+  RuleFilter filters = RuleFilter.empty();
+
+  @override
+  PlayRepeat playRepeat = PlayRepeat.pause;
+
+  @override
+  void setPlayRepeat(PlayRepeat type) {
+    playRepeat = type;
+  }
+
+  @override
+  bool isAnim = false;
+
+  @override
+  final Rx<SuperResolutionType> superResolutionType =
+      SuperResolutionType.disable.obs;
+
+  @override
+  Future<void> setShader([SuperResolutionType? type, Player? pp]) async {
+    if (type != null) superResolutionType.value = type;
+  }
+
+  /// [videoPlayerController] returns `null` while this is set.
+  bool noPlayer = false;
 }
 
 class FakeVideoDetailController extends Fake implements VideoDetailController {
@@ -222,12 +268,48 @@ class FakeVideoDetailController extends Fake implements VideoDetailController {
   bool isFileSource = false;
 
   @override
-  final Rxn<VideoQuality> currentVideoQa = Rxn<VideoQuality>(VideoQuality.high1080);
+  final Rxn<VideoQuality> currentVideoQa = Rxn<VideoQuality>(
+    VideoQuality.high1080,
+  );
 
   int updatePlayerCount = 0;
   @override
   void updatePlayer() {
     updatePlayerCount++;
+  }
+
+  @override
+  final GlobalKey<TimeBatteryMixin> headerCtrKey =
+      GlobalKey<TimeBatteryMixin>();
+
+  @override
+  RxList<Subtitle> subtitles = RxList<Subtitle>();
+
+  @override
+  final RxInt vttSubtitlesIndex = 0.obs;
+
+  @override
+  Future<void> setSubtitle(int index) async {
+    vttSubtitlesIndex.value = index;
+  }
+
+  @override
+  final Rx<LoadingState<List<double>>?> dmTrend =
+      Rx<LoadingState<List<double>>?>(null);
+
+  @override
+  final RxBool showDmTrendChart = true.obs;
+
+  @override
+  AudioQuality? currentAudioQa;
+
+  int reloadCount = 0;
+  @override
+  Future<void> queryVideoUrl({
+    bool fromReset = false,
+    bool autoFullScreenFlag = false,
+  }) async {
+    if (fromReset) reloadCount++;
   }
 
   @override
@@ -277,7 +359,10 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
 
   BaseEpisodeItem? changedEpisode;
   @override
-  Future<bool> onChangeEpisode(BaseEpisodeItem item, {bool isStein = false}) async {
+  Future<bool> onChangeEpisode(
+    BaseEpisodeItem item, {
+    bool isStein = false,
+  }) async {
     changedEpisode = item;
     return true;
   }
@@ -319,11 +404,38 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
   @override
   void onCancelTriple([bool isTapUp = false]) {}
 
+  int coinCount = 0;
   @override
-  void actionCoinVideo() {}
+  void actionCoinVideo() {
+    coinCount++;
+  }
+
+  int favSheetCount = 0;
+  @override
+  void showFavBottomSheet(BuildContext context, {bool isLongPress = false}) {
+    favSheetCount++;
+  }
+
+  int likeCount = 0;
+  @override
+  Future<void> actionLikeVideo() async {
+    likeCount++;
+  }
 
   @override
-  void showFavBottomSheet(BuildContext context, {bool isLongPress = false}) {}
+  final RxBool hasLater = false.obs;
+
+  @override
+  Future<void> viewLater() async {
+    hasLater.toggle();
+  }
+
+  int playRelatedCount = 0;
+  @override
+  bool playRelated() {
+    playRelatedCount++;
+    return true;
+  }
 }
 
 Widget _buildTestApp({
@@ -332,8 +444,12 @@ Widget _buildTestApp({
   Widget? child,
   VoidCallback? onSendDanmaku,
   NavigatorObserver? observer,
+  TvHudUpstream? upstream,
+  VoidCallback? onRefresh,
 }) {
   return MaterialApp(
+    // Upstream's panels open on `Get.key` (PageUtils.showVideoBottomSheet).
+    navigatorKey: Get.key,
     navigatorObservers: [
       ?observer,
       FlutterSmartDialog.observer,
@@ -351,6 +467,8 @@ Widget _buildTestApp({
           plPlayerController: plPlayerController,
           introController: introController,
           onSendDanmaku: onSendDanmaku ?? () {},
+          onRefresh: onRefresh,
+          debugUpstream: upstream,
           child: child ?? Container(color: Colors.black),
         ),
       ),
@@ -365,6 +483,8 @@ Future<void> _pumpHud(
   Widget? child,
   VoidCallback? onSendDanmaku,
   NavigatorObserver? observer,
+  TvHudUpstream? upstream,
+  VoidCallback? onRefresh,
 }) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1.0;
@@ -377,6 +497,8 @@ Future<void> _pumpHud(
       child: child,
       onSendDanmaku: onSendDanmaku,
       observer: observer,
+      upstream: upstream,
+      onRefresh: onRefresh,
     ),
   );
   await tester.pumpAndSettle();
@@ -401,7 +523,6 @@ void main() {
     } catch (_) {}
   });
 
-
   setUp(() {
     TvPlatform.setTvModeForTesting(true);
   });
@@ -414,8 +535,7 @@ void main() {
     testWidgets(
       'fullscreen surface opens HUD via Select or Up key and focuses play/pause pill',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
 
         await tester.pumpWidget(
           _buildTestApp(plPlayerController: pl),
@@ -448,8 +568,7 @@ void main() {
     testWidgets(
       'split-screen mode displays quick strip and navigates to 播控 to open HUD',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = false;
+        final pl = FakePlPlayerController()..isFullScreen.value = false;
 
         await tester.pumpWidget(
           _buildTestApp(plPlayerController: pl),
@@ -682,8 +801,7 @@ void main() {
     testWidgets(
       'PopScope intercepts back key when HUD is open to dismiss HUD without popping route',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
 
         late BuildContext playerContext;
 
@@ -749,8 +867,7 @@ void main() {
     testWidgets(
       'PopScope allows back key to pop route when HUD is closed',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = false;
+        final pl = FakePlPlayerController()..isFullScreen.value = false;
 
         late BuildContext playerContext;
 
@@ -819,9 +936,12 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Find and click '倍速: 1.0x'
-        final speedBtnFinder = find.text('倍速: 1.0x');
+        final speedBtnFinder = find.byKey(TvHudAction.keyOf('speed'));
         expect(speedBtnFinder, findsOneWidget);
+        expect(
+          find.descendant(of: speedBtnFinder, matching: find.text('倍速: 1.0x')),
+          findsOneWidget,
+        );
         await tester.tap(speedBtnFinder);
         await tester.pumpAndSettle();
 
@@ -854,9 +974,12 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Find and tap '画面: 自动'
-        final fitBtnFinder = find.text('画面: 自动');
+        final fitBtnFinder = find.byKey(TvHudAction.keyOf('videoFit'));
         expect(fitBtnFinder, findsOneWidget);
+        expect(
+          find.descendant(of: fitBtnFinder, matching: find.text('画面: 自动')),
+          findsOneWidget,
+        );
         await tester.tap(fitBtnFinder);
         await tester.pumpAndSettle();
 
@@ -877,47 +1000,14 @@ void main() {
     );
 
     testWidgets(
-      'Danmaku settings dialog opens and updates danmaku display area',
-      (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
-
-        await _pumpHud(tester, plPlayerController: pl);
-
-        // Open HUD
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pumpAndSettle();
-
-        // Tap '弹幕设置'
-        final danmakuSetBtn = find.text('弹幕设置');
-        expect(danmakuSetBtn, findsOneWidget);
-        await tester.tap(danmakuSetBtn);
-        await tester.pumpAndSettle();
-
-        // Dialog opened
-        expect(find.text('弹幕设置 (遥控器方向键选择)'), findsOneWidget);
-        expect(find.text('显示区域'), findsOneWidget);
-        expect(find.text('半屏'), findsOneWidget);
-
-        // Select '半屏' (value 0.5)
-        await tester.tap(find.text('半屏'));
-        await tester.pumpAndSettle();
-        expect(DanmakuOptions.danmakuShowArea, 0.5);
-
-        // Close dialog via escape key
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
-        expect(find.text('弹幕设置 (遥控器方向键选择)'), findsNothing);
-      },
-    );
-
-    testWidgets(
       'Episodes dialog opens, lists episodes, autofocuses current episode, selects next episode',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
           ..cid = 1001;
-        final videoDetailCtr = FakeVideoDetailController(plPlayerController: pl);
+        final videoDetailCtr = FakeVideoDetailController(
+          plPlayerController: pl,
+        );
         final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr);
 
         await _pumpHud(
@@ -930,9 +1020,11 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Tap '选集 (3)'
-        final epBtn = find.text('选集 (3)');
-        expect(epBtn, findsOneWidget);
+        final epBtn = find.byKey(TvHudAction.keyOf('episodes.list'));
+        expect(
+          find.descendant(of: epBtn, matching: find.text('选集 (3)')),
+          findsOneWidget,
+        );
         await tester.tap(epBtn);
         await tester.pumpAndSettle();
 
@@ -949,47 +1041,6 @@ void main() {
         // Dialog dismissed and episode changed callback fired
         expect(introCtr.changedEpisode, isNotNull);
         expect((introCtr.changedEpisode as Part).cid, 1002);
-      },
-    );
-
-    testWidgets(
-      'Quality dialog opens, lists available video qualities, selects new quality',
-      (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
-        final videoDetailCtr = FakeVideoDetailController(plPlayerController: pl);
-        final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr);
-
-        await _pumpHud(
-          tester,
-          plPlayerController: pl,
-          introController: introCtr,
-        );
-
-        // Open HUD
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pumpAndSettle();
-
-        // Tap '画质: 1080P'
-        final qaBtn = find.text('画质: 1080P');
-        expect(qaBtn, findsOneWidget);
-        await tester.tap(qaBtn);
-        await tester.pumpAndSettle();
-
-        // Dialog opened
-        expect(find.text('选择视频画质'), findsOneWidget);
-        expect(find.text('1080P 高清  (mp4)'), findsOneWidget);
-        expect(find.text('720P 高清  (mp4)'), findsOneWidget);
-
-        // Select 720P
-        await tester.tap(find.text('720P 高清  (mp4)'));
-        await tester.pumpAndSettle();
-
-        // Dialog dismissed and quality updated
-        expect(find.text('选择视频画质'), findsNothing);
-        expect(videoDetailCtr.currentVideoQa.value, VideoQuality.high720);
-        expect(videoDetailCtr.updatePlayerCount, 1);
-        await tester.pump(const Duration(seconds: 3));
       },
     );
   });
@@ -1565,6 +1616,8 @@ void main() {
     );
   });
 
+  group('action table (M14.2)', _actionTableTests);
+
   group('recorded D-pad paths (M13.3)', _recordedPaths);
 }
 
@@ -1578,7 +1631,8 @@ Finder _pill(String label) => find.ancestor(
 
 /// Whether the primary focus node lives inside the pill labelled [label].
 bool _pillHasPrimaryFocus(String label) {
-  final BuildContext? focusContext = FocusManager.instance.primaryFocus?.context;
+  final BuildContext? focusContext =
+      FocusManager.instance.primaryFocus?.context;
   if (focusContext == null) return false;
   return find
       .descendant(
@@ -1862,7 +1916,12 @@ class _VideoPageScene {
     ),
   );
 
-  Widget build(FakePlPlayerController pl, {int tab = 0}) => GetMaterialApp(
+  Widget build(
+    FakePlPlayerController pl, {
+    int tab = 0,
+    FakeUgcIntroController? intro,
+    TvHudUpstream? upstream,
+  }) => GetMaterialApp(
     navigatorObservers: [FlutterSmartDialog.observer],
     builder: FlutterSmartDialog.init(
       builder: (context, child) => TvNavigation(child: child!),
@@ -1886,6 +1945,8 @@ class _VideoPageScene {
                   height: 315,
                   child: TvPlayerHud(
                     plPlayerController: pl,
+                    introController: intro,
+                    debugUpstream: upstream,
                     onSendDanmaku: () {},
                     child: Container(color: Colors.black),
                   ),
@@ -1965,12 +2026,17 @@ Future<_VideoPageScene> _pumpVideoPage(
   WidgetTester tester, {
   bool fullScreen = false,
   int tab = 0,
+  FakePlPlayerController? player,
+  FakeUgcIntroController? intro,
+  TvHudUpstream? upstream,
 }) async {
   useTvScreen(tester);
   final _VideoPageScene scene = _VideoPageScene();
-  final FakePlPlayerController pl = FakePlPlayerController()
+  final FakePlPlayerController pl = (player ?? FakePlPlayerController())
     ..isFullScreen.value = fullScreen;
-  await tester.pumpWidget(scene.build(pl, tab: tab));
+  await tester.pumpWidget(
+    scene.build(pl, tab: tab, intro: intro, upstream: upstream),
+  );
   await tester.pumpAndSettle();
   return scene;
 }
@@ -2073,5 +2139,682 @@ void _recordedPaths() {
       // trigger would be right too.
       (dpadBack, '全屏|播控'),
     ]);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The action table (M14.2): one test per entry, for when it's available and
+// what it does, plus upstream's own panels opened with the D-pad.
+
+/// Upstream's header panels, recorded. Each opens a small `PublishRoute`
+/// through upstream's `PageUtils.showVideoBottomSheet`, as the real ones do,
+/// so the HUD's focus hand-off around a panel is exercised.
+class _FakeHeaderPanels implements TvHudHeaderPanels {
+  final List<String> calls = [];
+
+  void _open(String name) {
+    calls.add(name);
+    PageUtils.showVideoBottomSheet(
+      Get.key.currentContext!,
+      child: Material(
+        child: ListView(
+          children: [
+            for (int i = 0; i < 3; i++)
+              ListTile(title: Text('$name $i'), onTap: () {}),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void showSetVideoQa() => _open('showSetVideoQa');
+
+  @override
+  void showSetAudioQa() => _open('showSetAudioQa');
+
+  @override
+  void showSetDecodeFormats() => _open('showSetDecodeFormats');
+
+  @override
+  void showSetSubtitle() => _open('showSetSubtitle');
+
+  @override
+  void showDanmakuPool() => _open('showDanmakuPool');
+
+  @override
+  void showSettingSheet() => _open('showSettingSheet');
+}
+
+class _FakeUpstream implements TvHudUpstream {
+  _FakeUpstream({this.header});
+
+  /// `null`: upstream's header isn't mounted.
+  _FakeHeaderPanels? header;
+
+  @override
+  TvHudHeaderPanels? headerOf(VideoDetailController ctr) => header;
+
+  int playerInfoCount = 0;
+  @override
+  void showPlayerInfo(BuildContext context, Player player) {
+    playerInfoCount++;
+  }
+
+  int volumeCount = 0;
+  @override
+  Future<void> showPlayerVolume(BuildContext context, Player player) async {
+    volumeCount++;
+  }
+
+  int shutdownCount = 0;
+  bool? shutdownIsLive;
+  @override
+  void showShutdownTimer(
+    BuildContext context, {
+    required bool isFullScreen,
+    required bool isLive,
+  }) {
+    shutdownCount++;
+    shutdownIsLive = isLive;
+  }
+}
+
+class _FakeDanmakuController extends Fake
+    implements DanmakuController<DanmakuExtra> {}
+
+/// A fullscreen HUD over a UGC video in a three-part list, with upstream's
+/// header mounted unless [header] is false.
+class _ActionScene {
+  _ActionScene({bool header = true}) {
+    vdc = FakeVideoDetailController(plPlayerController: pl);
+    intro = FakeUgcIntroController(videoDetailCtr: vdc);
+    upstream = _FakeUpstream(header: header ? _FakeHeaderPanels() : null);
+  }
+
+  final FakePlPlayerController pl = FakePlPlayerController()
+    ..isFullScreen.value = true;
+  late final FakeVideoDetailController vdc;
+  late final FakeUgcIntroController intro;
+  late final _FakeUpstream upstream;
+  bool withIntro = true;
+  VoidCallback? onRefresh;
+
+  _FakeHeaderPanels get header => upstream.header!;
+
+  Future<TvHudActionSource> pump(WidgetTester tester) async {
+    await _pumpHud(
+      tester,
+      plPlayerController: pl,
+      introController: withIntro ? intro : null,
+      upstream: upstream,
+      onRefresh: onRefresh,
+    );
+    return tester.state(find.byType(TvPlayerHud)) as TvHudActionSource;
+  }
+}
+
+List<String> _ids(TvHudActionSource source, TvHudActionId id) => [
+  for (final TvHudAction a in source.resolveAction(id)) a.buttonId,
+];
+
+TvHudAction _one(TvHudActionSource source, TvHudActionId id) {
+  final List<TvHudAction> actions = source.resolveAction(id);
+  expect(actions, hasLength(1), reason: '$id resolves to one button');
+  return actions.single;
+}
+
+/// Whether primary focus is on a control (not just a scope) inside the route
+/// that shows [text].
+bool _focusInsideRouteOf(String text) {
+  final FocusNode? node = FocusManager.instance.primaryFocus;
+  if (node == null || node is FocusScopeNode) return false;
+  final BuildContext? focus = node.context;
+  if (focus == null) return false;
+  final Element textElement = find.text(text).evaluate().first;
+  return ModalRoute.of(focus) == ModalRoute.of(textElement);
+}
+
+void _actionTableTests() {
+  test('every entry has a menu group, in menu order; only 编辑按钮 is '
+      'not pinnable', () {
+    final List<int> groups = [
+      for (final TvHudActionId id in TvHudActionId.values) id.group.index,
+    ];
+    expect(groups, orderedEquals([...groups]..sort()));
+    expect(TvHudMenuGroup.values.map((g) => g.label), [
+      '播放',
+      '弹幕',
+      '互动',
+      '画面与声音',
+      '其他',
+    ]);
+    expect(
+      TvHudActionId.values.where((id) => !id.pinnable),
+      [TvHudActionId.editButtons],
+    );
+  });
+
+  test('TV defaults turn on the danmaku trend that 高能进度条 needs', () {
+    expect(TvPlatform.defaultTvSettings[SettingBoxKey.showDmChart], isTrue);
+  });
+
+  testWidgets('画质 opens upstream\'s quality panel; hidden without the '
+      'header, for offline files and in picture-in-picture', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+
+    final TvHudAction quality = _one(source, TvHudActionId.quality);
+    expect(quality.label, '画质: 1080P');
+    quality.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetVideoQa']);
+    expect(find.text('showSetVideoQa 0'), findsOneWidget);
+
+    Navigator.of(tester.element(find.text('showSetVideoQa 0'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+    scene.pl.isPipMode = false;
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+    scene.vdc.isFileSource = false;
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+  });
+
+  testWidgets('the HUD drops its 画质 button while upstream\'s header '
+      'isn\'t mounted', (tester) async {
+    final _ActionScene scene = _ActionScene(header: false);
+    await scene.pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvHudAction.keyOf('quality')), findsNothing);
+    expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
+  });
+
+  testWidgets('倍速 shows the speed and opens the speed list; not in live '
+      'rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.pl.playbackSpeed = 1.25;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction speed = _one(source, TvHudActionId.speed);
+    expect(speed.label, '倍速: 1.25x');
+    speed.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1.5x'));
+    await tester.pumpAndSettle();
+    expect(scene.pl.playbackSpeed, 1.5);
+
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.speed), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('画面比例 is always there and sets the fit', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction fit = _one(source, TvHudActionId.videoFit);
+    expect(fit.label, '画面: ${VideoFitType.contain.desc}');
+    fit.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VideoFitType.fill.desc));
+    await tester.pumpAndSettle();
+    expect(scene.pl.videoFit.value, VideoFitType.fill);
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.videoFit), ['videoFit']);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('字幕 lists the tracks with upstream\'s 字幕设置 at the end; '
+      'hidden without tracks', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.subtitle), isEmpty);
+
+    scene.vdc.subtitles.addAll([
+      Subtitle(lan: 'zh', lanDoc: '中文'),
+      Subtitle(lan: 'en', lanDoc: 'English'),
+    ]);
+    TvHudAction subtitle = _one(source, TvHudActionId.subtitle);
+    expect(subtitle.label, '字幕: 关闭');
+    expect(subtitle.active, isFalse);
+
+    subtitle.onPressed();
+    await tester.pumpAndSettle();
+    expect(find.text('关闭字幕'), findsOneWidget);
+    expect(find.text('中文'), findsOneWidget);
+    expect(find.text('字幕设置'), findsOneWidget);
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.vttSubtitlesIndex.value, 2);
+
+    subtitle = _one(source, TvHudActionId.subtitle);
+    expect(subtitle.label, '字幕: English');
+    expect(subtitle.active, isTrue);
+    subtitle.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('字幕设置'));
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetSubtitle']);
+    Navigator.of(tester.element(find.text('showSetSubtitle 0'))).pop();
+    await tester.pumpAndSettle();
+
+    // Without upstream's header the list has no 字幕设置 row.
+    scene.upstream.header = null;
+    _one(source, TvHudActionId.subtitle).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.text('关闭字幕'), findsOneWidget);
+    expect(find.text('字幕设置'), findsNothing);
+  });
+
+  testWidgets('选集: 上集 / 下集 / 选集 in a list, 下个视频 outside one, '
+      'nothing for offline files or live rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+
+    final List<TvHudAction> inList = source.resolveAction(
+      TvHudActionId.episodes,
+    );
+    expect(inList.map((a) => a.buttonId), [
+      'episodes.prev',
+      'episodes.next',
+      'episodes.list',
+    ]);
+    expect(inList.map((a) => a.label), ['上集', '下集', '选集 (3)']);
+    inList[0].onPressed();
+    inList[1].onPressed();
+    expect(scene.intro.prevPlayCount, 1);
+    expect(scene.intro.nextPlayCount, 1);
+
+    scene.intro.videoDetail.value = VideoDetailData(
+      title: '单个视频',
+      pages: [Part(cid: 1001, page: 1, part: '单P')],
+    );
+    final TvHudAction next = _one(source, TvHudActionId.episodes);
+    expect(next.buttonId, 'episodes.nextVideo');
+    expect(next.label, '下个视频');
+    next.onPressed();
+    expect(scene.intro.playRelatedCount, 1);
+
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isLive = true;
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+  });
+
+  testWidgets('选集 is hidden without an introduction', (tester) async {
+    final _ActionScene scene = _ActionScene()..withIntro = false;
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+  });
+
+  testWidgets('播放顺序 shows the order and sets it; not in live rooms', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction order = _one(source, TvHudActionId.playOrder);
+    expect(order.label, '播放顺序: ${PlayRepeat.pause.label}');
+    order.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(PlayRepeat.listCycle.label));
+    await tester.pumpAndSettle();
+    expect(scene.pl.playRepeat, PlayRepeat.listCycle);
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.playOrder), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕开关 switches danmaku and shows its state', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    TvHudAction toggle = _one(source, TvHudActionId.danmakuToggle);
+    expect((toggle.label, toggle.active), ('弹幕: 开', true));
+    toggle.onPressed();
+    expect(scene.pl.enableShowDanmakuAdaptive.value, isFalse);
+    toggle = _one(source, TvHudActionId.danmakuToggle);
+    expect((toggle.label, toggle.active), ('弹幕: 关', false));
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕设置 opens upstream\'s danmaku panel, not the old TV '
+      'dialog; hidden in picture-in-picture', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.danmakuSettings).onPressed();
+    await tester.pumpAndSettle();
+    // Upstream's panel: smart blocking, its block types and sliders.
+    expect(find.textContaining('智能云屏蔽'), findsOneWidget);
+    expect(find.text('高级'), findsOneWidget);
+    expect(find.textContaining('遥控器方向键选择'), findsNothing);
+    Navigator.of(tester.element(find.textContaining('智能云屏蔽'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.danmakuSettings), isEmpty);
+  });
+
+  testWidgets('高能进度条 shows once the trend has loaded and switches the '
+      'chart; hidden with the setting off and for offline files', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+
+    scene.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
+    final TvHudAction chart = _one(source, TvHudActionId.dmChart);
+    expect((chart.label, chart.active), ('高能进度条', true));
+    chart.onPressed();
+    expect(scene.vdc.showDmTrendChart.value, isFalse);
+    expect(_one(source, TvHudActionId.dmChart).active, isFalse);
+
+    scene.pl.showDmChart = false;
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+    scene.pl
+      ..showDmChart = true
+      ..isFileSource = true;
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕列表 opens upstream\'s danmaku pool; hidden without '
+      'danmaku or the header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.danmakuPool), isEmpty);
+    scene.pl.danmakuController = _FakeDanmakuController();
+    _one(source, TvHudActionId.danmakuPool).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showDanmakuPool']);
+    Navigator.of(tester.element(find.text('showDanmakuPool 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.danmakuPool), isEmpty);
+  });
+
+  testWidgets('点赞 likes on a press and starts 三连 on a hold; hidden for '
+      'offline files and live rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction like = _one(source, TvHudActionId.like);
+    expect(like.label, '点赞 (长按三连)');
+    like.onPressed();
+    expect(scene.intro.likeCount, 1);
+    like.onHoldStart!();
+    expect(scene.pl.tripling, isTrue);
+    like.onHoldEnd!(true);
+    expect(scene.pl.tripling, isFalse);
+
+    scene.intro.hasLike.value = true;
+    expect(_one(source, TvHudActionId.like).label, '已赞 (长按三连)');
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.like), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isLive = true;
+    expect(_ids(source, TvHudActionId.like), isEmpty);
+  });
+
+  testWidgets('投币 closes the HUD and opens upstream\'s coin flow', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvHudAction.keyOf('coin')), findsOneWidget);
+    _one(source, TvHudActionId.coin).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.intro.coinCount, 1);
+    expect(find.byKey(TvHudAction.keyOf('coin')), findsNothing);
+    scene.intro.coinNum.value = 1;
+    expect(_one(source, TvHudActionId.coin).label, '已投币');
+  });
+
+  testWidgets('收藏 closes the HUD and opens upstream\'s favourites sheet', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.favorite).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.intro.favSheetCount, 1);
+    scene.intro.hasFav.value = true;
+    final TvHudAction fav = _one(source, TvHudActionId.favorite);
+    expect((fav.label, fav.active), ('已收藏', true));
+  });
+
+  testWidgets('稍后再看 adds to and removes from the watch-later list', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_one(source, TvHudActionId.watchLater).label, '稍后再看');
+    _one(source, TvHudActionId.watchLater).onPressed();
+    await tester.pump();
+    final TvHudAction later = _one(source, TvHudActionId.watchLater);
+    expect((later.label, later.active), ('已在稍后再看', true));
+    scene.withIntro = false;
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.watchLater), isEmpty);
+  });
+
+  testWidgets('音质 opens upstream\'s audio panel once the video has audio '
+      'streams', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.audioQuality), isEmpty);
+
+    scene.vdc
+      ..currentAudioQa = AudioQuality.k192
+      ..data = play_url.PlayUrlModel.fromJson({
+        'dash': {
+          'duration': 300,
+          'video': [
+            {'id': VideoQuality.high1080.code},
+          ],
+          'audio': [
+            {'id': AudioQuality.k192.code},
+          ],
+        },
+        'support_formats': [
+          {'quality': VideoQuality.high1080.code, 'new_description': '1080P'},
+        ],
+      });
+    final TvHudAction audio = _one(source, TvHudActionId.audioQuality);
+    expect(audio.label, '音质: ${AudioQuality.k192.desc}');
+    audio.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetAudioQa']);
+    Navigator.of(tester.element(find.text('showSetAudioQa 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.audioQuality), isEmpty);
+  });
+
+  testWidgets('解码格式 opens upstream\'s codec panel; hidden without the '
+      'header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.decodeFormat).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetDecodeFormats']);
+    Navigator.of(tester.element(find.text('showSetDecodeFormats 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.decodeFormat), isEmpty);
+  });
+
+  testWidgets('超分辨率 is for animation only and sets the shader', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.superResolution), isEmpty);
+    scene.pl.isAnim = true;
+    final TvHudAction sr = _one(source, TvHudActionId.superResolution);
+    expect(sr.label, '超分辨率: ${SuperResolutionType.disable.label}');
+    sr.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(SuperResolutionType.quality.label));
+    await tester.pumpAndSettle();
+    expect(scene.pl.superResolutionType.value, SuperResolutionType.quality);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('播放器音量 opens upstream\'s volume dialog; hidden without a '
+      'player', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(
+      _one(source, TvHudActionId.playerVolume).label,
+      startsWith('播放器音量: '),
+    );
+    _one(source, TvHudActionId.playerVolume).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.volumeCount, 1);
+    scene.pl.noPlayer = true;
+    expect(_ids(source, TvHudActionId.playerVolume), isEmpty);
+  });
+
+  testWidgets('定时关闭 opens upstream\'s timer panel, for live rooms too', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.shutdownTimer).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.shutdownCount, 1);
+    expect(scene.upstream.shutdownIsLive, isFalse);
+    scene.pl.isLive = true;
+    _one(source, TvHudActionId.shutdownTimer).onPressed();
+    expect(scene.upstream.shutdownIsLive, isTrue);
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.shutdownTimer), isEmpty);
+  });
+
+  testWidgets('重载视频 reloads the video, or refreshes a live room', (
+    tester,
+  ) async {
+    int refreshed = 0;
+    final _ActionScene scene = _ActionScene()..onRefresh = () => refreshed++;
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.reload).onPressed();
+    expect(scene.vdc.reloadCount, 1);
+
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.reload), isEmpty);
+    scene.pl.isLive = true;
+    _one(source, TvHudActionId.reload).onPressed();
+    expect(refreshed, 1);
+  });
+
+  testWidgets('重载视频 is hidden in a live room with nothing to refresh', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    scene.pl.isLive = true;
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.reload), isEmpty);
+  });
+
+  testWidgets('播放信息 opens upstream\'s player info; hidden without a '
+      'player', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.playerInfo).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.playerInfoCount, 1);
+    scene.pl.noPlayer = true;
+    expect(_ids(source, TvHudActionId.playerInfo), isEmpty);
+  });
+
+  testWidgets('完整设置 opens upstream\'s whole settings sheet; hidden '
+      'without the header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.fullSettings).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSettingSheet']);
+    Navigator.of(tester.element(find.text('showSettingSheet 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.fullSettings), isEmpty);
+  });
+
+  testWidgets('编辑按钮 stays hidden until M14.3 builds the editor', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.editButtons), isEmpty);
+  });
+
+  testWidgets('D-pad: 弹幕设置 opens upstream\'s danmaku panel with focus '
+      'inside it, and Back returns to the player', (tester) async {
+    await _pumpVideoPage(tester);
+    await walkPath(tester, '全屏', [
+      (dpadRight, '播/暂'),
+      (dpadRight, '播控'),
+      (dpadSelect, '暂停'),
+      (dpadRight, '全屏播放'),
+      (dpadRight, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+    ]);
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('智能云屏蔽'), findsOneWidget);
+    expect(_focusInsideRouteOf('弹幕设置'), isTrue);
+    for (int i = 0; i < 3; i++) {
+      await tester.sendKeyEvent(dpadDown);
+      await tester.pumpAndSettle();
+      expect(_focusInsideRouteOf('弹幕设置'), isTrue);
+    }
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('智能云屏蔽'), findsNothing);
+    expect(focusedLabel(), '全屏');
+  });
+
+  testWidgets('D-pad: 画质 opens upstream\'s quality panel with focus inside '
+      'it, and Back returns to the player', (tester) async {
+    final FakePlPlayerController pl = FakePlPlayerController();
+    final FakeVideoDetailController vdc = FakeVideoDetailController(
+      plPlayerController: pl,
+    );
+    final _FakeUpstream upstream = _FakeUpstream(header: _FakeHeaderPanels());
+    await _pumpVideoPage(
+      tester,
+      player: pl,
+      intro: FakeUgcIntroController(videoDetailCtr: vdc),
+      upstream: upstream,
+    );
+    await walkPath(tester, '全屏', [
+      (dpadRight, '播/暂'),
+      (dpadRight, '播控'),
+      (dpadSelect, '暂停'),
+    ]);
+    // Right along the row until 画质.
+    for (int i = 0; i < 12 && focusedLabel() != '画质: 1080P'; i++) {
+      await tester.sendKeyEvent(dpadRight);
+      await tester.pumpAndSettle();
+    }
+    expect(focusedLabel(), '画质: 1080P');
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pumpAndSettle();
+    expect(upstream.header!.calls, ['showSetVideoQa']);
+    expect(_focusInsideRouteOf('showSetVideoQa 0'), isTrue);
+    await tester.sendKeyEvent(dpadDown);
+    await tester.pumpAndSettle();
+    expect(_focusInsideRouteOf('showSetVideoQa 0'), isTrue);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('showSetVideoQa 0'), findsNothing);
+    expect(focusedLabel(), '全屏');
   });
 }
