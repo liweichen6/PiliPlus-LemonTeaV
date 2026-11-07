@@ -132,7 +132,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.3 | `M13.5a` | Make the Shared Candidate Walk Cheaper on the Comments List | ✅ Done (closed after one attempt by the user's decision; memoizing render-object work was 20 % slower on `<physical-tv>` and was reverted; `decide` on comments still misses the budget) | `lib/tv/tv_navigation.dart`, `<physical-tv>` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ✅ Done (rule chain, hidden switch and CI's second run removed; every remaining decision unchanged; 153 TV tests pass; released in `v2.2.0.2-fork.5962`) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_platform.dart`, `test/tv_*.dart`, `.github/workflows/tv-checks.yml` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ✅ Done (approach 1; the editor's layout is agreed separately, before `M14.3`) | `docs/tv/PLAN.md` |
-| **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Actions & Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart`, new action table in `lib/tv/`, `lib/tv/tv_platform.dart` |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Actions & Upstream's Panels | ✅ Done (merging the pull request publishes a release) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart` (`1c9cf8f12`) |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Layout, Editable Groups & Editor | ⏳ Planned | `lib/tv/tv_player_hud.dart`, new action table in `lib/tv/` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
@@ -2056,3 +2056,23 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * **Icon-only buttons**: the focused one shows its name in a small label under it, drawn over the HUD so the row doesn't re-lay out.
 * **Still open**: the editor's layout and UI, a discussion of its own before `M14.3`. `M14.2` doesn't need it, since it builds the actions and panels.
 * **Next**: `M14.2` on its own branch, which lands by pull request and publishes a release.
+
+### [2026-11-07] Milestone M14 (Task `M14.2`): Actions & Upstream's Panels
+* **Status**: ✅ Done on its own branch; lands by pull request. Merging it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_hud_actions.dart`, `[MODIFY] lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (code in `1c9cf8f12`).
+* **The action table** (`tv_hud_actions.dart`, a `part` of the HUD library so it reuses the HUD's pills and option lists):
+  * `TvHudActionId` holds every entry of the agreed `⋮` menu in menu order, with its group (`TvHudMenuGroup`) and whether it's pinnable. The names are the ids `M14.3` will save, so they don't change.
+  * `resolveAction(id)` returns the buttons an entry stands for now: none when it isn't available (so it's hidden), one for most entries, three for the episode entry in a list. Each button has a key, `TvHudAction.keyOf(buttonId)`, for tests.
+  * Upstream's panels: 弹幕设置 is `HeaderMixin.showSetDanmaku`, mixed into the HUD's state; 画质, 音质, 解码格式, 弹幕列表, 完整设置 and 字幕设置 are `HeaderControlState`'s, through `headerCtrKey`. They hide while the header isn't mounted, for offline files where upstream does, and in picture-in-picture. While a panel is open the HUD is hidden; when the panel's route is popped, focus goes back to the player as after the TV's own lists.
+  * TV lists over public APIs: 字幕 (the tracks, then upstream's 字幕设置), 倍速, 画面比例, 播放顺序 and 超分辨率 (animation only). Live quality keeps the TV list.
+  * The episode entry: 上集 / 下集 / 选集 in a list, `下个视频` (`UgcIntroController.playRelated()`) outside one, nothing for a PGC without a list, an offline file or a live room.
+  * 高能进度条 shows once the trend data has loaded and switches `showDmTrendChart`; `SettingBoxKey.showDmChart: true` joins the TV defaults so the data loads. Drawing the chart is `M14.3`.
+  * 播放器音量, 定时关闭 and 播放信息 open upstream's dialogs; 重载视频 reloads the video, or refreshes a live room.
+  * 编辑按钮 is in the table but never available until `M14.3` builds the editor.
+* **The HUD now**: the bottom row is still the old one (play/pause, 全屏播放, then the actions), drawn from the table with 字幕 added, until `M14.3` rebuilds the layout. The TV's own danmaku dialog and its `(遥控器方向键选择)` title are gone, and so is its video-quality list. Actions with no button yet (高能进度条, 弹幕列表, 音质 and the rest) are reachable once `M14.3` adds the `⋮` menu.
+* **Verification**:
+  * TV analyze clean (the CI file list); `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` and `test/tv_paths_test.dart`: 181 tests pass, SDK patches applied.
+  * 30 new tests in `test/tv_player_hud_test.dart`: one per action (when it's available and what it does), the table's order, the new TV default, and two D-pad tests in the recorded-path scene: 弹幕设置 opens upstream's real panel with focus on its first slider, Down stays inside it, and Back returns focus to the Quick Strip; 画质 does the same through a recorded stand-in for `showSetVideoQa` that opens the same kind of route. The 画质 and old danmaku-dialog tests are replaced; the finders this task touched use keys.
+  * No device run: none was needed for the done bar, and `M14.4` has the device pass.
+* **Left out**: upstream's AI 翻译 and 分段信息 buttons, which the agreed menu doesn't list.
+* **Next**: the editor's layout (owner: user), then `M14.3`.
