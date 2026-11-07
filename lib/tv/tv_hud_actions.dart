@@ -5,9 +5,8 @@ part of 'tv_player_hud.dart';
 // Every function the HUD offers is one entry here: a fixed id, an icon, a
 // label (with the current value where it matters), when it's available and
 // what it does. An entry that isn't available resolves to no buttons, so the
-// HUD hides it rather than showing it disabled. M14.3 builds the `⋮` menu and
-// the editable groups from this table; until then the HUD's existing bottom
-// row draws its buttons from it.
+// HUD hides it rather than showing it disabled. The `⋮` menu and the editable
+// groups (M14.3) are drawn from this table.
 
 /// The `⋮` menu's groups, in menu order (agreed with the user, 2026-11-07).
 enum TvHudMenuGroup {
@@ -24,52 +23,84 @@ enum TvHudMenuGroup {
 
 /// One entry of the action table.
 ///
-/// The names are the ids that M14.3 saves in the settings box for the
-/// editable groups, so an entry is never renamed; an id that's no longer
+/// The names are the ids saved in the settings box for the editable groups
+/// ([TvHudGroups]), so an entry is never renamed; an id that's no longer
 /// known is skipped when the saved lists are read. Within a group the order
 /// is the `⋮` menu's order.
 enum TvHudActionId {
-  quality(TvHudMenuGroup.play),
-  speed(TvHudMenuGroup.play),
-  videoFit(TvHudMenuGroup.play),
-  subtitle(TvHudMenuGroup.play),
+  quality(TvHudMenuGroup.play, '画质', Icons.hd_rounded),
+  speed(TvHudMenuGroup.play, '倍速', Icons.speed_rounded),
+  videoFit(TvHudMenuGroup.play, '画面比例', Icons.aspect_ratio_rounded),
+  subtitle(TvHudMenuGroup.play, '字幕', Icons.closed_caption_rounded),
 
   /// Upstream's 翻译 bar button: the video in another language, where
   /// Bilibili offers one (likely AI dubbing; it reloads the streams).
-  aiTranslate(TvHudMenuGroup.play),
+  aiTranslate(TvHudMenuGroup.play, '翻译', Icons.translate_rounded),
 
   /// 上集 / 下集 / 选集 while the video is in a list (an episode list, parts or
   /// a collection), otherwise 下个视频; nothing when there's nothing to play
   /// next.
-  episodes(TvHudMenuGroup.play),
+  episodes(TvHudMenuGroup.play, '选集', Icons.playlist_play_rounded),
 
   /// 分段信息: the uploader's chapters.
-  viewPoints(TvHudMenuGroup.play),
-  playOrder(TvHudMenuGroup.play),
-  danmakuToggle(TvHudMenuGroup.danmaku),
-  danmakuSettings(TvHudMenuGroup.danmaku),
-  dmChart(TvHudMenuGroup.danmaku),
-  danmakuPool(TvHudMenuGroup.danmaku),
-  like(TvHudMenuGroup.interact),
-  coin(TvHudMenuGroup.interact),
-  favorite(TvHudMenuGroup.interact),
-  watchLater(TvHudMenuGroup.interact),
-  audioQuality(TvHudMenuGroup.pictureAndSound),
-  decodeFormat(TvHudMenuGroup.pictureAndSound),
-  superResolution(TvHudMenuGroup.pictureAndSound),
-  playerVolume(TvHudMenuGroup.pictureAndSound),
-  shutdownTimer(TvHudMenuGroup.pictureAndSound),
-  reload(TvHudMenuGroup.other),
-  playerInfo(TvHudMenuGroup.other),
-  fullSettings(TvHudMenuGroup.other),
+  viewPoints(TvHudMenuGroup.play, '分段信息', Icons.view_list_rounded),
+  playOrder(TvHudMenuGroup.play, '播放顺序', Icons.repeat_rounded),
+  danmakuToggle(TvHudMenuGroup.danmaku, '弹幕开关', Icons.subtitles_rounded),
+  danmakuSettings(TvHudMenuGroup.danmaku, '弹幕设置', Icons.tune_rounded),
+  dmChart(TvHudMenuGroup.danmaku, '高能进度条', Icons.show_chart_rounded),
+  danmakuPool(
+    TvHudMenuGroup.danmaku,
+    '弹幕列表',
+    Icons.format_list_bulleted_rounded,
+  ),
+  like(TvHudMenuGroup.interact, '点赞', Icons.thumb_up_off_alt_rounded),
+  coin(TvHudMenuGroup.interact, '投币', Icons.monetization_on_rounded),
+  favorite(TvHudMenuGroup.interact, '收藏', Icons.star_border_rounded),
+  watchLater(TvHudMenuGroup.interact, '稍后再看', Icons.watch_later_outlined),
+  audioQuality(TvHudMenuGroup.pictureAndSound, '音质', Icons.album_outlined),
+  decodeFormat(TvHudMenuGroup.pictureAndSound, '解码格式', Icons.av_timer_outlined),
+  superResolution(
+    TvHudMenuGroup.pictureAndSound,
+    '超分辨率',
+    Icons.auto_awesome_rounded,
+  ),
+  playerVolume(
+    TvHudMenuGroup.pictureAndSound,
+    '播放器音量',
+    Icons.volume_up_rounded,
+  ),
+  shutdownTimer(
+    TvHudMenuGroup.pictureAndSound,
+    '定时关闭',
+    Icons.hourglass_top_rounded,
+  ),
+  reload(TvHudMenuGroup.other, '重载视频', Icons.refresh_rounded),
+  playerInfo(TvHudMenuGroup.other, '播放信息', Icons.info_outline_rounded),
+  fullSettings(TvHudMenuGroup.other, '完整设置', Icons.settings_rounded),
 
-  /// Opens the button editor. The editor comes with M14.3, so until then this
-  /// entry is never available.
-  editButtons(TvHudMenuGroup.other, pinnable: false);
+  /// Opens the button editor (M14.3).
+  editButtons(
+    TvHudMenuGroup.other,
+    '编辑按钮',
+    Icons.edit_rounded,
+    pinnable: false,
+  );
 
-  const TvHudActionId(this.group, {this.pinnable = true});
+  const TvHudActionId(
+    this.group,
+    this.title,
+    this.icon, {
+    this.pinnable = true,
+  });
 
   final TvHudMenuGroup group;
+
+  /// The entry's name in the editor, without the current value that its HUD
+  /// button shows.
+  final String title;
+
+  /// The entry's icon in the editor.
+  final IconData icon;
 
   /// Whether the entry can be pinned to the top-right or bottom group.
   final bool pinnable;
@@ -240,6 +271,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
   List<({String label, BaseEpisodeItem item, bool isCurrent})>
   _collectEpisodes();
   Future<void> _showTvDialog(Widget Function(BuildContext) builder);
+  Future<void> _openEditor();
   void _hideHud({bool restoreFocus = true});
   void _resetAutoHideTimer();
   void _cancelAutoHideTimer();
@@ -348,7 +380,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.reload => _reloadAction(),
       TvHudActionId.playerInfo => _playerInfoAction(),
       TvHudActionId.fullSettings => _fullSettingsAction(),
-      TvHudActionId.editButtons => null,
+      TvHudActionId.editButtons => _editButtonsAction(),
     };
     if (id == TvHudActionId.episodes) return _episodeActions();
     return [?single];
@@ -763,7 +795,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
 
   /// Upstream shows its 高能进度条 button once the chart's data has loaded,
   /// which happens only with its `showDmChart` setting on (on by default on
-  /// TV). M14.3 draws the chart on the time bar.
+  /// TV). The chart is drawn over the time bar (`_TvDmChart`).
   TvHudAction? _dmChartAction() {
     if (!_isVideo || _pl.isFileSource || !_pl.showDmChart) return null;
     final VideoDetailController? ctr = _videoDetailCtr;
@@ -1012,6 +1044,13 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       ),
     );
   }
+
+  TvHudAction _editButtonsAction() => _single(
+    TvHudActionId.editButtons,
+    icon: Icons.edit_rounded,
+    label: '编辑按钮',
+    onPressed: _openEditor,
+  );
 
   /// Upstream's whole `⋮` sheet, for anything the table leaves out (CDN 设置
   /// and the like).
