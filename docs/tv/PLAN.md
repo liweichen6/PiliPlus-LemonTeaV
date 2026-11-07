@@ -65,7 +65,7 @@
 | **M16: 4K on the Video Plane** | Option G of M12: mpv's `vo=mediacodec_embed` on a real `SurfaceView`, opt-in on TV, as a temporary route back to 4K. Runs before M13 | `lib/tv/*`, `TvBridge.kt`, small hooks in four upstream files; not TV-layer-only, so it gets its own branch (`M16.1`–`M16.5`) | `M12.4` | ✅ Built and passed its device bar. Lives on `variant/4k-passthrough`, not `main`, built by hand with no releases |
 | **M13: Focus Engine, Staged and Parity-Gated** | Fix odd jumps, a lost or missing ring and D-pad lag; replace the rule chain with adapters, one reconcile loop and one scoring function with column memory | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, new `lib/tv/adapters/`, `test/tv_*.dart` (`M13.0`–`M13.6`) | M11, M16; focus-bug list from the user | ✅ Done (all tasks done; `M13.6` released in `v2.2.0.2-fork.5962`; closed by the user's decision with one part of its bar open: `decide` on the comments list is still over the budget) |
 | **M14: Player HUD, Video** | The TV pill HUD changed in place: the agreed layout, editable top-right and bottom groups, a `⋮` menu with every option; menus open upstream's own panels | `lib/tv/tv_player_hud.dart`, new action table in `lib/tv/`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart` (`M14.1`–`M14.4`) | M12, M16; button-list discussion (`M14.1`) | 🔄 In progress (`M14.1`–`M14.3` done; `M14.4` next) |
-| **M15: Player HUD, Live** | The same for the live room, where upstream's pickers are private | `lib/tv/tv_player_hud.dart` (tasks defined after M14) | M14 | ⏳ Planned (later) |
+| **M15: Player HUD, Live** | The same for the live room, where upstream's pickers are private; a way to close or minimize a SuperChat with the remote | `lib/tv/tv_player_hud.dart` (`M15.2`; the other tasks defined after M14) | M14 | ⏳ Planned (later) |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Option F of M12: a second player on a `SurfaceView`, for real HDR and Dolby Vision. Deprioritized by the user on 2026-10-30; its place after M15 is proposed | Upstream player files as well as `lib/tv/*`; not a TV-layer-only milestone (`M17.1`–`M17.2`) | M15; M16's spike (`M16.1`) | ⏳ Planned (later) |
 
 ---
@@ -788,6 +788,16 @@
 * **Known so far**: refresh and send-danmaku already reach the HUD, danmaku settings come from `HeaderMixin`, and the HUD already has a live quality list. Upstream's live pickers are private (`_LiveHeaderControlState` and `_showLiveStreamDialog` in `lib/pages/live_room/widgets/header_control.dart`), so the stream and CDN picker and similar pieces need TV-built versions over `LiveRoomController`, or are left out.
 * **Tasks**:
   * **Task M15.1 (`⏳ Planned`, later) — Button List & Tasks**: a button-list discussion like M14.1, after M14 is done; the remaining M15 tasks are defined from its outcome.
+  * **Task M15.2 (`⏳ Planned`, later) — Close or Minimize a SuperChat**: added by the user on 2026-11-07. On a phone a SuperChat (醒目留言) can be swiped away; on the TV it can't, so it stays on screen until it expires. Add a D-pad way to close it, or to minimize it.
+    * **Where it shows** (upstream, `lib/pages/live_room/`):
+      * In fullscreen, with upstream's `全屏 SuperChat` on (`Pref.enableFullScreenSC`), a new SuperChat is drawn as a card at the bottom left for up to 10 s. That card is `LiveRoomController.fsSC`, an `Rxn<SuperChatItem>`. Its only close control is a touch `×`, which sets `fsSC.value = null` and which the D-pad can't reach.
+      * In split view, the chat area is a `PageView` with the chat on one page and the SuperChat list (`SuperChatPanel`) on the other, which a phone swipes between.
+    * **Likely shape** (to settle in `M15.1`): `fsSC` is public, so closing the fullscreen card needs no upstream edit. Candidates:
+      * Back closes a shown card before it closes the HUD or leaves fullscreen.
+      * A `关闭醒目留言` action in the live HUD's menu, and pinnable.
+      * Minimizing to a small chip instead of closing.
+      * For split view, a D-pad way to switch between the chat and the SuperChat list.
+    * **Done when**: a SuperChat shown in fullscreen can be closed (or minimized) with the remote, without waiting for it to expire. Any key used for this doesn't change what that key does when no SuperChat is shown. There's a widget test for it, and the user has tried it in a live room on `<physical-tv>`.
 
 ### Milestone M17: ExoPlayer for HDR and Dolby Vision (later)
 * **Goal**: real HDR and Dolby Vision on the panel through a second player, option F of M12. It also brings 4K back for good, if M16 hasn't by then.
