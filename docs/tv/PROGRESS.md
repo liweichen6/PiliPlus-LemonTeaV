@@ -133,7 +133,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ✅ Done (rule chain, hidden switch and CI's second run removed; every remaining decision unchanged; 153 TV tests pass; released in `v2.2.0.2-fork.5962`) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_platform.dart`, `test/tv_*.dart`, `.github/workflows/tv-checks.yml` |
 | **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ✅ Done (approach 1; the editor's layout is agreed separately, before `M14.3`) | `docs/tv/PLAN.md` |
 | **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Actions & Upstream's Panels | ✅ Done (merging the pull request publishes a release) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart` (`1c9cf8f12`) |
-| **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Layout, Editable Groups & Editor | ✅ Done (the editor's design agreed 2026-11-07; merging the pull request publishes a release) | `lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart` |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Layout, Editable Groups & Editor | ✅ Done (the editor's design agreed 2026-11-07; released in `v2.2.0.2-fork.5998`; the changes after the first device try land by their own pull request, and merging it publishes a release) | `lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart` |
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
@@ -2108,7 +2108,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Next**: `M14.4`. Some of its tests were done here (saving, unknown ids, the cap, `显示按钮文字`, `恢复默认`, the keys with the HUD hidden, the default and custom recorded paths); the rest of the label-text finders and the device pass remain.
 
 ### [2026-11-07] Milestone M14 (Task `M14.3`): Changes After the First Device Try
-* **Status**: ✅ Done on the same branch and pull request as `M14.3`. Merging it publishes a release.
+* **Status**: ✅ Done on the `M14.3` branch. That pull request was merged (released in `v2.2.0.2-fork.5998`) before these commits were pushed, so they land by a pull request of their own. Merging it publishes a release.
 * **Files Changed**: `[MODIFY] lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
 * **Device try**: a `-Pdev` build of the branch (`android-arm` and `android-arm64`) was installed over `PiliPlus TV dev` on `<physical-tv>` and `<vm-tv>`, and the user tried the HUD and the editor. On `<vm-tv>` the dev app was missing again after an emulator restart (as in M13.0b), and `install -r` brought it back. Afterwards the emulator was synced and stopped, and adb was disconnected from the TV.
 * **The user's requests**, each built as asked:
