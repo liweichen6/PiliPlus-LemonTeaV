@@ -112,7 +112,8 @@ class _TvHudMenuPanel extends StatelessWidget {
 enum _TvHudEditorRow { topRight, bottom, unpinned }
 
 /// The button editor (agreed with the user, 2026-11-07): a top row with
-/// `显示按钮文字`, `恢复默认` and `完成`, then the rows 右上角, 底部 and 未固定.
+/// `显示按钮文字`, `按钮在时间条上方`, `恢复默认` and `完成`, then the rows
+/// 右上角, 底部 and 未固定.
 /// Select picks a button up; while it's carried, Left and Right move it along
 /// its row and Up and Down move it to the end of the row above or below.
 /// Select or Back puts it down. Every change is passed to [onChanged] at once.
@@ -269,6 +270,9 @@ class _TvHudEditorState extends State<_TvHudEditor> {
   void _toggleLabels() =>
       _update(_groups.copyWith(showLabels: !_groups.showLabels));
 
+  void _toggleButtonsAboveBar() =>
+      _update(_groups.copyWith(buttonsAboveBar: !_groups.buttonsAboveBar));
+
   Future<void> _confirmReset() async {
     _focusAfterFrame(_cancelResetNode);
     final bool? reset = await showDialog<bool>(
@@ -284,7 +288,7 @@ class _TvHudEditorState extends State<_TvHudEditor> {
           ),
         ),
         content: const Text(
-          '右上角、底部和显示按钮文字都会恢复默认。',
+          '右上角、底部、显示按钮文字和按钮位置都会恢复默认。',
           style: TextStyle(color: Colors.white70, fontSize: 14),
         ),
         actions: [
@@ -370,19 +374,20 @@ class _TvHudEditorState extends State<_TvHudEditor> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  const Text(
+                    '编辑按钮',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // A Wrap, so the controls fit at the largest text scale.
+                  Wrap(
                     spacing: 10,
+                    runSpacing: 8,
                     children: [
-                      const Expanded(
-                        child: Text(
-                          '编辑按钮',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
                       _TvHudPillButton(
                         key: TvPlayerHud.editorShowLabelsKey,
                         compact: true,
@@ -393,6 +398,18 @@ class _TvHudEditorState extends State<_TvHudEditor> {
                             : Icons.check_box_outline_blank_rounded,
                         label: '显示按钮文字: ${groups.showLabels ? '开' : '关'}',
                         onPressed: _toggleLabels,
+                      ),
+                      _TvHudPillButton(
+                        key: TvPlayerHud.editorButtonsAboveBarKey,
+                        compact: true,
+                        active: groups.buttonsAboveBar,
+                        icon: groups.buttonsAboveBar
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        label:
+                            '按钮在时间条上方: '
+                            '${groups.buttonsAboveBar ? '开' : '关'}',
+                        onPressed: _toggleButtonsAboveBar,
                       ),
                       _TvHudPillButton(
                         key: TvPlayerHud.editorResetKey,

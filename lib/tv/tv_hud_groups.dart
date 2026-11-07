@@ -1,16 +1,19 @@
 part of 'tv_player_hud.dart';
 
 // The HUD's editable groups (M14.3, docs/tv/PLAN.md, Milestone M14): the
-// top-right group, the bottom group and `显示按钮文字`, saved in the settings
-// box and read once each time the HUD opens.
+// top-right group, the bottom group, `显示按钮文字` and whether the buttons
+// sit above the time bar, saved in the settings box and read once each time
+// the HUD opens.
 
-/// The two editable groups and whether the bottom row shows its labels.
+/// The two editable groups, whether the bottom row shows its labels, and
+/// whether it sits above the time bar.
 @immutable
 class TvHudGroups {
   const TvHudGroups({
     required this.topRight,
     required this.bottom,
     required this.showLabels,
+    this.buttonsAboveBar = false,
   });
 
   /// Builds the groups from saved values: ids that aren't known, can't be
@@ -21,6 +24,7 @@ class TvHudGroups {
     Object? topRight,
     Object? bottom,
     Object? showLabels,
+    Object? buttonsAboveBar,
   }) {
     final Set<TvHudActionId> seen = {};
     List<TvHudActionId> parse(Object? saved, List<TvHudActionId> fallback) {
@@ -42,6 +46,9 @@ class TvHudGroups {
       topRight: List.unmodifiable(top),
       bottom: List.unmodifiable(parse(bottom, defaults.bottom)),
       showLabels: showLabels is bool ? showLabels : defaults.showLabels,
+      buttonsAboveBar: buttonsAboveBar is bool
+          ? buttonsAboveBar
+          : defaults.buttonsAboveBar,
     );
   }
 
@@ -50,6 +57,7 @@ class TvHudGroups {
     topRight: box.get(topRightKey),
     bottom: box.get(bottomKey),
     showLabels: box.get(showLabelsKey),
+    buttonsAboveBar: box.get(buttonsAboveBarKey),
   );
 
   /// The saved groups; the defaults where the settings box isn't open (some
@@ -67,9 +75,16 @@ class TvHudGroups {
   static const String topRightKey = 'tvHudTopRight';
   static const String bottomKey = 'tvHudBottom';
   static const String showLabelsKey = 'tvHudShowLabels';
+  static const String buttonsAboveBarKey = 'tvHudButtonsAboveBar';
 
-  /// The top-right group's cap; the `⋮` button comes after it.
-  static const int maxTopRight = 4;
+  /// The top-right group is laid out in rows of this many buttons, aligned
+  /// right; the first row's last place is the `⋮` button's.
+  static const int topRightRowSize = 6;
+  static const int topRightRows = 3;
+
+  /// The top-right group's cap: 3 rows of 6, less the `⋮` button
+  /// (the user, 2026-11-07).
+  static const int maxTopRight = topRightRows * topRightRowSize - 1;
 
   /// Agreed with the user, 2026-11-07.
   static const TvHudGroups defaults = TvHudGroups(
@@ -95,6 +110,10 @@ class TvHudGroups {
   /// group is always icon-only.
   final bool showLabels;
 
+  /// `按钮在时间条上方`: the bottom row sits above the time bar instead of
+  /// under it.
+  final bool buttonsAboveBar;
+
   /// Every pinnable entry that's in neither group, in menu order.
   List<TvHudActionId> get unpinned => [
     for (final TvHudActionId id in TvHudActionId.values)
@@ -105,16 +124,19 @@ class TvHudGroups {
     List<TvHudActionId>? topRight,
     List<TvHudActionId>? bottom,
     bool? showLabels,
+    bool? buttonsAboveBar,
   }) => TvHudGroups(
     topRight: List.unmodifiable(topRight ?? this.topRight),
     bottom: List.unmodifiable(bottom ?? this.bottom),
     showLabels: showLabels ?? this.showLabels,
+    buttonsAboveBar: buttonsAboveBar ?? this.buttonsAboveBar,
   );
 
   Future<void> save(Box<dynamic> box) => box.putAll(<String, Object>{
     topRightKey: [for (final TvHudActionId id in topRight) id.name],
     bottomKey: [for (final TvHudActionId id in bottom) id.name],
     showLabelsKey: showLabels,
+    buttonsAboveBarKey: buttonsAboveBar,
   });
 
   /// Saves to the settings box; does nothing where it isn't open.
@@ -129,14 +151,20 @@ class TvHudGroups {
       other is TvHudGroups &&
       const ListEquality<TvHudActionId>().equals(other.topRight, topRight) &&
       const ListEquality<TvHudActionId>().equals(other.bottom, bottom) &&
-      other.showLabels == showLabels;
+      other.showLabels == showLabels &&
+      other.buttonsAboveBar == buttonsAboveBar;
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(topRight), Object.hashAll(bottom), showLabels);
+  int get hashCode => Object.hash(
+    Object.hashAll(topRight),
+    Object.hashAll(bottom),
+    showLabels,
+    buttonsAboveBar,
+  );
 
   @override
   String toString() =>
       'TvHudGroups(topRight: ${topRight.map((e) => e.name)}, '
-      'bottom: ${bottom.map((e) => e.name)}, showLabels: $showLabels)';
+      'bottom: ${bottom.map((e) => e.name)}, showLabels: $showLabels, '
+      'buttonsAboveBar: $buttonsAboveBar)';
 }

@@ -3076,7 +3076,7 @@ Future<void> _press(WidgetTester tester, LogicalKeyboardKey key) async {
 
 /// The ids of the buttons drawn inside [group], left to right.
 List<String> _drawn(WidgetTester tester, Key group) {
-  final List<(double, String)> found = [];
+  final List<(Offset, String)> found = [];
   for (final Element e
       in find
           .descendant(
@@ -3091,41 +3091,47 @@ List<String> _drawn(WidgetTester tester, Key group) {
     final String id = (e.widget.key! as ValueKey<String>).value.substring(
       'tvHudAction:'.length,
     );
-    found.add((tester.getRect(find.byKey(e.widget.key!)).left, id));
+    found.add((tester.getRect(find.byKey(e.widget.key!)).topLeft, id));
   }
-  found.sort((a, b) => a.$1.compareTo(b.$1));
+  // Reading order: by row, then left to right.
+  found.sort(
+    (a, b) => a.$1.dy != b.$1.dy
+        ? a.$1.dy.compareTo(b.$1.dy)
+        : a.$1.dx.compareTo(b.$1.dx),
+  );
   return [for (final (_, String id) in found) id];
 }
 
 void _layoutTests() {
   test('saved lists: unknown, unpinnable and repeated ids are skipped, the '
-      'top right keeps its first 4, and an empty list stays empty', () {
+      'top right keeps its first 17, and an empty list stays empty', () {
+    // The 24 pinnable entries, in menu order, with noise mixed in.
+    final List<String> all = [
+      for (final TvHudActionId id in TvHudActionId.values)
+        if (id.pinnable) id.name,
+    ];
+    expect(all, hasLength(24));
     final TvHudGroups groups = TvHudGroups.fromSaved(
-      topRight: const [
-        'like',
-        'gone',
-        'editButtons',
-        'coin',
-        'like',
-        'favorite',
-        'watchLater',
-        'speed',
-      ],
-      bottom: const ['speed', 'coin', 42, 'quality'],
+      topRight: ['gone', 'editButtons', all[0], all[0], ...all.skip(1)],
+      bottom: [all[0], all[17], 42, all[23]],
       showLabels: false,
+      buttonsAboveBar: true,
     );
-    expect(groups.topRight, [
-      TvHudActionId.like,
-      TvHudActionId.coin,
-      TvHudActionId.favorite,
-      TvHudActionId.watchLater,
-    ]);
-    // speed fell off the top right, so the bottom can have it; coin is
+    // 3 rows of 6, less ⋮.
+    expect(TvHudGroups.maxTopRight, 17);
+    expect(groups.topRight.map((e) => e.name), all.take(17));
+    // all[17] fell off the top right, so the bottom can have it; all[0] is
     // already pinned.
-    expect(groups.bottom, [TvHudActionId.speed, TvHudActionId.quality]);
+    expect(groups.bottom.map((e) => e.name), [all[17], all[23]]);
     expect(groups.showLabels, isFalse);
+    expect(groups.buttonsAboveBar, isTrue);
 
     expect(TvHudGroups.fromSaved(), TvHudGroups.defaults);
+    expect(TvHudGroups.defaults.buttonsAboveBar, isFalse);
+    expect(
+      TvHudGroups.fromSaved(buttonsAboveBar: 'yes').buttonsAboveBar,
+      isFalse,
+    );
     expect(
       TvHudGroups.fromSaved(topRight: const [], bottom: 'not a list'),
       TvHudGroups.defaults.copyWith(topRight: const []),
@@ -3148,8 +3154,9 @@ void _layoutTests() {
     );
   });
 
-  testWidgets('the HUD draws both groups from the saved lists, skips unknown '
-      'ids, keeps 4 top right and ends that group with ⋮', (tester) async {
+  testWidgets('the HUD draws both groups from the saved lists and skips '
+      'unknown ids; the top right is rows of 6, aligned right, with ⋮ last '
+      'in the first row', (tester) async {
     unawaited(
       GStorage.setting.putAll(<String, Object>{
         TvHudGroups.topRightKey: [
@@ -3159,8 +3166,11 @@ void _layoutTests() {
           'danmakuToggle',
           'playOrder',
           'danmakuSettings',
+          'like',
+          'coin',
+          'favorite',
         ],
-        TvHudGroups.bottomKey: ['quality', 'removedLongAgo', 'danmakuSettings'],
+        TvHudGroups.bottomKey: ['quality', 'removedLongAgo', 'watchLater'],
       }),
     );
     final _ActionScene scene = _ActionScene();
@@ -3172,17 +3182,34 @@ void _layoutTests() {
       'videoFit',
       'danmakuToggle',
       'playOrder',
+      'danmakuSettings',
+      'like',
+      'coin',
+      'favorite',
     ]);
     expect(_drawn(tester, TvPlayerHud.bottomGroupKey), [
       'quality',
-      'danmakuSettings',
+      'watchLater',
     ]);
-    // ⋮ comes last, and the top right is icon-only.
-    final Rect menu = tester.getRect(find.byKey(TvPlayerHud.menuButtonKey));
-    final Rect playOrder = tester.getRect(
-      find.byKey(TvHudAction.keyOf('playOrder')),
-    );
-    expect(menu.left, greaterThan(playOrder.right));
+    Rect rect(Key key) => tester.getRect(find.byKey(key));
+    Rect button(String id) => rect(TvHudAction.keyOf(id));
+    // First row: five buttons, then ⋮; the second row holds the rest.
+    final Rect menu = rect(TvPlayerHud.menuButtonKey);
+    for (final String id in [
+      'speed',
+      'videoFit',
+      'danmakuToggle',
+      'playOrder',
+      'danmakuSettings',
+    ]) {
+      expect(button(id).center.dy, moreOrLessEquals(menu.center.dy));
+      expect(button(id).right, lessThan(menu.left));
+    }
+    expect(button('like').top, greaterThan(menu.bottom));
+    expect(button('favorite').center.dy, button('like').center.dy);
+    // Aligned right: both rows end at the same edge.
+    expect(button('favorite').right, moreOrLessEquals(menu.right));
+    // Icon-only.
     expect(
       find.descendant(
         of: find.byKey(TvPlayerHud.topRightGroupKey),
@@ -3190,7 +3217,7 @@ void _layoutTests() {
       ),
       findsNothing,
     );
-    // The bottom row shows its labels by default.
+    // The bottom row shows its labels by default, under the time bar.
     expect(
       find.descendant(
         of: find.byKey(TvPlayerHud.bottomGroupKey),
@@ -3198,6 +3225,68 @@ void _layoutTests() {
       ),
       findsOneWidget,
     );
+    expect(
+      rect(TvPlayerHud.bottomGroupKey).top,
+      greaterThan(rect(TvPlayerHud.timeBarKey).bottom),
+    );
+  });
+
+  testWidgets('按钮在时间条上方: the bottom row moves above the time bar, '
+      'and the D-pad follows', (tester) async {
+    _saveGroups(TvHudGroups.defaults.copyWith(buttonsAboveBar: true));
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    Rect rect(Key key) => tester.getRect(find.byKey(key));
+    expect(
+      rect(TvPlayerHud.bottomGroupKey).bottom,
+      lessThan(rect(TvPlayerHud.timeBarKey).top),
+    );
+    // Still the first focus, with the buttons above it.
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvHudAction.keyOf('episodes.prev')), isTrue);
+    await _press(tester, dpadDown);
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+  });
+
+  testWidgets('a long title wraps to three lines and ends in … only past '
+      'them', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.intro.videoDetail.value = VideoDetailData(
+      title: List<String>.filled(40, '很长的视频标题').join(),
+    );
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    final Text title = tester.widget<Text>(find.byKey(TvPlayerHud.titleKey));
+    expect((title.maxLines, title.overflow), (3, TextOverflow.ellipsis));
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.titleKey),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(paragraph.didExceedMaxLines, isTrue);
+    final double line = paragraph.getFullHeightForCaret(
+      const TextPosition(offset: 0),
+    );
+    expect(paragraph.size.height, moreOrLessEquals(3 * line, epsilon: 2));
+
+    // A short one stays on one line.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene other = _ActionScene();
+    other.intro.videoDetail.value = VideoDetailData(title: '短标题');
+    await other.pump(tester);
+    await _press(tester, dpadUp);
+    expect(find.text('短标题'), findsOneWidget);
+    final RenderParagraph short = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.titleKey),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(short.didExceedMaxLines, isFalse);
+    expect(short.size.height, moreOrLessEquals(line, epsilon: 2));
   });
 
   testWidgets('显示按钮文字 off: the bottom row is icon-only, and the focused '
@@ -3343,8 +3432,8 @@ void _layoutTests() {
   });
 
   testWidgets('editor: Select picks a button up, Left / Right reorder, Up / '
-      'Down move between the rows, Back puts it down, a full top right '
-      'refuses more, and the result survives a restart', (tester) async {
+      'Down move between the rows, Back puts it down, and the result '
+      'survives a restart', (tester) async {
     final _ActionScene scene = _ActionScene();
     scene.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
     final TvHudActionSource source = await scene.pump(tester);
@@ -3408,7 +3497,7 @@ void _layoutTests() {
       isFalse,
     );
 
-    // Pin 弹幕列表 and 点赞 top right: 4 there, then a fifth is refused.
+    // Pin 弹幕列表 and 点赞 top right.
     for (final TvHudActionId id in [
       TvHudActionId.danmakuPool,
       TvHudActionId.like,
@@ -3425,13 +3514,6 @@ void _layoutTests() {
       'danmakuPool',
       'like',
     ]);
-    await _focusKey(tester, TvPlayerHud.editorItemKey(TvHudActionId.speed));
-    await _press(tester, dpadSelect);
-    await _press(tester, dpadUp);
-    expect(_savedIds(TvHudGroups.topRightKey), hasLength(4));
-    expect(_savedIds(TvHudGroups.bottomKey), contains('speed'));
-    expect(find.textContaining('右上角最多 4 个'), findsOneWidget);
-    await _press(tester, dpadSelect);
 
     // Back closes the editor; the HUD redraws its groups and focus returns
     // to ⋮.
@@ -3532,6 +3614,54 @@ void _layoutTests() {
     await _press(tester, dpadSelect);
     expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
     expect(find.text('倍速: 1.0x'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('editor: a top right of 17 refuses an 18th; 按钮在时间条上方 '
+      'saves at once and flips the HUD when the editor closes', (
+    tester,
+  ) async {
+    const List<TvHudActionId> bottom = [
+      TvHudActionId.quality,
+      TvHudActionId.speed,
+      TvHudActionId.videoFit,
+      TvHudActionId.subtitle,
+      TvHudActionId.episodes,
+      TvHudActionId.playOrder,
+      TvHudActionId.fullSettings,
+    ];
+    final List<TvHudActionId> top = [
+      for (final TvHudActionId id in TvHudActionId.values)
+        if (id.pinnable && !bottom.contains(id)) id,
+    ];
+    expect(top, hasLength(TvHudGroups.maxTopRight));
+    _saveGroups(TvHudGroups(topRight: top, bottom: bottom, showLabels: true));
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.text('右上角 17/17'), findsOneWidget);
+
+    await _focusKey(tester, TvPlayerHud.editorItemKey(TvHudActionId.speed));
+    await _press(tester, dpadSelect);
+    await _press(tester, dpadUp);
+    expect(_savedIds(TvHudGroups.topRightKey), hasLength(17));
+    expect(_savedIds(TvHudGroups.bottomKey), contains('speed'));
+    expect(find.textContaining('右上角最多 17 个'), findsOneWidget);
+    await _press(tester, dpadSelect);
+
+    await _focusKey(tester, TvPlayerHud.editorButtonsAboveBarKey);
+    await _press(tester, dpadSelect);
+    expect(GStorage.setting.get(TvHudGroups.buttonsAboveBarKey), isTrue);
+    expect(find.text('按钮在时间条上方: 开'), findsOneWidget);
+
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
+    expect(
+      tester.getRect(find.byKey(TvPlayerHud.bottomGroupKey)).bottom,
+      lessThan(tester.getRect(_timeBar).top),
+    );
     await tester.pump(const Duration(seconds: 6));
   });
 }
