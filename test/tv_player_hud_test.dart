@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/progress_bar/segment_progress_bar.dart'
+    show ViewPointSegment;
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -226,6 +228,9 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   bool showDmChart = true;
 
   @override
+  bool showViewPoints = true;
+
+  @override
   bool darkVideoPage = false;
 
   @override
@@ -302,6 +307,24 @@ class FakeVideoDetailController extends Fake implements VideoDetailController {
 
   @override
   AudioQuality? currentAudioQa;
+
+  @override
+  final Rxn<List<play_url.LanguageItem>> languages =
+      Rxn<List<play_url.LanguageItem>>();
+
+  @override
+  final Rxn<String> currLang = Rxn<String>();
+
+  @override
+  void setLanguage(String language) {
+    currLang.value = language;
+  }
+
+  @override
+  final RxList<ViewPointSegment> viewPointList = <ViewPointSegment>[].obs;
+
+  @override
+  final RxBool showVP = true.obs;
 
   int reloadCount = 0;
   @override
@@ -2207,6 +2230,23 @@ class _FakeUpstream implements TvHudUpstream {
     volumeCount++;
   }
 
+  int viewPointsCount = 0;
+  @override
+  void showViewPoints(BuildContext context, VideoDetailController ctr) {
+    viewPointsCount++;
+    PageUtils.showVideoBottomSheet(
+      context,
+      child: Material(
+        child: ListView(
+          children: [
+            for (final ViewPointSegment s in ctr.viewPointList)
+              ListTile(title: Text(s.title ?? ''), onTap: () {}),
+          ],
+        ),
+      ),
+    );
+  }
+
   int shutdownCount = 0;
   bool? shutdownIsLive;
   @override
@@ -2407,6 +2447,72 @@ void _actionTableTests() {
     await tester.pumpAndSettle();
     expect(find.text('关闭字幕'), findsOneWidget);
     expect(find.text('字幕设置'), findsNothing);
+  });
+
+  testWidgets('翻译 lists the video\'s languages and switches them; hidden '
+      'without languages and for offline files', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.aiTranslate), isEmpty);
+
+    scene.vdc.languages.value = [
+      play_url.LanguageItem(lang: 'en', title: '英语'),
+      play_url.LanguageItem(lang: 'ja', title: '日语'),
+    ];
+    TvHudAction translate = _one(source, TvHudActionId.aiTranslate);
+    expect((translate.label, translate.active), ('翻译: 关闭', false));
+    translate.onPressed();
+    await tester.pumpAndSettle();
+    expect(find.text('关闭翻译'), findsOneWidget);
+    await tester.tap(find.text('日语'));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.currLang.value, 'ja');
+
+    translate = _one(source, TvHudActionId.aiTranslate);
+    expect((translate.label, translate.active), ('翻译: 日语', true));
+    translate.onPressed();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('关闭翻译'));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.currLang.value, '');
+
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.aiTranslate), isEmpty);
+  });
+
+  testWidgets('分段信息 opens upstream\'s chapter panel; hidden without '
+      'chapters, with the setting off, offline and in picture-in-picture', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+
+    scene.vdc.viewPointList.addAll(const [
+      ViewPointSegment(end: 0.4, title: '开场', from: 0, to: 120),
+      ViewPointSegment(end: 1.0, title: '正片', from: 120, to: 300),
+    ]);
+    final TvHudAction chapters = _one(source, TvHudActionId.viewPoints);
+    expect((chapters.label, chapters.active), ('分段信息', true));
+    chapters.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.viewPointsCount, 1);
+    expect(find.text('正片'), findsOneWidget);
+    Navigator.of(tester.element(find.text('正片'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.vdc.showVP.value = false;
+    expect(_one(source, TvHudActionId.viewPoints).active, isFalse);
+    scene.pl.showViewPoints = false;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+    scene.pl
+      ..showViewPoints = true
+      ..isFileSource = true;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isPipMode = true;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
   });
 
   testWidgets('选集: 上集 / 下集 / 选集 in a list, 下个视频 outside one, '

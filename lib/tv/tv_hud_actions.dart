@@ -34,10 +34,17 @@ enum TvHudActionId {
   videoFit(TvHudMenuGroup.play),
   subtitle(TvHudMenuGroup.play),
 
+  /// Upstream's 翻译 bar button: the video in another language, where
+  /// Bilibili offers one (likely AI dubbing; it reloads the streams).
+  aiTranslate(TvHudMenuGroup.play),
+
   /// 上集 / 下集 / 选集 while the video is in a list (an episode list, parts or
   /// a collection), otherwise 下个视频; nothing when there's nothing to play
   /// next.
   episodes(TvHudMenuGroup.play),
+
+  /// 分段信息: the uploader's chapters.
+  viewPoints(TvHudMenuGroup.play),
   playOrder(TvHudMenuGroup.play),
   danmakuToggle(TvHudMenuGroup.danmaku),
   danmakuSettings(TvHudMenuGroup.danmaku),
@@ -144,6 +151,10 @@ abstract interface class TvHudUpstream {
     required bool isFullScreen,
     required bool isLive,
   });
+
+  /// Upstream's chapter panel (`ViewPointsPage`), as its player opens it in
+  /// fullscreen.
+  void showViewPoints(BuildContext context, VideoDetailController ctr);
 }
 
 class _HeaderControlPanels implements TvHudHeaderPanels {
@@ -200,6 +211,22 @@ class _DefaultTvHudUpstream implements TvHudUpstream {
     isFullScreen: isFullScreen,
     isLive: isLive,
   );
+
+  @override
+  void showViewPoints(BuildContext context, VideoDetailController ctr) {
+    final PlPlayerController pl = ctr.plPlayerController;
+    final Widget child = ViewPointsPage(
+      enableSlide: false,
+      videoDetailController: ctr,
+      plPlayerController: pl,
+    );
+    PageUtils.showVideoBottomSheet(
+      context,
+      child: pl.darkVideoPage
+          ? Theme(data: ThemeUtils.darkTheme, child: child)
+          : child,
+    );
+  }
 }
 
 /// The action table, mixed into the HUD's state.
@@ -302,6 +329,8 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.speed => _speedAction(),
       TvHudActionId.videoFit => _videoFitAction(),
       TvHudActionId.subtitle => _subtitleAction(),
+      TvHudActionId.aiTranslate => _aiTranslateAction(),
+      TvHudActionId.viewPoints => _viewPointsAction(),
       TvHudActionId.playOrder => _playOrderAction(),
       TvHudActionId.danmakuToggle => _danmakuToggleAction(),
       TvHudActionId.danmakuSettings => _danmakuSettingsAction(),
@@ -500,6 +529,81 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
         ],
       );
     });
+  }
+
+  /// Shown under upstream's condition: not an offline file, and the video
+  /// offers other languages.
+  TvHudAction? _aiTranslateAction() {
+    if (!_isVideo || _pl.isFileSource) return null;
+    final VideoDetailController? ctr = _videoDetailCtr;
+    final List<LanguageItem>? languages = ctr?.languages.value;
+    if (ctr == null || languages == null || languages.isEmpty) return null;
+    final String current = ctr.currLang.value ?? '';
+    final String? title = current.isEmpty
+        ? null
+        : languages.firstWhereOrNull((e) => e.lang == current)?.title;
+    return _single(
+      TvHudActionId.aiTranslate,
+      icon: Icons.translate_rounded,
+      label: '翻译: ${title ?? '关闭'}',
+      active: title != null,
+      onPressed: () => _showAiTranslateDialog(ctr, languages, current),
+    );
+  }
+
+  Future<void> _showAiTranslateDialog(
+    VideoDetailController ctr,
+    List<LanguageItem> languages,
+    String current,
+  ) async {
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '翻译',
+        items: [
+          _TvDialogOptionItem(
+            title: '关闭翻译',
+            selected: current.isEmpty,
+            onSelect: () {
+              Navigator.of(dialogContext).pop();
+              ctr.setLanguage('');
+            },
+          ),
+          for (final LanguageItem item in languages)
+            if (item.lang != null)
+              _TvDialogOptionItem(
+                title: item.title ?? item.lang!,
+                selected: item.lang == current,
+                onSelect: () {
+                  Navigator.of(dialogContext).pop();
+                  ctr.setLanguage(item.lang!);
+                },
+              ),
+        ],
+      );
+    });
+  }
+
+  /// Shown under upstream's condition: its `showViewPoints` setting is on and
+  /// the video has chapters. Opens upstream's chapter panel, where Select on
+  /// a chapter jumps to it and the switch shows or hides the marks on the bar.
+  TvHudAction? _viewPointsAction() {
+    if (!_isVideo ||
+        _pl.isFileSource ||
+        _pl.isPipMode ||
+        !_pl.showViewPoints ||
+        Get.key.currentState == null) {
+      return null;
+    }
+    final VideoDetailController? ctr = _videoDetailCtr;
+    if (ctr == null || ctr.viewPointList.isEmpty) return null;
+    return _single(
+      TvHudActionId.viewPoints,
+      icon: Icons.view_list_rounded,
+      label: '分段信息',
+      active: ctr.showVP.value,
+      onPressed: () =>
+          _openUpstreamPanel(() => _upstream.showViewPoints(context, ctr)),
+    );
   }
 
   List<TvHudAction> _episodeActions() {
