@@ -2,7 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:PiliPlus/common/widgets/progress_bar/segment_progress_bar.dart'
-    show ViewPointSegment;
+    show
+        Segment,
+        SegmentProgressBar,
+        ViewPointSegment,
+        ViewPointSegmentProgressBar;
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -70,6 +74,9 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
     refreshCount++;
     return null;
   }
+
+  @override
+  bool enableBlock = false;
 
   @override
   Player? get videoPlayerController => noPlayer ? null : fakePlayer;
@@ -335,6 +342,26 @@ class FakeVideoDetailController extends Fake implements VideoDetailController {
   final RxList<ViewPointSegment> viewPointList = <ViewPointSegment>[].obs;
 
   @override
+  final RxList<Segment> segmentProgressList = <Segment>[].obs;
+
+  @override
+  final List<Object> listData = [];
+
+  @override
+  void onRemoveItem(int index, Object item) => listData.removeAt(index);
+
+  int showSBDetailCount = 0;
+  @override
+  void showSBDetail() {
+    showSBDetailCount++;
+    // As upstream: a dialog on Get's navigator.
+    showDialog<void>(
+      context: Get.context!,
+      builder: (_) => const SimpleDialog(children: [Text('showSBDetail')]),
+    );
+  }
+
+  @override
   final RxBool showVP = true.obs;
 
   int reloadCount = 0;
@@ -483,6 +510,7 @@ Widget _buildTestApp({
   NavigatorObserver? observer,
   TvHudUpstream? upstream,
   VoidCallback? onRefresh,
+  ValueGetter<bool>? onSkipSegment,
 }) {
   return MaterialApp(
     // Upstream's panels open on `Get.key` (PageUtils.showVideoBottomSheet).
@@ -505,6 +533,7 @@ Widget _buildTestApp({
           introController: introController,
           onSendDanmaku: onSendDanmaku ?? () {},
           onRefresh: onRefresh,
+          onSkipSegment: onSkipSegment,
           debugUpstream: upstream,
           child: child ?? Container(color: Colors.black),
         ),
@@ -522,6 +551,7 @@ Future<void> _pumpHud(
   NavigatorObserver? observer,
   TvHudUpstream? upstream,
   VoidCallback? onRefresh,
+  ValueGetter<bool>? onSkipSegment,
 }) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1.0;
@@ -536,6 +566,7 @@ Future<void> _pumpHud(
       observer: observer,
       upstream: upstream,
       onRefresh: onRefresh,
+      onSkipSegment: onSkipSegment,
     ),
   );
   await tester.pumpAndSettle();
@@ -2500,6 +2531,7 @@ class _ActionScene {
   late final _FakeUpstream upstream;
   bool withIntro = true;
   VoidCallback? onRefresh;
+  ValueGetter<bool>? onSkipSegment;
 
   _FakeHeaderPanels get header => upstream.header!;
 
@@ -2510,6 +2542,7 @@ class _ActionScene {
       introController: withIntro ? intro : null,
       upstream: upstream,
       onRefresh: onRefresh,
+      onSkipSegment: onSkipSegment,
     );
     return tester.state(find.byType(TvPlayerHud)) as TvHudActionSource;
   }
@@ -2744,6 +2777,159 @@ void _actionTableTests() {
       ..isFileSource = false
       ..isPipMode = true;
     expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+  });
+
+  testWidgets('片段信息 opens upstream\'s segment list; hidden with blocking '
+      'off, without segments, offline and in picture-in-picture', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.segments), isEmpty);
+    scene.vdc.segmentProgressList.add(
+      const Segment(start: 0.1, end: 0.2, color: Colors.green),
+    );
+    expect(_ids(source, TvHudActionId.segments), isEmpty);
+
+    scene.pl.enableBlock = true;
+    final TvHudAction segments = _one(source, TvHudActionId.segments);
+    expect(segments.label, '片段信息');
+    await _press(tester, dpadUp);
+    segments.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.vdc.showSBDetailCount, 1);
+    expect(find.text('showSBDetail'), findsOneWidget);
+    expect(_timeBar, findsNothing);
+    Navigator.of(tester.element(find.text('showSBDetail'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.segments), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isPipMode = true;
+    expect(_ids(source, TvHudActionId.segments), isEmpty);
+    scene.pl.isPipMode = false;
+    scene.vdc.segmentProgressList.clear();
+    expect(_ids(source, TvHudActionId.segments), isEmpty);
+  });
+
+  testWidgets('片段信息 sits in the ⋮ menu under 播放, after 分段信息', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    scene.pl.enableBlock = true;
+    scene.vdc.segmentProgressList.add(
+      const Segment(start: 0.1, end: 0.2, color: Colors.green),
+    );
+    scene.vdc.viewPointList.add(
+      const ViewPointSegment(end: 1.0, title: '正片', from: 0, to: 300),
+    );
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    await _focusKey(tester, TvPlayerHud.menuButtonKey);
+    await _press(tester, dpadSelect);
+    final Finder entry = find.byKey(TvPlayerHud.menuEntryKey('segments'));
+    expect(entry, findsOneWidget);
+    expect(
+      tester.getRect(entry).top,
+      greaterThan(
+        tester.getRect(find.byKey(TvPlayerHud.menuEntryKey('viewPoints'))).top,
+      ),
+    );
+    await _focusKey(tester, TvPlayerHud.menuEntryKey('segments'));
+    await _press(tester, dpadSelect);
+    expect(scene.vdc.showSBDetailCount, 1);
+    Navigator.of(tester.element(find.text('showSBDetail'))).pop();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Select with the HUD hidden answers a 手动跳过 prompt first', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    int skips = 0;
+    scene.onSkipSegment = () {
+      skips++;
+      return true;
+    };
+    await scene.pump(tester);
+    await _press(tester, dpadSelect);
+    expect(skips, 1);
+    expect(scene.pl.doubleTapCenterCount, 0);
+    expect(_timeBar, findsNothing);
+  });
+
+  testWidgets('Select with the HUD hidden opens 上次看到第XP, which upstream '
+      'only opens by touch; with no prompt it plays and pauses', (
+    tester,
+  ) async {
+    // Upstream's onSkipSegment finds no segment prompt.
+    final _ActionScene scene = _ActionScene()..onSkipSegment = () => false;
+    scene.vdc.listData.add(2); // 上次看到第3P
+    await scene.pump(tester);
+    await _press(tester, dpadSelect);
+    expect((scene.intro.changedEpisode as Part?)?.cid, 1003);
+    expect(scene.vdc.listData, isEmpty);
+    expect(scene.pl.doubleTapCenterCount, 0);
+
+    await _press(tester, dpadSelect);
+    expect(scene.pl.doubleTapCenterCount, 1);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('the time bar shows the segments under it and the chapters '
+      'over it, under upstream\'s conditions', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.vdc.segmentProgressList.add(
+      const Segment(start: 0.1, end: 0.2, color: Colors.green),
+    );
+    scene.vdc.viewPointList.addAll(const [
+      ViewPointSegment(end: 0.4, title: '开场', from: 0, to: 120),
+      ViewPointSegment(end: 1.0, title: '正片', from: 120, to: 300),
+    ]);
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+
+    Finder inKey(Key key, Type type) =>
+        find.descendant(of: find.byKey(key), matching: find.byType(type));
+    // Blocking off: no segments, even with data.
+    expect(
+      inKey(TvPlayerHud.segmentMarksKey, SegmentProgressBar),
+      findsNothing,
+    );
+    final Finder chapters = inKey(
+      TvPlayerHud.chapterMarksKey,
+      ViewPointSegmentProgressBar,
+    );
+    expect(chapters, findsOneWidget);
+
+    // The chapter switch hides them.
+    scene.vdc.showVP.value = false;
+    await tester.pump();
+    expect(chapters, findsNothing);
+    scene.vdc.showVP.value = true;
+    await tester.pump();
+
+    // Blocking on (read when the HUD opens).
+    await _press(tester, dpadBack);
+    scene.pl.enableBlock = true;
+    await _press(tester, dpadUp);
+    final Finder segments = inKey(
+      TvPlayerHud.segmentMarksKey,
+      SegmentProgressBar,
+    );
+    expect(segments, findsOneWidget);
+
+    final Rect bar = tester.getRect(_timeBar);
+    final Rect segRect = tester.getRect(segments);
+    final Rect chapterRect = tester.getRect(chapters);
+    expect(segRect.top, greaterThan(chapterRect.bottom));
+    // Both inside the time bar's box.
+    expect(bar.contains(segRect.center), isTrue);
+    expect(bar.contains(chapterRect.center), isTrue);
+    await tester.pump(const Duration(seconds: 6));
   });
 
   testWidgets('选集: 上集 / 下集 / 选集 in a list, 下个视频 outside one, '
@@ -3231,12 +3417,12 @@ List<String> _drawn(WidgetTester tester, Key group) {
 void _layoutTests() {
   test('saved lists: unknown, unpinnable and repeated ids are skipped, the '
       'top right keeps its first 17, and an empty list stays empty', () {
-    // The 24 pinnable entries, in menu order, with noise mixed in.
+    // The 25 pinnable entries, in menu order, with noise mixed in.
     final List<String> all = [
       for (final TvHudActionId id in TvHudActionId.values)
         if (id.pinnable) id.name,
     ];
-    expect(all, hasLength(24));
+    expect(all, hasLength(25));
     final TvHudGroups groups = TvHudGroups.fromSaved(
       topRight: ['gone', 'editButtons', all[0], all[0], ...all.skip(1)],
       bottom: [all[0], all[17], 42, all[23]],
@@ -3787,10 +3973,11 @@ void _layoutTests() {
       TvHudActionId.playOrder,
       TvHudActionId.fullSettings,
     ];
+    // A full top right: the first 17 pinnable entries not in the bottom row.
     final List<TvHudActionId> top = [
       for (final TvHudActionId id in TvHudActionId.values)
         if (id.pinnable && !bottom.contains(id)) id,
-    ];
+    ].take(TvHudGroups.maxTopRight).toList();
     expect(top, hasLength(TvHudGroups.maxTopRight));
     _saveGroups(TvHudGroups(topRight: top, bottom: bottom, showLabels: true));
     final _ActionScene scene = _ActionScene();

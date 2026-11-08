@@ -5,6 +5,7 @@ import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models/video/play/url.dart' show LanguageItem;
 import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart' as pgc_ep;
+import 'package:PiliPlus/common/widgets/progress_bar/segment_progress_bar.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/models_new/video/video_play_info/subtitle.dart';
@@ -90,6 +91,8 @@ class TvPlayerHud extends StatefulWidget {
   // Widget keys, for tests.
   static const Key timeBarKey = ValueKey<String>('tvHud:timeBar');
   static const Key dmChartKey = ValueKey<String>('tvHud:dmChart');
+  static const Key segmentMarksKey = ValueKey<String>('tvHud:segmentMarks');
+  static const Key chapterMarksKey = ValueKey<String>('tvHud:chapterMarks');
   static const Key titleKey = ValueKey<String>('tvHud:title');
   static const Key viewersKey = ValueKey<String>('tvHud:viewers');
   static const Key topRightGroupKey = ValueKey<String>('tvHud:topRight');
@@ -662,9 +665,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
       return _handleSelectKeyWithLongPressSpeed(
         event,
         onShortPress: () {
-          if (widget.onSkipSegment?.call() ?? false) {
-            return;
-          }
+          if (_answerPrompt()) return;
           _togglePlayPause();
           _showHud();
         },
@@ -695,6 +696,31 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     }
 
     return KeyEventResult.ignored;
+  }
+
+  /// Select with the HUD hidden answers the oldest of upstream's prompts at
+  /// the player's bottom left, as Enter does on a keyboard: a 手动跳过 segment
+  /// (upstream's `onSkipSegment`), or `上次看到第XP，点击跳转`, which upstream
+  /// only opens by touch and `onSkipSegment` leaves alone. Returns whether
+  /// there was one.
+  bool _answerPrompt() {
+    if (widget.onSkipSegment?.call() ?? false) return true;
+    final VideoDetailController? ctr = _videoDetailCtr;
+    if (ctr == null) return false;
+    try {
+      if (ctr.listData.lastOrNull case final int index) {
+        if (widget.introController case final UgcIntroController intro) {
+          final List<Part>? pages = intro.videoDetail.value.pages;
+          if (pages != null && index >= 0 && index < pages.length) {
+            intro.onChangeEpisode(pages[index]);
+            SmartDialog.showToast('已跳至第${index + 1}P');
+          }
+        }
+        ctr.onRemoveItem(ctr.listData.indexOf(index), index);
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   String _resolveTitle() {
@@ -1200,6 +1226,20 @@ class _TvPlayerHudState extends State<TvPlayerHud>
                                   plPlayerController: _pl,
                                   videoDetailController: videoDetailCtr,
                                 ),
+                          segments: videoDetailCtr == null
+                              ? null
+                              : _TvSegmentMarks(
+                                  key: TvPlayerHud.segmentMarksKey,
+                                  plPlayerController: _pl,
+                                  videoDetailController: videoDetailCtr,
+                                ),
+                          chapters: videoDetailCtr == null
+                              ? null
+                              : _TvChapterMarks(
+                                  key: TvPlayerHud.chapterMarksKey,
+                                  plPlayerController: _pl,
+                                  videoDetailController: videoDetailCtr,
+                                ),
                         ),
                       _buildBottomRow(),
                     ],
@@ -1247,6 +1287,65 @@ class _TvDmChart extends StatelessWidget {
   }
 }
 
+/// SponsorBlock's segments (and Bilibili's own 片头 / 片尾 for PGC), under the
+/// bar in their category colors, shown under upstream's conditions (its
+/// bottom bar's `SegmentProgressBar`). Behind a [RepaintBoundary] like the
+/// chart, so the bar's position updates don't repaint it.
+class _TvSegmentMarks extends StatelessWidget {
+  const _TvSegmentMarks({
+    super.key,
+    required this.plPlayerController,
+    required this.videoDetailController,
+  });
+
+  final PlPlayerController plPlayerController;
+  final VideoDetailController videoDetailController;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!plPlayerController.enableBlock) return const SizedBox.shrink();
+    return RepaintBoundary(
+      child: Obx(() {
+        final List<Segment> segments = videoDetailController.segmentProgressList
+            .toList();
+        if (segments.isEmpty) return const SizedBox.shrink();
+        return SegmentProgressBar(height: 4, segments: segments);
+      }),
+    );
+  }
+}
+
+/// The uploader's chapters (分段信息) over the bar, with their titles, as
+/// upstream's bar draws them (`ViewPointSegmentProgressBar`), while its
+/// `showViewPoints` setting and the chapter switch are on.
+class _TvChapterMarks extends StatelessWidget {
+  const _TvChapterMarks({
+    super.key,
+    required this.plPlayerController,
+    required this.videoDetailController,
+  });
+
+  final PlPlayerController plPlayerController;
+  final VideoDetailController videoDetailController;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!plPlayerController.showViewPoints) return const SizedBox.shrink();
+    return RepaintBoundary(
+      child: Obx(() {
+        final List<ViewPointSegment> chapters = videoDetailController
+            .viewPointList
+            .toList();
+        if (chapters.isEmpty || !videoDetailController.showVP.value) {
+          return const SizedBox.shrink();
+        }
+        // The dividers reach down across the bar (see the time bar's stack).
+        return ViewPointSegmentProgressBar(height: 13, segments: chapters);
+      }),
+    );
+  }
+}
+
 /// The time bar: the play/pause status icon, the position, the bar and the
 /// duration. It's the HUD's first focus; [onKeyEvent] gives it the keys.
 class _TvTimeBar extends StatefulWidget {
@@ -1258,6 +1357,8 @@ class _TvTimeBar extends StatefulWidget {
     required this.onKeyEvent,
     required this.onFocusLost,
     this.chart,
+    this.segments,
+    this.chapters,
   });
 
   final FocusNode focusNode;
@@ -1268,6 +1369,12 @@ class _TvTimeBar extends StatefulWidget {
 
   /// Drawn over the bar.
   final Widget? chart;
+
+  /// Drawn just under the bar.
+  final Widget? segments;
+
+  /// A strip just over the bar, with dividers down across it.
+  final Widget? chapters;
 
   @override
   State<_TvTimeBar> createState() => _TvTimeBarState();
@@ -1280,6 +1387,8 @@ class _TvTimeBarState extends State<_TvTimeBar> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final Widget? chart = widget.chart;
+    final Widget? segments = widget.segments;
+    final Widget? chapters = widget.chapters;
     final double barHeight = _focused ? 10 : 6;
     return Focus(
       focusNode: widget.focusNode,
@@ -1369,6 +1478,23 @@ class _TvTimeBarState extends State<_TvTimeBar> {
                         }),
                       ),
                     ),
+                    // In the box's padding, 2 px under the 10 px bar.
+                    if (segments != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 12,
+                        child: segments,
+                      ),
+                    // A 15 px strip ending 3 px over the bar; its dividers
+                    // (13 px) reach down to the bar's bottom.
+                    if (chapters != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 13,
+                        child: chapters,
+                      ),
                   ],
                 ),
               ),

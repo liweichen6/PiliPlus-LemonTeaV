@@ -44,6 +44,10 @@ enum TvHudActionId {
 
   /// 分段信息: the uploader's chapters.
   viewPoints(TvHudMenuGroup.play, '分段信息', Icons.view_list_rounded),
+
+  /// 片段信息: SponsorBlock's segments (and Bilibili's 片头 / 片尾 for PGC),
+  /// upstream's `showSBDetail`, where each can be skipped or jumped to.
+  segments(TvHudMenuGroup.play, '片段信息', Icons.fast_forward_outlined),
   playOrder(TvHudMenuGroup.play, '播放顺序', Icons.repeat_rounded),
   danmakuToggle(TvHudMenuGroup.danmaku, '弹幕开关', Icons.subtitles_rounded),
   danmakuSettings(TvHudMenuGroup.danmaku, '弹幕设置', Icons.tune_rounded),
@@ -363,6 +367,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.subtitle => _subtitleAction(),
       TvHudActionId.aiTranslate => _aiTranslateAction(),
       TvHudActionId.viewPoints => _viewPointsAction(),
+      TvHudActionId.segments => _segmentsAction(),
       TvHudActionId.playOrder => _playOrderAction(),
       TvHudActionId.danmakuToggle => _danmakuToggleAction(),
       TvHudActionId.danmakuSettings => _danmakuSettingsAction(),
@@ -638,6 +643,26 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       active: ctr.showVP.value,
       onPressed: () =>
           _openUpstreamPanel(() => _upstream.showViewPoints(context, ctr)),
+    );
+  }
+
+  /// Shown under upstream's condition for its header button: blocking on and
+  /// the video's segments loaded.
+  TvHudAction? _segmentsAction() {
+    if (!_isVideo ||
+        _pl.isFileSource ||
+        _pl.isPipMode ||
+        !_pl.enableBlock ||
+        Get.key.currentState == null) {
+      return null;
+    }
+    final VideoDetailController? ctr = _videoDetailCtr;
+    if (ctr == null || ctr.segmentProgressList.isEmpty) return null;
+    return _single(
+      TvHudActionId.segments,
+      icon: Icons.fast_forward_outlined,
+      label: '片段信息',
+      onPressed: () => _openUpstreamPanel(ctr.showSBDetail),
     );
   }
 
