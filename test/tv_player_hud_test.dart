@@ -1759,6 +1759,8 @@ void main() {
   group('layout, groups and editor (M14.3)', _layoutTests);
 
   group('live room entries and groups (M15.3)', _liveRoomTests);
+
+  group('closing a SuperChat (M15.2)', _superChatTests);
 }
 
 /// The remote's menu key, which opens and closes the HUD.
@@ -4016,6 +4018,9 @@ class FakeLiveRoomController extends Fake implements LiveRoomController {
   final RxList<SuperChatItem> superChatMsg = <SuperChatItem>[].obs;
 
   @override
+  final Rxn<SuperChatItem> fsSC = Rxn<SuperChatItem>();
+
+  @override
   final RxString title = '直播间标题'.obs;
 
   @override
@@ -4441,3 +4446,193 @@ void _liveRoomTests() {
     await tester.pump(const Duration(seconds: 6));
   });
 }
+
+void _superChatTests() {
+  testWidgets('Back with the HUD hidden in fullscreen closes a SuperChat '
+      'card and stays in fullscreen; with no card it is left alone', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(live.fsSC.value, isNull);
+    expect(scene.pl.isFullScreen.value, isTrue);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+
+    // No card: Back goes on to upstream as before (it leaves fullscreen).
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+
+    // Escape, as on a keyboard, does the same; without a card it leaves
+    // fullscreen, as before.
+    live.fsSC.value = SuperChatItem.random;
+    expect(await tester.sendKeyEvent(LogicalKeyboardKey.escape), isTrue);
+    expect(live.fsSC.value, isNull);
+    expect(scene.pl.isFullScreen.value, isTrue);
+  });
+
+  testWidgets('a held Back that closed a card swallows its repeats and its '
+      'release', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyRepeatEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(live.fsSC.value, isNull);
+    // The next press is a plain Back again.
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('Back leaves a card alone with the HUD shown, in split view and '
+      'in videos', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    // The HUD shown: Back closes the HUD first, as before.
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(live.fsSC.value, isNotNull);
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(live.fsSC.value, isNotNull);
+
+    // Split view (upstream clears the card there anyway).
+    scene.pl.isFullScreen.value = false;
+    await tester.pumpAndSettle();
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(live.fsSC.value, isNotNull);
+
+    // A video has no SuperChat.
+    scene.pl
+      ..isFullScreen.value = true
+      ..isLive = false;
+    await tester.pumpAndSettle();
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(live.fsSC.value, isNotNull);
+  });
+
+  testWidgets('the split view\'s Quick Strip gets a 醒目留言 button that '
+      'switches the chat area to the SuperChat list and back', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final FakeLiveRoomController live = _liveOf(scene);
+    live.superChatMsg.add(SuperChatItem.random);
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+
+    final Finder button = find.byKey(TvPlayerHud.quickSuperChatKey);
+    expect(button, findsOneWidget);
+    expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
+    await _press(tester, dpadRight);
+    await _press(tester, dpadRight);
+    expect(_focusOn(TvPlayerHud.quickSuperChatKey), isTrue);
+    expect(_textIn(TvPlayerHud.quickSuperChatKey, '醒目留言 (1)'), findsOneWidget);
+
+    await _press(tester, dpadSelect);
+    expect(live.pageIndex.value, 1);
+    expect(live.pageController!.page, 1.0);
+    expect(_focusOn(TvPlayerHud.quickSuperChatKey), isTrue);
+    expect(_textIn(TvPlayerHud.quickSuperChatKey, '返回聊天'), findsOneWidget);
+
+    await _press(tester, dpadSelect);
+    expect(live.pageIndex.value, 0);
+    expect(live.pageController!.page, 0.0);
+  });
+
+  testWidgets('no 醒目留言 button with SuperChat off or in a video', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final FakeLiveRoomController live = _liveOf(scene)..showSuperChat = false;
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+    expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsOneWidget);
+    expect(find.byKey(TvPlayerHud.quickSuperChatKey), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene video = _ActionScene();
+    video.pl.isFullScreen.value = false;
+    await video.pump(tester);
+    expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsOneWidget);
+    expect(find.byKey(TvPlayerHud.quickSuperChatKey), findsNothing);
+  });
+}
+
+/// The test key maps have no physical key for Back; the HUD only reads the
+/// logical one.
+const PhysicalKeyboardKey _backPhysical = PhysicalKeyboardKey.escape;
