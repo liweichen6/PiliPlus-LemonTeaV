@@ -111,6 +111,7 @@ class TvPlayerHud extends StatefulWidget {
   static const Key menuPanelKey = ValueKey<String>('tvHud:menuPanel');
   static const Key quickFullscreenKey = ValueKey<String>('tvHud:quickFull');
   static const Key quickPlayPauseKey = ValueKey<String>('tvHud:quickPlay');
+  static const Key quickSuperChatKey = ValueKey<String>('tvHud:quickSC');
   static const Key seekPreviewKey = ValueKey<String>('tvHud:seekPreview');
   static const Key focusLabelKey = ValueKey<String>('tvHud:focusLabel');
   static const Key editorKey = ValueKey<String>('tvHud:editor');
@@ -600,8 +601,47 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     });
   }
 
+  /// The key whose press closed a SuperChat card, so its release is
+  /// swallowed too and Android never turns it into a Back.
+  LogicalKeyboardKey? _closedSuperChatWith;
+
+  /// Back (or Escape) with the HUD hidden in a fullscreen live room closes a
+  /// SuperChat card that's on screen (`LiveRoomController.fsSC`, upstream's
+  /// touch `×`), instead of leaving fullscreen (`M15.2`). It's handled as a
+  /// key, not in the [PopScope]: upstream's own pop entry on the live page
+  /// leaves fullscreen whenever a Back reaches the route. With no card shown,
+  /// or with the HUD shown, the keys are left alone.
+  KeyEventResult? _handleSuperChatBack(KeyEvent event) {
+    final LogicalKeyboardKey key = event.logicalKey;
+    if (key != LogicalKeyboardKey.goBack &&
+        key != LogicalKeyboardKey.browserBack &&
+        key != LogicalKeyboardKey.escape) {
+      return null;
+    }
+    if (event is KeyUpEvent) {
+      if (_closedSuperChatWith == key) {
+        _closedSuperChatWith = null;
+        return KeyEventResult.handled;
+      }
+      return null;
+    }
+    if (event is KeyRepeatEvent) {
+      return _closedSuperChatWith == key ? KeyEventResult.handled : null;
+    }
+    if (_hudVisible || !_isFullScreen) return null;
+    final LiveRoomController? liveCtr = _liveRoomCtr;
+    if (liveCtr == null || liveCtr.fsSC.value == null) return null;
+    liveCtr.fsSC.value = null;
+    _closedSuperChatWith = key;
+    return KeyEventResult.handled;
+  }
+
   KeyEventResult _handleRootKeyEvent(FocusNode node, KeyEvent event) {
     final key = event.logicalKey;
+
+    if (_handleSuperChatBack(event) case final KeyEventResult result) {
+      return result;
+    }
 
     // Media transport keys work anywhere on the player page
     if (event is KeyDownEvent) {
@@ -966,11 +1006,37 @@ class _TvPlayerHudState extends State<TvPlayerHud>
                 onFocusLost: _cancelSelectHold,
                 onPressed: _togglePlayPause,
               ),
+              if (_liveRoomCtr case final LiveRoomController liveCtr?)
+                _buildQuickSuperChat(liveCtr),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// The Quick Strip's third button in a live room with SuperChat on: the
+  /// 醒目留言 entry, which switches the chat area between the chat and the
+  /// SuperChat list (`M15.2`). Nothing where that entry is unavailable.
+  Widget _buildQuickSuperChat(LiveRoomController liveCtr) {
+    return Obx(() {
+      // Read for Obx: the label follows the page and the list's length.
+      liveCtr.pageIndex.value;
+      liveCtr.superChatMsg.length;
+      final TvHudAction? action = resolveAction(
+        TvHudActionId.superChat,
+      ).firstOrNull;
+      if (action == null) return const SizedBox.shrink();
+      return _TvHudPillButton(
+        key: TvPlayerHud.quickSuperChatKey,
+        compact: true,
+        iconOnly: true,
+        icon: action.icon,
+        label: action.label,
+        active: action.active,
+        onPressed: action.onPressed,
+      );
+    });
   }
 
   Widget _buildActionButton(
