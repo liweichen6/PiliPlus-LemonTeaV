@@ -78,6 +78,7 @@ void main() {
     });
 
     tearDown(() async {
+      await TvPlatform.stopWatchingResets();
       await box.close();
       await Hive.close();
       if (tempDir.existsSync()) {
@@ -139,6 +140,51 @@ void main() {
       await TvPlatform.seedTvDefaultsToBox(box);
       expect(box.get(SettingBoxKey.useSideBar), isTrue);
       expect(box.get(SettingBoxKey.defaultTextScale), 1.0);
+    });
+
+    test('a settings reset puts the TV defaults back at once, without a '
+        'restart', () async {
+      await TvPlatform.seedTvDefaultsToBox(box);
+      await box.putAll(<String, Object>{
+        SettingBoxKey.defaultVideoQa: VideoQuality.super4K.code,
+        SettingBoxKey.useSideBar: false,
+        'someUpstreamKey': 7,
+      });
+      TvPlatform.watchForResets(box);
+
+      // 关于 → 重置所有设置 → 重置可导出的设置 clears the box.
+      await box.clear();
+      await pumpEventQueue();
+      for (final MapEntry<String, Object> e
+          in TvPlatform.defaultTvSettings.entries) {
+        expect(box.get(e.key), e.value, reason: e.key);
+      }
+      expect(box.containsKey('someUpstreamKey'), isFalse);
+
+      // Deleting a key that isn't a TV default changes nothing.
+      await box.put('someUpstreamKey', 7);
+      await box.delete('someUpstreamKey');
+      await pumpEventQueue();
+      expect(box.keys.toSet(), TvPlatform.defaultTvSettings.keys.toSet());
+    });
+
+    test('an import after the reset keeps its own values; only the missing '
+        'TV defaults come back', () async {
+      await TvPlatform.seedTvDefaultsToBox(box);
+      TvPlatform.watchForResets(box);
+
+      // GStorage.importAllJsonSettings: clear, then write the imported map.
+      await box.clear().then(
+        (_) => box.putAll(<String, Object>{
+          SettingBoxKey.themeMode: ThemeType.light.index,
+          SettingBoxKey.defaultVideoQa: VideoQuality.high1080.code,
+        }),
+      );
+      await pumpEventQueue();
+      expect(box.get(SettingBoxKey.themeMode), ThemeType.light.index);
+      expect(box.get(SettingBoxKey.defaultVideoQa), VideoQuality.high1080.code);
+      expect(box.get(SettingBoxKey.useSideBar), isTrue);
+      expect(box.get(SettingBoxKey.showDmChart), isTrue);
     });
 
     test('every seeded key is a real SettingBoxKey, not a dead raw string', () {
@@ -349,7 +395,9 @@ void main() {
       'skips SlideTransition controls clipped out by an ancestor ClipRect (AppBarAni split-screen pattern)',
       (tester) async {
         final topQuickNode = FocusNode(debugLabel: 'quick_strip');
-        final clippedBottomBarNode = FocusNode(debugLabel: 'clipped_bottom_bar');
+        final clippedBottomBarNode = FocusNode(
+          debugLabel: 'clipped_bottom_bar',
+        );
         final belowPlayerBtnNode = FocusNode(debugLabel: 'below_player_btn');
         addTearDown(() {
           topQuickNode.dispose();
@@ -1080,7 +1128,8 @@ void main() {
           expect(
             nodes[row * 3 + 2].hasPrimaryFocus,
             isTrue,
-            reason: 'Expected focus to reach row $row col 2 (item ${row * 3 + 2})',
+            reason:
+                'Expected focus to reach row $row col 2 (item ${row * 3 + 2})',
           );
         }
       },
@@ -1310,7 +1359,8 @@ void main() {
           expect(
             itemBuildCounts[i],
             1,
-            reason: 'Item $i rebuilt unnecessarily (count=${itemBuildCounts[i]})',
+            reason:
+                'Item $i rebuilt unnecessarily (count=${itemBuildCounts[i]})',
           );
         }
       },
@@ -1351,8 +1401,9 @@ void main() {
               matching: find.byType(CustomPaint),
             )
             .last;
-        final CustomPainter initialPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter initialPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
 
         // Pump multiple idle frames where the focused node has not moved,
         // scrolled, or changed size.
@@ -1360,8 +1411,9 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
         await tester.pump(const Duration(milliseconds: 16));
 
-        final CustomPainter currentPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter currentPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
 
         // shouldRepaint must return false because the rect is identical.
         expect(currentPainter.shouldRepaint(initialPainter), isFalse);
@@ -1428,8 +1480,9 @@ void main() {
         // Render object has finished painting the settled frame.
         expect(renderObject.debugNeedsPaint, isFalse);
 
-        final CustomPainter painterBefore =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter painterBefore = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         final Rect? rectBefore = (painterBefore as dynamic).rect as Rect?;
         expect(
           rectBefore,
@@ -1441,11 +1494,13 @@ void main() {
         await tester.pumpAndSettle();
         expect(nodes[1].hasPrimaryFocus, isTrue);
 
-        final CustomPainter painterAfter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter painterAfter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         final Rect? rectAfter = (painterAfter as dynamic).rect as Rect?;
-        final Rect expectedRect1 =
-            tester.getRect(find.widgetWithText(ElevatedButton, 'Node 1'));
+        final Rect expectedRect1 = tester.getRect(
+          find.widgetWithText(ElevatedButton, 'Node 1'),
+        );
 
         // Authentically verify that focus ring painter repainted and updated its rect
         // to match the newly focused node geometry.
@@ -1630,43 +1685,42 @@ void main() {
                                 duration: const Duration(milliseconds: 200),
                                 child: quickSelect
                                     ? Builder(
-                                        builder: (context) =>
-                                            RadioGroup<String>(
-                                              groupValue: selectedMids[0],
-                                              onChanged: (v) {
-                                                if (v != null) {
-                                                  setState(() {
-                                                    selectedMids.fillRange(
-                                                      0,
-                                                      selectedMids.length,
-                                                      v,
-                                                    );
-                                                  });
-                                                }
-                                              },
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: options.entries
-                                                    .map(
-                                                      (entry) =>
-                                                          RadioWidget<String>(
-                                                            value: entry.key,
-                                                            title: entry.value,
-                                                            mainAxisSize:
-                                                                MainAxisSize
-                                                                    .max,
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  left: 12,
-                                                                  top: 2,
-                                                                  bottom: 2,
-                                                                ),
-                                                          ),
-                                                    )
-                                                    .toList(),
-                                              ),
-                                            ),
+                                        builder: (context) => RadioGroup<String>(
+                                          groupValue: selectedMids[0],
+                                          onChanged: (v) {
+                                            if (v != null) {
+                                              setState(() {
+                                                selectedMids.fillRange(
+                                                  0,
+                                                  selectedMids.length,
+                                                  v,
+                                                );
+                                              });
+                                            }
+                                          },
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: options.entries
+                                                .map(
+                                                  (
+                                                    entry,
+                                                  ) => RadioWidget<String>(
+                                                    value: entry.key,
+                                                    title: entry.value,
+                                                    mainAxisSize:
+                                                        MainAxisSize.max,
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          left: 12,
+                                                          top: 2,
+                                                          bottom: 2,
+                                                        ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                          ),
+                                        ),
                                       )
                                     : Column(
                                         crossAxisAlignment:
@@ -1833,8 +1887,7 @@ void main() {
         expect(
           isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
           isTrue,
-          reason:
-              'Expected D-pad Down from 4th section RadioWidget to escape to 取消/确定',
+          reason: 'Expected D-pad Down from 4th section RadioWidget to escape to 取消/确定',
         );
 
         // Step Up from footer back through all 4 sections (3 -> 2 -> 1 -> 0) and Up to header ('快速'/'登录').
@@ -1961,8 +2014,7 @@ void main() {
         expect(
           isFocusInside(cancelBtn) || isFocusInside(confirmBtn),
           isTrue,
-          reason:
-              'Expected D-pad Down from 4th section in multi-option Detailed mode to escape to 取消/确定',
+          reason: 'Expected D-pad Down from 4th section in multi-option Detailed mode to escape to 取消/确定',
         );
       },
     );
@@ -2221,12 +2273,14 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 16));
         await tester.pump(const Duration(milliseconds: 16));
-        final CustomPainter earlyMenuPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter earlyMenuPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
 
         await tester.pumpAndSettle();
-        final CustomPainter settledMenuPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter settledMenuPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
 
         // As _PopupMenu expands near the bottom of the screen, _PopupMenuRouteLayout
         // shifts its CustomSingleChildLayout ancestor upward; focus ring rect must
@@ -2480,8 +2534,9 @@ void main() {
         expect(mineAccountNode.hasPrimaryFocus, isFalse);
         expect(userAvatarNode.hasPrimaryFocus, isFalse);
         expect(homeCardNode.hasPrimaryFocus, isTrue);
-        final CustomPainter painterA =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter painterA = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         expect(
           (painterA as dynamic).rect as Rect?,
           homeCardNode.rect,
@@ -2527,8 +2582,9 @@ void main() {
         expect(mineAccountNode.hasPrimaryFocus, isFalse);
         expect(userAvatarNode.hasPrimaryFocus, isFalse);
         expect(homeCardNode.hasPrimaryFocus, isTrue);
-        final CustomPainter painterB =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter painterB = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         expect(
           (painterB as dynamic).rect as Rect?,
           homeCardNode.rect,
@@ -2880,7 +2936,8 @@ void main() {
           expect(
             TvFocusTraversalPolicy.isEffectivelyFocusable(commentNodes[3]),
             isFalse,
-            reason: '1st-layer Comment #3 must be occluded while 2nd layer is open',
+            reason:
+                '1st-layer Comment #3 must be occluded while 2nd layer is open',
           );
           expect(
             TvFocusTraversalPolicy.isEffectivelyFocusable(tabCommentNode),
@@ -2900,8 +2957,9 @@ void main() {
 
         // Focus promoted into 2nd-layer 评论详情 header close button, and ring rect matches.
         expect(secondLayerCloseNode.hasPrimaryFocus, isTrue);
-        final CustomPainter settledSheetPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter settledSheetPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         expectSameFocusRect(
           (settledSheetPainter as dynamic).rect as Rect?,
           secondLayerCloseNode.rect,
@@ -2910,8 +2968,9 @@ void main() {
         // Verify stationary fast-path works while 2nd-layer sheet is open (zero idle repaints).
         await tester.pump(const Duration(milliseconds: 16));
         await tester.pump(const Duration(milliseconds: 16));
-        final CustomPainter idleSheetPainter =
-            tester.widget<CustomPaint>(ringFinder).painter!;
+        final CustomPainter idleSheetPainter = tester
+            .widget<CustomPaint>(ringFinder)
+            .painter!;
         expect(idleSheetPainter.shouldRepaint(settledSheetPainter), isFalse);
 
         // 3. Step Down across 2nd-layer replies: 2nd-layer scrolls while 1st-layer
@@ -2927,7 +2986,8 @@ void main() {
           expect(
             firstLayerScrollController.offset,
             equals(savedFirstLayerOffset),
-            reason: '1st-layer scroll controller must never scroll while occluded',
+            reason:
+                '1st-layer scroll controller must never scroll while occluded',
           );
         }
         expect(secondLayerScrollController.offset, greaterThan(0.0));
@@ -2959,7 +3019,8 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         await tester.pumpAndSettle();
         expect(
-          playerFullscreenNode.hasPrimaryFocus || introActionNode.hasPrimaryFocus,
+          playerFullscreenNode.hasPrimaryFocus ||
+              introActionNode.hasPrimaryFocus,
           isTrue,
         );
 
@@ -3011,7 +3072,10 @@ void main() {
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(commentNodes[3].hasPrimaryFocus, isTrue);
-        expect(firstLayerScrollController.offset, equals(savedFirstLayerOffset));
+        expect(
+          firstLayerScrollController.offset,
+          equals(savedFirstLayerOffset),
+        );
         expectSameFocusRect(
           (tester.widget<CustomPaint>(ringFinder).painter! as dynamic).rect
               as Rect?,
@@ -4146,7 +4210,9 @@ void main() {
         final FocusNode cardNode = FocusNode(debugLabel: 'cardNode');
         final FocusNode iconBtn1Node = FocusNode(debugLabel: 'iconBtn1Node');
         final FocusNode iconBtn2Node = FocusNode(debugLabel: 'iconBtn2Node');
-        final FocusNode sheetCloseNode = FocusNode(debugLabel: 'sheetCloseNode');
+        final FocusNode sheetCloseNode = FocusNode(
+          debugLabel: 'sheetCloseNode',
+        );
         final GlobalKey<MiniScaffoldState> miniScaffoldKey =
             GlobalKey<MiniScaffoldState>();
 
@@ -4492,7 +4558,8 @@ void main() {
           expect(
             replyCardNodes[i].hasPrimaryFocus,
             isTrue,
-            reason: 'Expected replyCard_$i after pressing Up from reply_${i + 1}',
+            reason:
+                'Expected replyCard_$i after pressing Up from reply_${i + 1}',
           );
           expect(pinnedSortNode.hasPrimaryFocus, isFalse);
         }
@@ -5506,7 +5573,8 @@ void main() {
         expect(
           counter.visits,
           lessThan(10),
-          reason: 'the sheet subtree was walked ${counter.visits} times in 60 frames',
+          reason:
+              'the sheet subtree was walked ${counter.visits} times in 60 frames',
         );
         expect(leftNode.hasPrimaryFocus, isFalse);
 
@@ -5557,7 +5625,12 @@ void main() {
                         onTap: () => showMenu<int>(
                           context: dialogContext,
                           requestFocus: false,
-                          position: const RelativeRect.fromLTRB(100, 100, 100, 100),
+                          position: const RelativeRect.fromLTRB(
+                            100,
+                            100,
+                            100,
+                            100,
+                          ),
                           items: const [
                             PopupMenuItem<int>(value: 1, child: Text('菜单项1')),
                             PopupMenuItem<int>(value: 2, child: Text('菜单项2')),
@@ -6085,10 +6158,22 @@ void main() {
         expectRingOn(tester, linkNode);
 
         // The page behind the mask is neither focusable nor focused.
-        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode), isFalse);
-        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(otherNode), isFalse);
-        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(cancelNode), isTrue);
-        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(updateNode), isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode),
+          isFalse,
+        );
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(otherNode),
+          isFalse,
+        );
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(cancelNode),
+          isTrue,
+        );
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(updateNode),
+          isTrue,
+        );
 
         SmartDialog.dismiss();
         await tester.pumpAndSettle();
@@ -6252,7 +6337,10 @@ void main() {
         expect(find.text('取消'), findsNothing);
         expect(versionNode.hasPrimaryFocus, isTrue);
         expectRingOn(tester, versionNode);
-        expect(TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode), isTrue);
+        expect(
+          TvFocusTraversalPolicy.isEffectivelyFocusable(versionNode),
+          isTrue,
+        );
 
         // The page responds to the D-pad again.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -6354,7 +6442,10 @@ void main() {
 
         SmartDialog.showLoading();
         await tester.pump(const Duration(milliseconds: 300));
-        expect(versionNode.hasPrimaryFocus || otherNode.hasPrimaryFocus, isTrue);
+        expect(
+          versionNode.hasPrimaryFocus || otherNode.hasPrimaryFocus,
+          isTrue,
+        );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pump(const Duration(milliseconds: 100));
         expect(versionNode.hasPrimaryFocus, isTrue);
@@ -6622,7 +6713,8 @@ void main() {
     test(
       '扫码 sits at TvNavigationObserver.loginQrTabIndex in both tab bars, and the controller polls the same index',
       () {
-        final String view = File('lib/pages/login/view.dart').readAsStringSync();
+        final String view = File('lib/pages/login/view.dart')
+            .readAsStringSync();
         final String controller = File(
           'lib/pages/login/controller.dart',
         ).readAsStringSync();
@@ -6635,9 +6727,13 @@ void main() {
         ).allMatches(view).toList();
         expect(bars, hasLength(2), reason: 'login tab bars were restructured');
         for (final RegExpMatch bar in bars) {
-          final List<String> labels = RegExp(
-            r"(?:text:\s*|Text\(\s*)'\s*([^']+?)\s*'",
-          ).allMatches(bar.group(1)!).map((RegExpMatch m) => m.group(1)!).toList();
+          final List<String> labels =
+              RegExp(
+                    r"(?:text:\s*|Text\(\s*)'\s*([^']+?)\s*'",
+                  )
+                  .allMatches(bar.group(1)!)
+                  .map((RegExpMatch m) => m.group(1)!)
+                  .toList();
           expect(labels, ['密码', '短信', '扫码', 'Cookie']);
           expect(labels[TvNavigationObserver.loginQrTabIndex], '扫码');
         }
@@ -6645,7 +6741,9 @@ void main() {
         expect(controller, contains('TabController(length: 4'));
         expect(
           controller,
-          contains('tabController.index != ${TvNavigationObserver.loginQrTabIndex}'),
+          contains(
+            'tabController.index != ${TvNavigationObserver.loginQrTabIndex}',
+          ),
         );
       },
     );
@@ -6872,67 +6970,70 @@ void main() {
       expect(cards[1].hasPrimaryFocus, isTrue);
     });
 
-    testWidgets('Down from a control right above a ⋮ lands on the card under it', (
-      tester,
-    ) async {
-      final topNode = FocusNode(debugLabel: 'top');
-      final cardNode = FocusNode(debugLabel: 'card');
-      final menuNode = FocusNode(debugLabel: 'menu');
-      addTearDown(() {
-        topNode.dispose();
-        cardNode.dispose();
-        menuNode.dispose();
-      });
+    testWidgets(
+      'Down from a control right above a ⋮ lands on the card under it',
+      (
+        tester,
+      ) async {
+        final topNode = FocusNode(debugLabel: 'top');
+        final cardNode = FocusNode(debugLabel: 'card');
+        final menuNode = FocusNode(debugLabel: 'menu');
+        addTearDown(() {
+          topNode.dispose();
+          cardNode.dispose();
+          menuNode.dispose();
+        });
 
-      await tester.pumpWidget(
-        tvApp(
-          ListView(
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: IconButton(
-                    focusNode: topNode,
-                    onPressed: () {},
-                    icon: const Icon(Icons.search),
+        await tester.pumpWidget(
+          tvApp(
+            ListView(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: IconButton(
+                      focusNode: topNode,
+                      onPressed: () {},
+                      icon: const Icon(Icons.search),
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(
-                height: 90,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: InkWell(
-                        focusNode: cardNode,
-                        onTap: () {},
-                        child: const Text('card'),
+                SizedBox(
+                  height: 90,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: InkWell(
+                          focusNode: cardNode,
+                          onTap: () {},
+                          child: const Text('card'),
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: IconButton(
-                        focusNode: menuNode,
-                        onPressed: () {},
-                        icon: const Icon(Icons.more_vert),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: IconButton(
+                          focusNode: menuNode,
+                          onPressed: () {},
+                          icon: const Icon(Icons.more_vert),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-      topNode.requestFocus();
-      await tester.pumpAndSettle();
+        );
+        topNode.requestFocus();
+        await tester.pumpAndSettle();
 
-      await press(tester, LogicalKeyboardKey.arrowDown);
-      expect(cardNode.hasPrimaryFocus, isTrue);
-    });
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(cardNode.hasPrimaryFocus, isTrue);
+      },
+    );
 
     testWidgets(
       'a list in a player bar that slid out of its box stays out of reach until it slides back',
@@ -7053,8 +7154,7 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      int currentTab() =>
-          Get.find<LoginPageController>().tabController.index;
+      int currentTab() => Get.find<LoginPageController>().tabController.index;
 
       testWidgets('with its controller already registered', (tester) async {
         addTearDown(Get.reset);
