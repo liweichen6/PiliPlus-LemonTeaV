@@ -3,9 +3,13 @@ package com.example.piliplus
 import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -159,8 +163,64 @@ class TvBridge private constructor(
                 }
             }
 
+            // The home tab's Back on a TV: 返回桌面 leaves the app running,
+            // as upstream's Back does (AndroidHelper.back).
+            "goHome" -> {
+                val act = activity
+                if (act == null) {
+                    result.success(false)
+                    return
+                }
+                act.startActivity(
+                    Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_HOME)
+                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                result.success(true)
+            }
+
+            // 退出应用: closes the task and ends the process, so the next
+            // launch is a cold start. A bare exit(0) leaves the activity in
+            // the task list on some launchers.
+            "exitApp" -> {
+                val act = activity
+                result.success(act != null)
+                act?.finishAndRemoveTask()
+                endProcessSoon()
+            }
+
+            // 重启应用 (关于): starts the launch activity in a new task and ends
+            // this process, so every setting is read afresh.
+            "restartApp" -> {
+                val act = activity
+                val pm = act?.packageManager
+                val launch = pm?.getLaunchIntentForPackage(act.packageName)
+                    ?: pm?.getLeanbackLaunchIntentForPackage(act.packageName)
+                val component = launch?.component
+                if (act == null || component == null) {
+                    result.success(false)
+                    return
+                }
+                result.success(true)
+                // The new activity must not be created in this process, so
+                // the process ends right after the start is handed to
+                // Android, which then launches it in a fresh process.
+                Handler(Looper.getMainLooper()).post {
+                    act.startActivity(Intent.makeRestartActivityTask(component))
+                    Process.killProcess(Process.myPid())
+                }
+            }
+
             else -> result.notImplemented()
         }
+    }
+
+    /** Lets the method call's reply and the activity's finish go out first. */
+    private fun endProcessSoon() {
+        Handler(Looper.getMainLooper()).postDelayed(
+            { Process.killProcess(Process.myPid()) },
+            200,
+        )
     }
 
     companion object {

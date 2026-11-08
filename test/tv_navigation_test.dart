@@ -12,6 +12,7 @@ import 'package:PiliPlus/pages/login/controller.dart';
 import 'package:PiliPlus/pages/setting/widgets/dual_slider_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
+import 'package:PiliPlus/tv/tv_app_exit.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
@@ -196,6 +197,144 @@ void main() {
           reason: '"$key" is not declared in SettingBoxKey',
         );
       }
+    });
+  });
+
+  group('leaving and restarting the app on a TV', () {
+    const MethodChannel channel = MethodChannel('com.example.piliplus/tv');
+    late List<String> calls;
+    bool reply = true;
+
+    setUp(() {
+      calls = <String>[];
+      reply = true;
+      TvPlatform.setTvModeForTesting(true);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            calls.add(call.method);
+            return reply;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      TvPlatform.setTvModeForTesting(false);
+    });
+
+    Future<void> pumpApp(WidgetTester tester, {Widget? home}) async {
+      await tester.pumpWidget(
+        GetMaterialApp(
+          builder: (context, child) => TvNavigation(child: child!),
+          home: home ?? const Scaffold(body: SizedBox.expand()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    bool focusOn(Key key) {
+      final BuildContext? focus = FocusManager.instance.primaryFocus?.context;
+      if (focus == null) return false;
+      return find
+          .descendant(
+            of: find.byKey(key),
+            matching: find.byElementPredicate((e) => identical(e, focus)),
+            matchRoot: true,
+          )
+          .evaluate()
+          .isNotEmpty;
+    }
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      if (key == LogicalKeyboardKey.goBack) {
+        // The TV sends Back as the system's back button.
+        await tester.binding.handlePopRoute();
+      } else {
+        await tester.sendKeyEvent(key);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('off a TV, the home tab\'s Back is upstream\'s', (
+      tester,
+    ) async {
+      TvPlatform.setTvModeForTesting(false);
+      await pumpApp(tester);
+      expect(TvAppExit.handleHomeBack(), isFalse);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvAppExit.exitDialogKey), findsNothing);
+    });
+
+    testWidgets('Back on the home tab asks first, with focus on 返回桌面, '
+        'which leaves the app running', (tester) async {
+      await pumpApp(tester);
+      expect(TvAppExit.handleHomeBack(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvAppExit.exitDialogKey), findsOneWidget);
+      expect(focusOn(TvAppExit.desktopKey), isTrue);
+
+      // A second Back while it's open doesn't stack another dialog.
+      expect(TvAppExit.handleHomeBack(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvAppExit.exitDialogKey), findsOneWidget);
+
+      await press(tester, LogicalKeyboardKey.select);
+      expect(find.byKey(TvAppExit.exitDialogKey), findsNothing);
+      expect(calls, <String>['goHome']);
+    });
+
+    testWidgets('Back in the dialog closes it and does nothing else; '
+        '退出应用 ends the app', (tester) async {
+      await pumpApp(tester);
+      TvAppExit.handleHomeBack();
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.goBack);
+      expect(find.byKey(TvAppExit.exitDialogKey), findsNothing);
+      expect(calls, isEmpty);
+
+      TvAppExit.handleHomeBack();
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(focusOn(TvAppExit.exitKey), isTrue);
+      await press(tester, LogicalKeyboardKey.select);
+      expect(calls, <String>['exitApp']);
+
+      // If Android can't end it (no activity), the dialog just closes.
+      reply = false;
+      calls.clear();
+      TvAppExit.handleHomeBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(TvAppExit.exitKey));
+      await tester.pumpAndSettle();
+      expect(calls, <String>['exitApp']);
+      expect(find.byKey(TvAppExit.exitDialogKey), findsNothing);
+    });
+
+    testWidgets('重启应用 asks first, with focus on 取消', (tester) async {
+      await pumpApp(
+        tester,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ListView(
+              children: [TvAppExit.restartTile(context)],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(TvAppExit.restartTileKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvAppExit.restartDialogKey), findsOneWidget);
+      expect(focusOn(TvAppExit.restartCancelKey), isTrue);
+      await press(tester, LogicalKeyboardKey.select);
+      expect(find.byKey(TvAppExit.restartDialogKey), findsNothing);
+      expect(calls, isEmpty);
+
+      await tester.tap(find.byKey(TvAppExit.restartTileKey));
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(focusOn(TvAppExit.restartConfirmKey), isTrue);
+      await press(tester, LogicalKeyboardKey.select);
+      expect(calls, <String>['restartApp']);
     });
   });
 
