@@ -130,12 +130,13 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M13: Focus Engine** | Epic M13.2 | `M13.4` | Scoring Function & Column Memory Behind a Flag | ✅ Done (bugs 2–4 and 6–10 fixed under the flag; `decide` p90 on `<physical-tv>` 4.28 ms on home, 2.95 ms in settings, a little slower than the rule chain and inside the 6 ms limit) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `test/tv_paths_test.dart`, `test/tv_path_harness.dart`, `.github/workflows/tv-checks.yml` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5` | Switch, with the Old Rules Behind a Hidden Switch for One Release | ✅ Done (the scorer is the default; its extra cost is gone on settings and on like-for-like home steps on `<physical-tv>`; the bench meets four of six budget limits and misses `decide` on comments, for `M13.5a`) | `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_navigation.dart`, `lib/tv/tv_platform.dart`, `test/tv_paths_test.dart`, `test/tv_navigation_test.dart`, `.github/workflows/tv-checks.yml`, `docs/tv/*` |
 | **M13: Focus Engine** | Epic M13.3 | `M13.5a` | Make the Shared Candidate Walk Cheaper on the Comments List | ✅ Done (closed after one attempt by the user's decision; memoizing render-object work was 20 % slower on `<physical-tv>` and was reverted; `decide` on comments still misses the budget) | `lib/tv/tv_navigation.dart`, `<physical-tv>` |
-| **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ✅ Done (rule chain, hidden switch and CI's second run removed; every remaining decision unchanged; 153 TV tests pass) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_platform.dart`, `test/tv_*.dart`, `.github/workflows/tv-checks.yml` |
-| **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ⏳ Planned | `docs/tv/PLAN.md` |
-| **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Menus Through Upstream's Panels | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
-| **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Upstream Layout at TV Size | ⏳ Planned | `lib/tv/tv_player_hud.dart` |
-| **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M13: Focus Engine** | Epic M13.3 | `M13.6` | Remove the Old Rules | ✅ Done (rule chain, hidden switch and CI's second run removed; every remaining decision unchanged; 153 TV tests pass; released in `v2.2.0.2-fork.5962`) | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_scorer.dart`, `lib/tv/tv_platform.dart`, `test/tv_*.dart`, `.github/workflows/tv-checks.yml` |
+| **M14: Player HUD, Video** | Epic M14.1 | `M14.1` | Button List (Discussion Gate) | ✅ Done (approach 1; the editor's layout is agreed separately, before `M14.3`) | `docs/tv/PLAN.md` |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.2` | Actions & Upstream's Panels | ✅ Done (merging the pull request publishes a release) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart` (`1c9cf8f12`) |
+| **M14: Player HUD, Video** | Epic M14.2 | `M14.3` | Layout, Editable Groups & Editor | ✅ Done (the editor's design agreed 2026-11-07; released in `v2.2.0.2-fork.5998`; the changes after the first device try land by their own pull request, and merging it publishes a release) | `lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart` |
+| **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ✅ Done (M14 closed 2026-11-07; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `lib/tv/tv_player_hud.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (After M14) | ⏳ Planned (later) | `lib/tv/tv_player_hud.dart` |
+| **M15: Player HUD, Live** | Epic M15.1 | `M15.2` | Close or Minimize a SuperChat | ⏳ Planned (later; added by the user 2026-11-07) | `lib/tv/tv_player_hud.dart`, `LiveRoomController.fsSC` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M17 |
 
@@ -2010,3 +2011,159 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Tools**: `tool/tv_m13/logging.patch` still applies, with its hunks at new line offsets.
 * **Not done on a device**: the change only deletes code that no build ran by default since M13.5, and every remaining decision is unchanged in the widget tests, so no device run was made.
 * **M13 as a whole**: with this, all its tasks are done. One part of its "done when" stays open by the user's decision: `decide` on the comments list is over the budget on `<physical-tv>` (`M13.5a`, closed after one attempt).
+
+### [2026-11-07] Milestone M13: Closed; M14 Prepared
+* **Status**: ✅ M13 is done, by the user's decision. `M14.1` is next.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M13 status), `docs/tv/PROGRESS.md`.
+* **Landed**: PR 21 (`M13.6`) merged on 2026-11-06 and shipped in `v2.2.0.2-fork.5962`. The run passed its TV checks. Its sync merged upstream, so the release also carries upstream's new commits.
+* **Closed with one part of the bar open**: the recorded paths pass and the inventoried lost-ring cases are fixed, but `decide` on the comments list is still over the budget on `<physical-tv>` (`M13.5a`).
+* **For `M14.1`** (raised by the user, not yet agreed): let the user choose which buttons sit in the HUD's top-right and bottom-right groups, from the functions in upstream's `⋮` sheet (`showSettingSheet`) and the bar buttons, with a `⋮` button that always stays and holds the rest. To be settled in the button-list discussion before any code.
+* **Next** (owner: user): the `M14.1` button-list discussion, including the editable groups.
+
+### [2026-11-07] Milestone M14 (Task `M14.1`): Approach 1, Layout and Defaults Agreed
+* **Status**: 🔄 In progress. The approach, the layout and both groups' defaults are agreed. The `⋮` menu's groups and two smaller points wait for the user. No code yet.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M14 rewritten, Phase 5 roadmap), `docs/tv/PROGRESS.md`.
+* **Decision** (the user): approach 1, of two compared in this session.
+  * **1**: change the TV pill HUD in place, with editable groups and a menu of every option.
+  * **2**: M14 as planned (upstream's icon-only layout with focus labels) plus editable groups.
+  * Both cost the same at run time, since a D-pad step's cost depends on how many buttons show. 2 adds looks, not features, at about twice the layout work: a rebuild of the HUD's layout, nearly all of the 87 text finders in `test/tv_player_hud_test.dart`, and a new recorded path. 1 keeps a label on every button and the key routing tested since M7; its cost is space, handled by a cap per group.
+* **Agreed layout**: top left `退出全屏` and the title; top right (editable) 弹幕开关, 弹幕设置, 高能进度条, then `⋮`; a time bar with a play/pause status icon, where Select plays and pauses and Left and Right seek; bottom (editable) (上集, 下集, 选集), 画质, 字幕, 倍速, 画面, with the episode entry becoming `下个视频` (the first related video) when the video isn't in a list. The `⋮` menu groups its options by importance to a TV player and holds `编辑按钮`. Full details in `PLAN.md`.
+* **From the user's review of today's HUD**:
+  * The TV's 弹幕设置 dialog has five of upstream's options. Upstream's panel (`HeaderMixin.showSetDanmaku`) replaces it, which also removes the `(遥控器方向键选择)` title. Its sliders already work with the D-pad.
+  * The two orange seek icons are the `⏩` / `⏪` emoji in the seek preview, drawn by Android's emoji font. They're replaced with white Material icons.
+  * The time bar's `◀ ▶ 快退/快进` hint is removed.
+* **Found in the code**: 高能进度条 reads `VideoDetailController.dmTrend`, which loads only with upstream's `showDmChart` setting on (default off), so the TV defaults turn it on. `下个视频` is `UgcIntroController.playRelated()`. Both are public, so neither needs an upstream edit.
+* **Next** (owner: user): agree the `⋮` menu's groups and entries, the caps (4 top right, 8 bottom), and where the clock and the viewer count go. `M14.2` starts after that.
+
+### [2026-11-07] Milestone M14 (Task `M14.1`): Second Round of Answers
+* **Status**: 🔄 In progress. The `⋮` menu's groups, the label for focused icon-only buttons, and the editor's layout wait for the user. No code yet.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M14), `docs/tv/PROGRESS.md`.
+* **Answers** (the user):
+  * **Keys with the HUD hidden**: Select plays and pauses, Left and Right seek, and holding Select gives 3x speed, as today. The time bar adds these keys while the HUD shows; they aren't limited to it.
+  * **Top left**: the title only, with the viewer count below it. No `退出全屏` button, since Back already does it.
+  * **Top right**: icon only, at most 4, then the `⋮` button. No clock.
+  * **Bottom**: no limit, scrolling as today, with a `显示按钮文字` option set in the editor.
+  * **Split screen**: the Quick Strip becomes two icon-only buttons, 全屏 and 播放/暂停. `播控` and `返回` go; the menu key still opens the full HUD there.
+  * **No remote key for danmaku.**
+  * **The editor's layout and UI** need their own discussion.
+* **Follow-on changes**: the caps of 4 and 8 become 4 top right and none at the bottom; `全屏播放` leaves the `⋮` menu, since the Quick Strip has 全屏.
+* **Next** (owner: user): the `⋮` menu's groups, the focused-button label, then the editor's layout.
+
+### [2026-11-07] Milestone M14 (Task `M14.1`): Done
+* **Status**: ✅ Done. The button list is agreed. `M14.2` is next.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M14, Phase 5 roadmap), `docs/tv/PROGRESS.md`.
+* **Answers** (the user):
+  * **The `⋮` menu**: the five groups as proposed (播放, 弹幕, 互动, 画面与声音, 其他).
+  * **Icon-only buttons**: the focused one shows its name in a small label under it, drawn over the HUD so the row doesn't re-lay out.
+* **Still open**: the editor's layout and UI, a discussion of its own before `M14.3`. `M14.2` doesn't need it, since it builds the actions and panels.
+* **Next**: `M14.2` on its own branch, which lands by pull request and publishes a release.
+
+### [2026-11-07] Milestone M14 (Task `M14.2`): Actions & Upstream's Panels
+* **Status**: ✅ Done on its own branch; lands by pull request. Merging it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_hud_actions.dart`, `[MODIFY] lib/tv/tv_player_hud.dart`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (code in `1c9cf8f12`).
+* **The action table** (`tv_hud_actions.dart`, a `part` of the HUD library so it reuses the HUD's pills and option lists):
+  * `TvHudActionId` holds every entry of the agreed `⋮` menu in menu order, with its group (`TvHudMenuGroup`) and whether it's pinnable. The names are the ids `M14.3` will save, so they don't change.
+  * `resolveAction(id)` returns the buttons an entry stands for now: none when it isn't available (so it's hidden), one for most entries, three for the episode entry in a list. Each button has a key, `TvHudAction.keyOf(buttonId)`, for tests.
+  * Upstream's panels: 弹幕设置 is `HeaderMixin.showSetDanmaku`, mixed into the HUD's state; 画质, 音质, 解码格式, 弹幕列表, 完整设置 and 字幕设置 are `HeaderControlState`'s, through `headerCtrKey`. They hide while the header isn't mounted, for offline files where upstream does, and in picture-in-picture. While a panel is open the HUD is hidden; when the panel's route is popped, focus goes back to the player as after the TV's own lists.
+  * TV lists over public APIs: 字幕 (the tracks, then upstream's 字幕设置), 翻译 (`setLanguage`, which reloads the streams; shown when the video offers other languages), 倍速, 画面比例, 播放顺序 and 超分辨率 (animation only). Live quality keeps the TV list.
+  * 分段信息 opens upstream's chapter panel (`ViewPointsPage`) as upstream's player does in fullscreen: Select on a chapter jumps to it, and its switch shows or hides the marks on the bar. Shown under upstream's condition (its `showViewPoints` setting on and the video has chapters).
+  * The episode entry: 上集 / 下集 / 选集 in a list, `下个视频` (`UgcIntroController.playRelated()`) outside one, nothing for a PGC without a list, an offline file or a live room.
+  * 高能进度条 shows once the trend data has loaded and switches `showDmTrendChart`; `SettingBoxKey.showDmChart: true` joins the TV defaults so the data loads. Drawing the chart is `M14.3`.
+  * 播放器音量, 定时关闭 and 播放信息 open upstream's dialogs; 重载视频 reloads the video, or refreshes a live room.
+  * 编辑按钮 is in the table but never available until `M14.3` builds the editor.
+* **The HUD now**: the bottom row is still the old one (play/pause, 全屏播放, then the actions), drawn from the table with 字幕 added, until `M14.3` rebuilds the layout. The TV's own danmaku dialog and its `(遥控器方向键选择)` title are gone, and so is its video-quality list. Actions with no button yet (高能进度条, 弹幕列表, 音质 and the rest) are reachable once `M14.3` adds the `⋮` menu.
+* **Verification**:
+  * TV analyze clean (the CI file list); `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` and `test/tv_paths_test.dart`: 183 tests pass, SDK patches applied.
+  * 32 new tests in `test/tv_player_hud_test.dart`: one per action (when it's available and what it does), the table's order, the new TV default, and two D-pad tests in the recorded-path scene: 弹幕设置 opens upstream's real panel with focus on its first slider, Down stays inside it, and Back returns focus to the Quick Strip; 画质 does the same through a recorded stand-in for `showSetVideoQa` that opens the same kind of route. The 画质 and old danmaku-dialog tests are replaced; the finders this task touched use keys.
+  * No device run: none was needed for the done bar, and `M14.4` has the device pass.
+* **Added during the task** (the user): upstream's AI 翻译 and 分段信息 buttons, in the 播放 group as 翻译 and 分段信息. They aren't in the HUD's bottom row; they're reachable once `M14.3` adds the `⋮` menu.
+* **Next**: the editor's layout (owner: user), then `M14.3`.
+
+### [2026-11-07] Fix: the D-pad couldn't reach the soft keyboard on `<physical-tv>`
+* **Status**: ✅ Fixed on its own branch; lands by pull request. Merging it publishes a release.
+* **Files Changed**: `[MODIFY] android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt`, `docs/tv/PROGRESS.md`.
+* **Symptom** (reported by the user): with Gboard open over a text field (Search), the D-pad moved the app's focus behind the keyboard instead of moving between its keys; the first key took focus off the field and closed the keyboard. `<vm-tv>` worked.
+* **Cause**: `<physical-tv>` sets `config_preventImeStartupUnlessTextEditor` to `true` (a vendor overlay; `false` on `<vm-tv>`). Android then refuses to start a keyboard session for a focused view that doesn't report itself as a text editor (`InputMethodManagerService.shouldPreventImeStartupLocked`: the start-input returns `NO_EDITOR` and the keyboard service is unbound), and Flutter's `FlutterView` doesn't override `onCheckIsTextEditor()`. The explicit show still draws Gboard, but the app's input-method client is never bound (`mBindSequence=-1`, `Ignoring onBind: cur seq=-1`), so Android can't hand the remote's keys to the keyboard first and they go to the app. Found with `dumpsys input_method` (the TV's start-input history had no entries from this app, only Gboard's `SESSION_CREATED_BY_IME`) and by reading the TV's `framework.jar` and `services.jar`.
+* **Fix**: while the keyboard is open, `TvBridge.showSoftKeyboard` gives Android focus to a 1 x 1 proxy view that reports itself as a text editor and passes everything else to the Flutter view: the input connection, Flutter's own input-method calls (`checkInputConnectionProxy`) and any key the keyboard doesn't take. `hideSoftKeyboard` puts focus back on the Flutter view. Nothing changes in Dart.
+* **Verification** (2026-11-07, `-Pdev` builds, Search field only, nothing submitted): on `<physical-tv>` the client binds through the proxy, Right and Down move inside Gboard, Select types into the Flutter field, Back closes the keyboard and the D-pad moves the app's focus again, and a second open works the same; on `<vm-tv>` the same, as before the fix. Dart is unchanged, so the TV checks cover the rest.
+
+### [2026-11-07] Milestone M14 (Task `M14.3`): Layout, Editable Groups & Editor
+* **Status**: ✅ Done on its own branch; lands by pull request. Merging it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`; `[MODIFY] lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The editor's design** (proposed and agreed with the user before any editor code; recorded in PLAN.md, M14, Editor): a panel over the HUD with `[显示按钮文字] [恢复默认] [完成]` and the rows 右上角 n/4 (with the fixed `⋮`), 底部 and 未固定 (grouped as in the menu). Pick up and carry: Select picks a button up, Left and Right move it along its row, Up and Down move it to the end of the row above or below (into 未固定 unpins it; a full 右上角 refuses it with a toast), and Select or Back puts it down. Every change saves at once; Back or `完成` closes it; `恢复默认` asks `恢复默认按钮？` first, with focus on `取消`.
+* **The layout** (`tv_player_hud.dart`):
+  * Top bar: the title with `N人正在看` under it in a smaller font; the top-right group, icon-only, then `⋮`. No clock, and no `退出全屏` / `关闭面板` button.
+  * The time bar is the HUD's first focus (the first bottom button in a live room). It has the play/pause status icon, the position, the bar and the duration. Select plays and pauses, holding it gives 3x and Left and Right seek, through the same handlers as with the HUD hidden; those keys are unchanged. The `◀ ▶ 快退/快进` hint and the play/pause and `全屏播放` pills are gone. The icon shows the action, as upstream's bar button does: pause while playing.
+  * 高能进度条: upstream's `buildDmChart` over the bar, in its own `_TvDmChart` behind a `RepaintBoundary` and outside the bar's position `Obx`.
+  * Seek preview: white Material `fast_forward_rounded` / `fast_rewind_rounded` in place of the emoji.
+  * Quick Strip: icon-only 全屏 and 播放/暂停 (showing the current state), both with Hold-Select 3x as before. `播控` and `返回` are gone; the menu key opens the HUD.
+  * Icon-only buttons (the top right, the Quick Strip, and the bottom row with `显示按钮文字` off) draw their name under them through an `OverlayPortal` while focused. Pills now keep their size when focused (the padding gives back the wider border's pixel), so neither the label nor the focus ring moves the row.
+* **The groups** (`tv_hud_groups.dart`): `TvHudGroups` holds both lists and `显示按钮文字`, saved in the settings box under the TV-only keys `tvHudTopRight`, `tvHudBottom` and `tvHudShowLabels` and read each time the HUD opens. Ids that are unknown, not pinnable or already pinned are skipped, and the top right keeps its first 4. A missing list falls back to the agreed default; a saved empty list stays empty. The groups are an `Rx`, so a group's `Obx` always has something to listen to (a bottom row of 倍速 alone reads no other `Rx` and made GetX throw).
+* **The `⋮` menu and the editor** (`tv_hud_menu.dart`): both open as dialog routes over the HUD, which stays visible behind them with its auto-hide paused. The menu is a panel on the right with every available entry under its group header, 翻译 and 分段信息 included; choosing an entry closes the menu and runs it, and focus returns to `⋮` once the dialog's route has finished closing (before that, the route below restores its own last focus). 编辑按钮 now opens the editor. The editor and its confirmation ask for their first focus explicitly, because the engine's first-focus pick skips buttons in a scroll view that hasn't laid out yet.
+* **Verification**:
+  * TV analyze is clean over the CI file list. `test/tv_navigation_test.dart`, `test/tv_player_hud_test.dart` and `test/tv_paths_test.dart`: 191 tests pass, with the SDK patches applied. `flutter pub get` was needed first, because upstream's sync bumped `nativeapi`.
+  * The tests that relied on the old layout were moved to keys: the time bar, the Quick Strip, the seek preview and its icons, and the top bar (the R19 clock test became the top-bar layout test). New tests: the saved lists (unknown, unpinnable and repeated ids, the cap, empty lists, the defaults); both groups drawn from saved lists with `⋮` last; `显示按钮文字` off with the focus label and a row that doesn't move; the time bar's keys and the chart; the `⋮` menu (groups in order, 翻译 and 分段信息, auto-hide paused, focus back on `⋮`); the editor's carry moves, the top-right cap, Back while carrying and a restart; and `显示按钮文字` and `恢复默认` (取消 first) across a restart.
+  * Recorded HUD paths, updated: the split view's Quick Strip; the default layout (menu key → time bar → bottom row → top right → `⋮` menu → Back → Back); and a custom layout (labels off, 点赞 and 收藏 pinned top right). The 弹幕设置 and 画质 D-pad tests now reach their buttons from the time bar.
+  * The test settings box is in memory now: the HUD saves from inside widget tests, whose fake clock never lets a file write finish, and a stuck write stalled the next test's set-up.
+  * No device run. `M14.4` has the device pass (`<vm-tv>` at both UI scales and text scale 1.6, and upstream's danmaku panel on `<physical-tv>`).
+* **Next**: `M14.4`. Some of its tests were done here (saving, unknown ids, the cap, `显示按钮文字`, `恢复默认`, the keys with the HUD hidden, the default and custom recorded paths); the rest of the label-text finders and the device pass remain.
+
+### [2026-11-07] Milestone M14 (Task `M14.3`): Changes After the First Device Try
+* **Status**: ✅ Done on the `M14.3` branch. That pull request was merged (released in `v2.2.0.2-fork.5998`) before these commits were pushed, so they land by a pull request of their own. Merging it publishes a release.
+* **Files Changed**: `[MODIFY] lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Device try**: a `-Pdev` build of the branch (`android-arm` and `android-arm64`) was installed over `PiliPlus TV dev` on `<physical-tv>` and `<vm-tv>`, and the user tried the HUD and the editor. On `<vm-tv>` the dev app was missing again after an emulator restart (as in M13.0b), and `install -r` brought it back. Afterwards the emulator was synced and stopped, and adb was disconnected from the TV.
+* **The user's requests**, each built as asked:
+  * **`按钮在时间条上方`**: a new editor option (key `tvHudButtonsAboveBar`, default off) that puts the bottom row above the time bar. The time bar stays the first focus. `恢复默认` turns it off. The editor's controls now wrap under its title, so four of them fit at text scale 1.6.
+  * **The top right in rows**: up to 3 rows of 6 icon-only buttons, aligned right. `⋮` takes the first row's last place, so the group's cap went from 4 to 17. The episode entry stands for up to three buttons, so a full group can spill into a fourth row.
+  * **The title**: up to 3 lines, with `…` only when 3 can't hold it.
+* **Verification**: TV analyze clean over the CI file list; 194 TV tests pass. New or changed tests: the cap of 17 in the saved lists and in the editor (an 18th is refused); the rows (five buttons and `⋮` in the first, right edges aligned); `按钮在时间条上方` from the settings box and from the editor, with Up and Down between the buttons and the bar; a long title on exactly 3 lines with an ellipsis, and a short one on 1. No device run after these changes.
+
+### [2026-11-07] Milestone M15: Task `M15.2` Added
+* **Status**: ⏳ Planned. No code.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M15), `docs/tv/PROGRESS.md`.
+* **The request** (the user): a SuperChat can't be closed with the remote. On a phone it's swiped away; on the TV it stays until it expires.
+* **Found in upstream's code**:
+  * SuperChats exist only in live rooms; normal videos don't have them.
+  * In fullscreen with `全屏 SuperChat` on, the card is `LiveRoomController.fsSC`. It shows for up to 10 s, and its only close control is a touch `×`.
+  * In split view, the chat and the SuperChat list are two pages of a `PageView`.
+* **Next**: settled with the rest of the live HUD in `M15.1`, after M14.
+
+### [2026-11-07] Fix: the TV defaults came back only after a cold start, following a settings reset
+* **Status**: ✅ Fixed on the `M14.4` branch; lands with its pull request. Merging it publishes a release.
+* **Files Changed**: `[MODIFY] lib/tv/tv_platform.dart`, `test/tv_navigation_test.dart`, `docs/tv/PROGRESS.md` (`29aabcee6`).
+* **Asked by the user**: whether upstream's 关于 → 重置所有设置 (`重置可导出的设置`, which keeps the login, and `重置所有数据`) loses the TV defaults, and whether a reset should restore the TV defaults or reset everything and then apply them again.
+* **Found**: both options clear the `setting` box and don't restart the app. `TvPlatform` only seeds missing TV defaults at a cold start, so until then the running app read upstream's defaults: 8K for `defaultVideoQa` (the TV default is 1080P 60帧, because 4K freezes or panics `<physical-tv>`), `showDmChart` off, `autoUpdate` on, the system theme. Upstream's getters for `horizontalScreen` and `fullScreenMode` also write a phone or tablet value the first time they read a missing key, and the launch seed never overwrites a key that's set, so those two were lost for good.
+* **Fix** (reset everything, then apply the TV defaults again at once): `TvPlatform.watchForResets` watches the setting box. Hive's `clear()` sends a delete event for every key, so as soon as a TV default is deleted, the missing TV defaults are filled in, before upstream's getters can write their own. Hive marks a key as present as soon as a write starts, so an import (`导入设置` clears the box, then writes its map) keeps its own values, and only the TV defaults it lacks come back. No upstream file changed.
+* **Verification**: two new tests (a reset puts every TV default back, and deleting another key does nothing; an import keeps its values and gets only the missing TV defaults). TV analyze clean; all TV tests pass.
+
+### [2026-11-07] TV: Back on the Home Tab Asks First; 重启应用 in 关于
+* **Status**: ✅ Done on the `M14.4` branch; lands with its pull request. Merging it publishes a release.
+* **Files Changed**: `[NEW] lib/tv/tv_app_exit.dart`; `[MODIFY] android/app/src/main/kotlin/com/example/piliplus/TvBridge.kt`, `lib/pages/main/view.dart` (one-line hook), `lib/pages/about/view.dart` (one-line hook), `test/tv_navigation_test.dart`, `docs/tv/PROGRESS.md` (`7ac31f326`).
+* **The request** (the user): the TV app had no way to exit or restart. Upstream's Back on the home tab only shows the launcher (`AndroidHelper.back()`), the process keeps running, Android TV has no recents screen to close it from, and some settings say `重启生效`. The user chose: Back on the home tab opens `返回桌面` / `退出应用`, and `重启应用` goes into 设置 → 关于.
+* **Built**:
+  * `TvAppExit.handleHomeBack()`, called first in upstream's `_onBack` (`lib/pages/main/view.dart`). Off a TV it returns `false` and upstream's Back runs. On a TV it opens `退出 PiliPlus？` (`返回桌面时应用继续在后台运行`) with focus on `返回桌面`, so a stray Back does no harm; Back closes it, and a second Back while it's open doesn't stack another.
+  * `TvAppExit.restartTile`, the last row of 关于 on a TV (`if (TvPlatform.isTv)` in `lib/pages/about/view.dart`). It asks `重启应用？` with focus on `取消`.
+  * `TvBridge`: `goHome` (upstream's HOME intent), `exitApp` (`finishAndRemoveTask()`, then the process ends) and `restartApp` (the launch activity in a new task via `Intent.makeRestartActivityTask`, and the process ends at once, so Android starts it in a fresh process).
+* **Verification**: four new tests (off a TV upstream's Back runs; the dialog with focus on `返回桌面`, no second dialog, `goHome`; Back closes it, `退出应用`, and the dialog closing if Android can't end the app; `重启应用` asks with focus on `取消`, then `restartApp`). On `<vm-tv>`: `返回桌面` shows the launcher with the same process alive, and opening the app resumes it; `退出应用` ends the process and leaves no task in recents; `重启应用` comes back on the home page in a new process, with 界面缩放 applied.
+
+### [2026-11-07] Milestone M14 (Task `M14.4`): Tests and the `<vm-tv>` Pass
+* **Status**: 🔄 In progress. The tests and the `<vm-tv>` pass are done; upstream's danmaku panel with the D-pad on `<physical-tv>` is left, so M14 stays open.
+* **Files Changed**: `[MODIFY] lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md` (`8dcbc71eb`, `f2124e218`).
+* **Tests** (`8dcbc71eb`): the TV option lists (倍速, 画面比例, 选集, 字幕, 翻译, 播放顺序, 超分辨率) got `TvPlayerHud.optionListKey` and `optionItemKey(i)`. The tests now find HUD buttons by `TvHudAction.keyOf` and option rows by index, check focus by key (the `_pill` / `_pillHasPrimaryFocus` label helpers are gone), and check label text only under the button's or row's key. The speed, fit and episode tests now also check the row that starts focused. 37 text finders stay on purpose: absence checks (`播控`, `退出全屏`, `⏩`), upstream's own panels (`智能云屏蔽`, the chapter list), the stand-in routes (`showSetVideoQa 0`), the test app's `GoToPlayer` button and upstream's toast. The rest of M14.4's test list was done in `M14.3`.
+* **`<vm-tv>` pass** (1080p, headless, `-Pdev` arm64 build, `开启硬解` off for the run and back on afterwards). `PiliPlus TV dev` there was signed out (`点击登录`), so nothing reached an account and `无痕模式` wasn't needed.
+  * At `界面缩放` 1.0 with font size 1.2 (the TV default) and 1.6, and at 0.8 with 1.6: the HUD opens on the time bar; Select pauses and the status icon follows; Down, Right and Up walk the bottom row, the time bar and the top right, with focus labels; `选集` opens on the current part and Back closes it; the `⋮` menu lists its groups and returns focus to `⋮`; upstream's 弹幕设置 opens from the top right with focus on its first slider, Down and Right stay inside it, and Back closes it; the editor carries 倍速 from 底部 to 右上角 (4/17), turns off `显示按钮文字` and turns on `按钮在时间条上方`, and the HUD redraws when it closes; `恢复默认` asks with focus on `取消`, then resets both groups and both options. Nothing in the HUD, the menu or the editor was clipped or unreachable at 1.6, and the editor's controls fit on one row.
+  * After the app was reinstalled (a restart), the edited groups and both options were still there.
+  * With the HUD hidden: Left shows the white `fast_rewind_rounded` preview and seeks back; Select plays and pauses. Hold-Select (3x) couldn't be checked: `adb` sends no key repeats, and a held `KEY_SELECT` from the emulator console registered as a short press. The tests cover it, as before.
+  * **Found and fixed** (`f2124e218`): with `按钮在时间条上方` on and `显示按钮文字` off, the focus label was drawn under the button, over the time bar's position. It's now drawn above the button in that layout. New test: the label sits above the button and clear of the time bar.
+  * **Noted, not M14**: at font size 1.6 the home page's video cards cut their title's second line (upstream's card layout).
+  * The emulator stalled once after a reinstall: its graphics services ran at 100% and both the launcher and the app hit input ANRs (`Application does not have a focused window`). It was synced, stopped and started again, and the pass ran through after that. As in M13.0b, this looks like the emulator's software GPU, not the app.
+  * Afterwards 界面缩放 is back at 1.00, the font size at 1.20, `开启硬解` on, the HUD at its default layout, the files the run put on the emulator are deleted, and the emulator is synced and stopped.
+* **Verification**: TV analyze clean over the CI file list (plus `lib/pages/main/view.dart` and `lib/pages/about/view.dart`); 201 TV tests pass, SDK patches applied.
+* **Next**: upstream's 弹幕设置 panel with the D-pad on `<physical-tv>` (the user's go-ahead and the TV's address needed); then M14 closes if its "Done when" holds.
+
+### [2026-11-07] Milestone M14 (Task `M14.4`): Done; M14 Closed
+* **Status**: ✅ Done. M14 is closed: its "Done when" holds (every agreed action works with the D-pad, pinned or from the menu; the menus open upstream's panels with focus inside; the groups and both editor options survive a restart; the keys with the HUD hidden and on the time bar; the Quick Strip as agreed). Lands with the `M14.4` pull request, and merging it publishes a release.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M14), `docs/tv/PROGRESS.md`.
+* **`<physical-tv>` pass** (`-Pdev` `android-arm` build installed over `PiliPlus TV dev`, which is signed in; the user's go-ahead and the TV's address given in chat): `无痕模式` turned on (`仅本次`) before playing and off afterwards. In a video in fullscreen at 1080P+, the HUD opened on the time bar; Up reached the top right and `⋮` (focus label `更多`); the `⋮` menu opened on `画质`, and Down reached `弹幕设置` under `弹幕`. Upstream's 弹幕设置 opened with focus on its first slider (`智能云屏蔽`); Down moved through the `按类型屏蔽` chips and the sliders, with the panel scrolling to keep focus in view; Right and Left moved `显示区域` from 50% to 60% and back; Back closed the panel to the player. Back then left fullscreen to split view, with the two-button Quick Strip, and Back again left the page.
+* **Afterwards**: no setting changed on the TV (the danmaku area is back at 50%), `无痕模式` is off, the TV is asleep (`mWakefulness=Asleep`), and adb is disconnected and stopped.
+* **Next**: M15 (live HUD), once the user picks it up.

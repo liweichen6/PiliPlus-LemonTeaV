@@ -1,35 +1,45 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/progress_bar/segment_progress_bar.dart'
+    show ViewPointSegment;
 import 'package:PiliPlus/common/widgets/scaffold/mini_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
+import 'package:PiliPlus/models/user/danmaku_rule.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/models/video/play/url.dart' as play_url;
+import 'package:PiliPlus/models_new/video/video_play_info/subtitle.dart';
 import 'package:PiliPlus/pages/danmaku/danmaku_model.dart';
 import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
+import 'package:PiliPlus/pages/video/widgets/header_control.dart'
+    show TimeBatteryMixin;
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
-import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/tv/tv_player_hud.dart';
 import 'package:PiliPlus/tv/tv_video_plane.dart';
+import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
+import 'package:fl_chart/fl_chart.dart' show LineChart;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
-import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/media_kit.dart' hide Subtitle;
 
 import 'tv_path_harness.dart';
 
@@ -62,7 +72,7 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   }
 
   @override
-  Player? get videoPlayerController => fakePlayer;
+  Player? get videoPlayerController => noPlayer ? null : fakePlayer;
 
   @override
   final RxBool isFullScreen = false.obs;
@@ -218,6 +228,47 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
 
   @override
   int? cacheVideoQa;
+
+  @override
+  bool isPipMode = false;
+
+  @override
+  bool isFileSource = false;
+
+  @override
+  bool showDmChart = true;
+
+  @override
+  bool showViewPoints = true;
+
+  @override
+  bool darkVideoPage = false;
+
+  @override
+  RuleFilter filters = RuleFilter.empty();
+
+  @override
+  PlayRepeat playRepeat = PlayRepeat.pause;
+
+  @override
+  void setPlayRepeat(PlayRepeat type) {
+    playRepeat = type;
+  }
+
+  @override
+  bool isAnim = false;
+
+  @override
+  final Rx<SuperResolutionType> superResolutionType =
+      SuperResolutionType.disable.obs;
+
+  @override
+  Future<void> setShader([SuperResolutionType? type, Player? pp]) async {
+    if (type != null) superResolutionType.value = type;
+  }
+
+  /// [videoPlayerController] returns `null` while this is set.
+  bool noPlayer = false;
 }
 
 class FakeVideoDetailController extends Fake implements VideoDetailController {
@@ -233,12 +284,66 @@ class FakeVideoDetailController extends Fake implements VideoDetailController {
   bool isFileSource = false;
 
   @override
-  final Rxn<VideoQuality> currentVideoQa = Rxn<VideoQuality>(VideoQuality.high1080);
+  final Rxn<VideoQuality> currentVideoQa = Rxn<VideoQuality>(
+    VideoQuality.high1080,
+  );
 
   int updatePlayerCount = 0;
   @override
   void updatePlayer() {
     updatePlayerCount++;
+  }
+
+  @override
+  final GlobalKey<TimeBatteryMixin> headerCtrKey =
+      GlobalKey<TimeBatteryMixin>();
+
+  @override
+  RxList<Subtitle> subtitles = RxList<Subtitle>();
+
+  @override
+  final RxInt vttSubtitlesIndex = 0.obs;
+
+  @override
+  Future<void> setSubtitle(int index) async {
+    vttSubtitlesIndex.value = index;
+  }
+
+  @override
+  final Rx<LoadingState<List<double>>?> dmTrend =
+      Rx<LoadingState<List<double>>?>(null);
+
+  @override
+  final RxBool showDmTrendChart = true.obs;
+
+  @override
+  AudioQuality? currentAudioQa;
+
+  @override
+  final Rxn<List<play_url.LanguageItem>> languages =
+      Rxn<List<play_url.LanguageItem>>();
+
+  @override
+  final Rxn<String> currLang = Rxn<String>();
+
+  @override
+  void setLanguage(String language) {
+    currLang.value = language;
+  }
+
+  @override
+  final RxList<ViewPointSegment> viewPointList = <ViewPointSegment>[].obs;
+
+  @override
+  final RxBool showVP = true.obs;
+
+  int reloadCount = 0;
+  @override
+  Future<void> queryVideoUrl({
+    bool fromReset = false,
+    bool autoFullScreenFlag = false,
+  }) async {
+    if (fromReset) reloadCount++;
   }
 
   @override
@@ -275,6 +380,9 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
   bool isShowOnlineTotal = false;
 
   @override
+  final RxString total = '1'.obs;
+
+  @override
   final Rx<VideoDetailData> videoDetail = Rx<VideoDetailData>(
     VideoDetailData(
       title: '测试视频标题',
@@ -288,7 +396,10 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
 
   BaseEpisodeItem? changedEpisode;
   @override
-  Future<bool> onChangeEpisode(BaseEpisodeItem item, {bool isStein = false}) async {
+  Future<bool> onChangeEpisode(
+    BaseEpisodeItem item, {
+    bool isStein = false,
+  }) async {
     changedEpisode = item;
     return true;
   }
@@ -330,11 +441,38 @@ class FakeUgcIntroController extends Fake implements UgcIntroController {
   @override
   void onCancelTriple([bool isTapUp = false]) {}
 
+  int coinCount = 0;
   @override
-  void actionCoinVideo() {}
+  void actionCoinVideo() {
+    coinCount++;
+  }
+
+  int favSheetCount = 0;
+  @override
+  void showFavBottomSheet(BuildContext context, {bool isLongPress = false}) {
+    favSheetCount++;
+  }
+
+  int likeCount = 0;
+  @override
+  Future<void> actionLikeVideo() async {
+    likeCount++;
+  }
 
   @override
-  void showFavBottomSheet(BuildContext context, {bool isLongPress = false}) {}
+  final RxBool hasLater = false.obs;
+
+  @override
+  Future<void> viewLater() async {
+    hasLater.toggle();
+  }
+
+  int playRelatedCount = 0;
+  @override
+  bool playRelated() {
+    playRelatedCount++;
+    return true;
+  }
 }
 
 Widget _buildTestApp({
@@ -342,10 +480,13 @@ Widget _buildTestApp({
   FakeUgcIntroController? introController,
   Widget? child,
   VoidCallback? onSendDanmaku,
-  VoidCallback? onRefresh,
   NavigatorObserver? observer,
+  TvHudUpstream? upstream,
+  VoidCallback? onRefresh,
 }) {
   return MaterialApp(
+    // Upstream's panels open on `Get.key` (PageUtils.showVideoBottomSheet).
+    navigatorKey: Get.key,
     navigatorObservers: [
       ?observer,
       FlutterSmartDialog.observer,
@@ -364,6 +505,7 @@ Widget _buildTestApp({
           introController: introController,
           onSendDanmaku: onSendDanmaku ?? () {},
           onRefresh: onRefresh,
+          debugUpstream: upstream,
           child: child ?? Container(color: Colors.black),
         ),
       ),
@@ -377,8 +519,9 @@ Future<void> _pumpHud(
   FakeUgcIntroController? introController,
   Widget? child,
   VoidCallback? onSendDanmaku,
-  VoidCallback? onRefresh,
   NavigatorObserver? observer,
+  TvHudUpstream? upstream,
+  VoidCallback? onRefresh,
 }) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1.0;
@@ -390,8 +533,9 @@ Future<void> _pumpHud(
       introController: introController,
       child: child,
       onSendDanmaku: onSendDanmaku,
-      onRefresh: onRefresh,
       observer: observer,
+      upstream: upstream,
+      onRefresh: onRefresh,
     ),
   );
   await tester.pumpAndSettle();
@@ -406,7 +550,9 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('tv_hud_test_');
     Hive.init(tempDir.path);
     try {
-      GStorage.setting = await Hive.openBox('setting');
+      // In memory: the HUD saves its groups from inside widget tests, whose
+      // fake clock would never let a file write finish.
+      GStorage.setting = await Hive.openBox('setting', bytes: Uint8List(0));
     } catch (_) {}
     try {
       GStorage.video = await Hive.openBox('video');
@@ -416,9 +562,13 @@ void main() {
     } catch (_) {}
   });
 
-
-  setUp(() {
+  setUp(() async {
     TvPlatform.setTvModeForTesting(true);
+    await GStorage.setting.deleteAll(const [
+      TvHudGroups.topRightKey,
+      TvHudGroups.bottomKey,
+      TvHudGroups.showLabelsKey,
+    ]);
   });
 
   tearDown(() {
@@ -427,10 +577,9 @@ void main() {
 
   group('TvPlayerHud Transport Controls & Focus Traversal (F15)', () {
     testWidgets(
-      'fullscreen surface opens HUD via Select or Up key and focuses play/pause pill',
+      'fullscreen surface opens HUD via the Up key and focuses the time bar',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
 
         await tester.pumpWidget(
           _buildTestApp(plPlayerController: pl),
@@ -438,52 +587,74 @@ void main() {
         await tester.pumpAndSettle();
 
         // Initially in fullscreen, HUD overlay is not visible.
-        expect(find.text('全屏播放'), findsNothing);
-        expect(find.text('暂停'), findsNothing);
+        expect(_timeBar, findsNothing);
 
         // Press Up arrow on remote -> opens HUD overlay.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // HUD overlay is now visible with transport buttons.
-        expect(find.text('暂停'), findsOneWidget);
-        expect(find.text('倍速: 1.0x'), findsOneWidget);
-        expect(find.text('画面: 自动'), findsOneWidget);
+        // The time bar has focus; the default bottom row is drawn (画质,
+        // 字幕 and the episodes hide without a video page).
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+        expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
+        expect(find.byKey(TvHudAction.keyOf('videoFit')), findsOneWidget);
+        expect(
+          _textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'),
+          findsOneWidget,
+        );
 
-        // Verify play/pause pill is visible and interactive.
-        expect(find.text('暂停'), findsOneWidget);
-
-        // Navigate right to next pill (Danmaku toggle).
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        // Down: the bottom row's first button.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(find.text('弹幕: 开'), findsOneWidget);
+        expect(_focusOn(TvHudAction.keyOf('speed')), isTrue);
+
+        // Up: back to the time bar.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
       },
     );
 
     testWidgets(
-      'split-screen mode displays quick strip and navigates to 播控 to open HUD',
+      'split-screen mode shows the two-button quick strip; the menu key '
+      'opens the HUD',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = false;
+        final pl = FakePlPlayerController()..isFullScreen.value = false;
 
         await tester.pumpWidget(
           _buildTestApp(plPlayerController: pl),
         );
         await tester.pumpAndSettle();
 
-        // In split-screen mode, Quick Strip is rendered at top-left.
-        expect(find.text('全屏'), findsOneWidget);
-        expect(find.text('播/暂'), findsOneWidget);
-        expect(find.text('播控'), findsOneWidget);
-        expect(find.text('返回'), findsOneWidget);
+        // 全屏 and 播放/暂停, icon-only; 播控 and 返回 are gone.
+        expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsOneWidget);
+        expect(find.byKey(TvPlayerHud.quickPlayPauseKey), findsOneWidget);
+        expect(find.text('播控'), findsNothing);
+        expect(find.text('返回'), findsNothing);
+        expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
+        // 播放/暂停 shows the current state.
+        expect(
+          find.descendant(
+            of: find.byKey(TvPlayerHud.quickPlayPauseKey),
+            matching: find.byIcon(Icons.pause_rounded),
+          ),
+          findsOneWidget,
+        );
+        pl.emitPlayerStatus(PlayerStatus.paused);
+        await tester.pump();
+        expect(
+          find.descendant(
+            of: find.byKey(TvPlayerHud.quickPlayPauseKey),
+            matching: find.byIcon(Icons.play_arrow_rounded),
+          ),
+          findsOneWidget,
+        );
 
-        // Tap or select '播控' pill -> opens 10-foot HUD overlay.
-        await tester.tap(find.text('播控'));
+        await tester.sendKeyEvent(LogicalKeyboardKey.contextMenu);
         await tester.pumpAndSettle();
-
-        // 10-foot HUD is now open.
-        expect(find.text('全屏播放'), findsOneWidget);
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBar, findsOneWidget);
+        expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsNothing);
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
       },
     );
   });
@@ -508,42 +679,45 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 40));
-        expect(find.text('⏩ 00:40 / 05:00'), findsOneWidget);
+        expect(_seekText('00:40 / 05:00'), findsOneWidget);
+        // White Material icons, not the emoji Android draws as orange squares.
+        expect(_seekIcon(Icons.fast_forward_rounded), findsOneWidget);
+        expect(find.textContaining('⏩'), findsNothing);
 
         // Step 2: 2nd forward seek at 100ms (<450ms gap, consecutive = 2, multiplier = 1x -> +10s)
         await tester.pump(const Duration(milliseconds: 100));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 50));
-        expect(find.text('⏩ 00:50 / 05:00'), findsOneWidget);
+        expect(_seekText('00:50 / 05:00'), findsOneWidget);
 
         // Step 3: 3rd forward seek at 100ms (<450ms gap, consecutive = 3, multiplier = 2x -> +20s)
         await tester.pump(const Duration(milliseconds: 100));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 70));
-        expect(find.text('⏩ 01:10 / 05:00'), findsOneWidget);
+        expect(_seekText('01:10 / 05:00'), findsOneWidget);
 
         // Step 4: 4th forward seek at 100ms (consecutive = 4, multiplier = 2x -> +20s)
         await tester.pump(const Duration(milliseconds: 100));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 90));
-        expect(find.text('⏩ 01:30 / 05:00'), findsOneWidget);
+        expect(_seekText('01:30 / 05:00'), findsOneWidget);
 
         // Step 5: 5th forward seek at 100ms (consecutive = 5, multiplier = 2x -> +20s)
         await tester.pump(const Duration(milliseconds: 100));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 110));
-        expect(find.text('⏩ 01:50 / 05:00'), findsOneWidget);
+        expect(_seekText('01:50 / 05:00'), findsOneWidget);
 
         // Step 6: 6th forward seek at 100ms (consecutive = 6, multiplier = 3x -> +30s)
         await tester.pump(const Duration(milliseconds: 100));
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 140));
-        expect(find.text('⏩ 02:20 / 05:00'), findsOneWidget);
+        expect(_seekText('02:20 / 05:00'), findsOneWidget);
 
         // Verify all 6 targets recorded properly with progressive scaling
         expect(pl.seekTargets, [
@@ -576,7 +750,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
         expect(pl.seekTargets.last, const Duration(seconds: 300));
-        expect(find.text('⏩ 05:00 / 05:00'), findsOneWidget);
+        expect(_seekText('05:00 / 05:00'), findsOneWidget);
 
         // Reset and test backward seek clamping to 0
         await tester.pump(const Duration(milliseconds: 1500));
@@ -588,7 +762,9 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         await tester.pump();
         expect(pl.seekTargets.last, Duration.zero);
-        expect(find.text('⏪ 00:00 / 05:00'), findsOneWidget);
+        expect(_seekText('00:00 / 05:00'), findsOneWidget);
+        expect(_seekIcon(Icons.fast_rewind_rounded), findsOneWidget);
+        expect(_seekIcon(Icons.fast_forward_rounded), findsNothing);
       },
     );
   });
@@ -610,15 +786,15 @@ void main() {
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
-        expect(find.text('⏩ 00:40 / 05:00'), findsOneWidget);
+        expect(_seekText('00:40 / 05:00'), findsOneWidget);
 
         // Before 1400ms timer expires, OSD text is still visible
         await tester.pump(const Duration(milliseconds: 1000));
-        expect(find.text('⏩ 00:40 / 05:00'), findsOneWidget);
+        expect(_seekText('00:40 / 05:00'), findsOneWidget);
 
         // After 1400ms timer expires (1000ms + 500ms = 1500ms), OSD banner disappears
         await tester.pump(const Duration(milliseconds: 500));
-        expect(find.text('⏩ 00:40 / 05:00'), findsNothing);
+        expect(_seekText('00:40 / 05:00'), findsNothing);
 
         // Subsequent seek starts fresh from state.position (30s) + 10s = 40s (1x)
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -674,7 +850,7 @@ void main() {
         // Seek forward
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump();
-        expect(find.text('⏩ 00:40 / 05:00'), findsOneWidget);
+        expect(_seekText('00:40 / 05:00'), findsOneWidget);
 
         // Play/Pause toggle resets virtual seek target
         await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
@@ -684,11 +860,11 @@ void main() {
         // Open HUD and close via Escape: verify hideHud resets state cleanly
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBar, findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsNothing);
+        expect(_timeBar, findsNothing);
       },
     );
   });
@@ -697,8 +873,7 @@ void main() {
     testWidgets(
       'PopScope intercepts back key when HUD is open to dismiss HUD without popping route',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
+        final pl = FakePlPlayerController()..isFullScreen.value = true;
 
         late BuildContext playerContext;
 
@@ -733,7 +908,7 @@ void main() {
         // Open HUD
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBar, findsOneWidget);
 
         // PopScope canPop is now false when HUD is open
         popScope = tester.widget<PopScope>(
@@ -750,7 +925,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // HUD is now dismissed and canPop is restored to true
-        expect(find.text('暂停'), findsNothing);
+        expect(_timeBar, findsNothing);
         popScope = tester.widget<PopScope>(
           find.byWidgetPredicate((w) => w is PopScope),
         );
@@ -764,8 +939,7 @@ void main() {
     testWidgets(
       'PopScope allows back key to pop route when HUD is closed',
       (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = false;
+        final pl = FakePlPlayerController()..isFullScreen.value = false;
 
         late BuildContext playerContext;
 
@@ -834,23 +1008,27 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Find and click '倍速: 1.0x'
-        final speedBtnFinder = find.text('倍速: 1.0x');
+        final speedBtnFinder = find.byKey(TvHudAction.keyOf('speed'));
         expect(speedBtnFinder, findsOneWidget);
+        expect(
+          find.descendant(of: speedBtnFinder, matching: find.text('倍速: 1.0x')),
+          findsOneWidget,
+        );
         await tester.tap(speedBtnFinder);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选择播放倍速'), findsOneWidget);
-        expect(find.text('1.0x'), findsOneWidget);
-        expect(find.text('1.25x'), findsOneWidget);
+        // Dialog opened, focus on the current speed.
+        expect(_textIn(TvPlayerHud.optionListKey, '选择播放倍速'), findsOneWidget);
+        _expectOption(1, '1.0x');
+        _expectOption(2, '1.25x');
+        expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
 
         // Select 1.25x
-        await tester.tap(find.text('1.25x'));
+        await tester.tap(_optionRow(2));
         await tester.pumpAndSettle();
 
         // Dialog dismissed and speed updated
-        expect(find.text('选择播放倍速'), findsNothing);
+        expect(_optionList, findsNothing);
         expect(pl.playbackSpeed, 1.25);
         await tester.pump(const Duration(seconds: 3));
       },
@@ -870,19 +1048,25 @@ void main() {
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('画面: 自动'));
+        await tester.tap(find.byKey(TvHudAction.keyOf('videoFit')));
         await tester.pumpAndSettle();
 
-        for (final fit in TvVideoPlane.supportedFits) {
-          expect(find.text(fit.desc), findsOneWidget, reason: fit.desc);
+        const List<VideoFitType> fits = TvVideoPlane.supportedFits;
+        for (int i = 0; i < fits.length; i++) {
+          _expectOption(i, fits[i].desc);
         }
+        expect(_optionRow(fits.length), findsNothing);
         for (final fit in const [
           VideoFitType.cover,
           VideoFitType.fitWidth,
           VideoFitType.fitHeight,
           VideoFitType.none,
         ]) {
-          expect(find.text(fit.desc), findsNothing, reason: fit.desc);
+          expect(
+            _textIn(TvPlayerHud.optionListKey, fit.desc),
+            findsNothing,
+            reason: fit.desc,
+          );
         }
         await tester.pump(const Duration(seconds: 3));
       });
@@ -947,60 +1131,32 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Find and tap '画面: 自动'
-        final fitBtnFinder = find.text('画面: 自动');
+        final fitBtnFinder = find.byKey(TvHudAction.keyOf('videoFit'));
         expect(fitBtnFinder, findsOneWidget);
+        expect(
+          find.descendant(of: fitBtnFinder, matching: find.text('画面: 自动')),
+          findsOneWidget,
+        );
         await tester.tap(fitBtnFinder);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选择画面比例'), findsOneWidget);
+        // Dialog opened, focus on the current fit.
+        expect(_textIn(TvPlayerHud.optionListKey, '选择画面比例'), findsOneWidget);
+        final int containRow = VideoFitType.values.indexOf(
+          VideoFitType.contain,
+        );
+        expect(_focusOn(TvPlayerHud.optionItemKey(containRow)), isTrue);
 
         // Select '拉伸'
-        final fillFinder = find.text('拉伸');
-        expect(fillFinder, findsOneWidget);
-        await tester.tap(fillFinder);
+        final int fillRow = VideoFitType.values.indexOf(VideoFitType.fill);
+        _expectOption(fillRow, '拉伸');
+        await tester.tap(_optionRow(fillRow));
         await tester.pumpAndSettle();
 
         // Dialog dismissed and fit updated
-        expect(find.text('选择画面比例'), findsNothing);
+        expect(_optionList, findsNothing);
         expect(pl.videoFit.value, VideoFitType.fill);
         await tester.pump(const Duration(seconds: 3));
-      },
-    );
-
-    testWidgets(
-      'Danmaku settings dialog opens and updates danmaku display area',
-      (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
-
-        await _pumpHud(tester, plPlayerController: pl);
-
-        // Open HUD
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pumpAndSettle();
-
-        // Tap '弹幕设置'
-        final danmakuSetBtn = find.text('弹幕设置');
-        expect(danmakuSetBtn, findsOneWidget);
-        await tester.tap(danmakuSetBtn);
-        await tester.pumpAndSettle();
-
-        // Dialog opened
-        expect(find.text('弹幕设置 (遥控器方向键选择)'), findsOneWidget);
-        expect(find.text('显示区域'), findsOneWidget);
-        expect(find.text('半屏'), findsOneWidget);
-
-        // Select '半屏' (value 0.5)
-        await tester.tap(find.text('半屏'));
-        await tester.pumpAndSettle();
-        expect(DanmakuOptions.danmakuShowArea, 0.5);
-
-        // Close dialog via escape key
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
-        expect(find.text('弹幕设置 (遥控器方向键选择)'), findsNothing);
       },
     );
 
@@ -1010,7 +1166,9 @@ void main() {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
           ..cid = 1001;
-        final videoDetailCtr = FakeVideoDetailController(plPlayerController: pl);
+        final videoDetailCtr = FakeVideoDetailController(
+          plPlayerController: pl,
+        );
         final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr);
 
         await _pumpHud(
@@ -1023,66 +1181,30 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
 
-        // Tap '选集 (3)'
-        final epBtn = find.text('选集 (3)');
-        expect(epBtn, findsOneWidget);
+        final epBtn = find.byKey(TvHudAction.keyOf('episodes.list'));
+        expect(
+          find.descendant(of: epBtn, matching: find.text('选集 (3)')),
+          findsOneWidget,
+        );
         await tester.tap(epBtn);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选集 (3)'), findsWidgets); // Title and list
-        expect(find.text('P1  第一集：初始篇'), findsOneWidget);
-        expect(find.text('P2  第二集：进阶篇'), findsOneWidget);
-        expect(find.text('P3  第三集：完结篇'), findsOneWidget);
+        // Dialog opened, focus on the current episode.
+        expect(_textIn(TvPlayerHud.optionListKey, '选集 (3)'), findsOneWidget);
+        _expectOption(0, 'P1  第一集：初始篇');
+        _expectOption(1, 'P2  第二集：进阶篇');
+        _expectOption(2, 'P3  第三集：完结篇');
+        expect(_optionRow(3), findsNothing);
+        expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
 
         // Select P2
-        await tester.tap(find.text('P2  第二集：进阶篇'));
+        await tester.tap(_optionRow(1));
         await tester.pumpAndSettle();
+        expect(_optionList, findsNothing);
 
         // Dialog dismissed and episode changed callback fired
         expect(introCtr.changedEpisode, isNotNull);
         expect((introCtr.changedEpisode as Part).cid, 1002);
-      },
-    );
-
-    testWidgets(
-      'Quality dialog opens, lists available video qualities, selects new quality',
-      (tester) async {
-        final pl = FakePlPlayerController()
-          ..isFullScreen.value = true;
-        final videoDetailCtr = FakeVideoDetailController(plPlayerController: pl);
-        final introCtr = FakeUgcIntroController(videoDetailCtr: videoDetailCtr);
-
-        await _pumpHud(
-          tester,
-          plPlayerController: pl,
-          introController: introCtr,
-        );
-
-        // Open HUD
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pumpAndSettle();
-
-        // Tap '画质: 1080P'
-        final qaBtn = find.text('画质: 1080P');
-        expect(qaBtn, findsOneWidget);
-        await tester.tap(qaBtn);
-        await tester.pumpAndSettle();
-
-        // Dialog opened
-        expect(find.text('选择视频画质'), findsOneWidget);
-        expect(find.text('1080P 高清  (mp4)'), findsOneWidget);
-        expect(find.text('720P 高清  (mp4)'), findsOneWidget);
-
-        // Select 720P
-        await tester.tap(find.text('720P 高清  (mp4)'));
-        await tester.pumpAndSettle();
-
-        // Dialog dismissed and quality updated
-        expect(find.text('选择视频画质'), findsNothing);
-        expect(videoDetailCtr.currentVideoQa.value, VideoQuality.high720);
-        expect(videoDetailCtr.updatePlayerCount, 1);
-        await tester.pump(const Duration(seconds: 3));
       },
     );
   });
@@ -1129,7 +1251,7 @@ void main() {
     );
 
     testWidgets(
-      'fullscreen with HUD open on Play/Pause pill: holding Select activates 3x speed and pauses HUD auto-hide timer',
+      'fullscreen with HUD open on the time bar: holding Select activates 3x speed and pauses HUD auto-hide timer',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
@@ -1137,13 +1259,13 @@ void main() {
 
         await _pumpHud(tester, plPlayerController: pl);
 
-        // Open HUD via Up arrow -> Play/Pause pill ('暂停') is autofocused.
+        // Open HUD via Up arrow -> the time bar is focused.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
 
-        // Hold Select on '暂停' pill -> activates 3x speed and keeps HUD alive
-        // past the 5-second auto-hide timeout while held.
+        // Hold Select on the time bar -> activates 3x speed and keeps HUD
+        // alive past the 5-second auto-hide timeout while held.
         await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
         await tester.pump(const Duration(milliseconds: 300));
         expect(pl.longPressStatus.value, isTrue);
@@ -1151,7 +1273,7 @@ void main() {
 
         await tester.pump(const Duration(seconds: 6));
         expect(pl.longPressStatus.value, isTrue);
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBar, findsOneWidget);
 
         // Release Select -> restores normal speed without pausing video.
         await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
@@ -1159,7 +1281,7 @@ void main() {
         expect(pl.longPressStatus.value, isFalse);
         expect(pl.doubleTapCenterCount, 0);
 
-        // Short-press Select on '暂停' pill -> toggles play/pause.
+        // Short-press Select on the time bar -> toggles play/pause.
         await tester.sendKeyEvent(LogicalKeyboardKey.select);
         await tester.pump();
         expect(pl.doubleTapCenterCount, 1);
@@ -1168,14 +1290,14 @@ void main() {
     );
 
     testWidgets(
-      'split-screen Quick Strip: holding Select on 全屏 or 播/暂 activates 3x speed; short press triggers pill action',
+      'split-screen Quick Strip: holding Select on 全屏 or 播放/暂停 activates 3x speed; short press triggers pill action',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = false
           ..playerStatus = PlayerStatus.playing;
 
         await _pumpHud(tester, plPlayerController: pl);
-        expect(find.text('全屏'), findsOneWidget);
+        expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
 
         // Hold Select on autofocused '全屏' pill -> activates 3x speed without entering fullscreen.
         await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
@@ -1199,7 +1321,7 @@ void main() {
 
   group('TvPlayerHud code review fixes (M10: R8, R10, R11, R12)', () {
     testWidgets(
-      'R8: HUD 暂停 pill keeps Hold-Select 3x speed after D-pad moves away and back',
+      'R8: the time bar keeps Hold-Select 3x speed after D-pad moves away and back',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
@@ -1209,16 +1331,16 @@ void main() {
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
 
-        // Leave the pill and come back by D-pad: traversal, not autofocus,
+        // Leave the bar and come back by D-pad: traversal, not autofocus,
         // now decides which node owns primary focus.
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('弹幕: 开'), isTrue);
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        expect(_focusOn(TvHudAction.keyOf('speed')), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('暂停'), isTrue);
+        expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
         await tester.pump(const Duration(milliseconds: 300));
@@ -1238,19 +1360,19 @@ void main() {
     );
 
     testWidgets(
-      'R8: Quick Strip 全屏 and 播/暂 keep Hold-Select 3x speed after D-pad moves away and back',
+      'R8: Quick Strip 全屏 and 播放/暂停 keep Hold-Select 3x speed after D-pad moves away and back',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = false
           ..playerStatus = PlayerStatus.playing;
 
         await _pumpHud(tester, plPlayerController: pl);
-        expect(_pillHasPrimaryFocus('全屏'), isTrue);
+        expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
 
-        // 全屏 -> 播/暂: hold Select on 播/暂.
+        // 全屏 -> 播放/暂停: hold Select on 播放/暂停.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('播/暂'), isTrue);
+        expect(_focusOn(TvPlayerHud.quickPlayPauseKey), isTrue);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
         await tester.pump(const Duration(milliseconds: 300));
@@ -1261,10 +1383,10 @@ void main() {
         expect(pl.longPressStatus.value, isFalse);
         expect(pl.doubleTapCenterCount, 0);
 
-        // 播/暂 -> 全屏: hold Select on 全屏 without entering fullscreen.
+        // 播放/暂停 -> 全屏: hold Select on 全屏 without entering fullscreen.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('全屏'), isTrue);
+        expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
         await tester.pump(const Duration(milliseconds: 300));
@@ -1285,13 +1407,11 @@ void main() {
     testWidgets(
       'R8: touch taps on a pill still run its action',
       (tester) async {
-        final pl = FakePlPlayerController()..isFullScreen.value = true;
+        final pl = FakePlPlayerController()..isFullScreen.value = false;
 
         await _pumpHud(tester, plPlayerController: pl);
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pumpAndSettle();
 
-        await tester.tap(find.text('暂停'));
+        await tester.tap(find.byKey(TvPlayerHud.quickPlayPauseKey));
         await tester.pump();
         expect(pl.doubleTapCenterCount, 1);
       },
@@ -1322,25 +1442,25 @@ void main() {
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('选集 (60)'));
+        await tester.tap(find.byKey(TvHudAction.keyOf('episodes.list')));
         await tester.pumpAndSettle();
 
         // The list is lazy: item 0 is far outside the viewport, so the current
         // episode is only built (and its autofocus only fires) if the list
         // starts scrolled to it.
-        expect(find.text('P1  第1集'), findsNothing);
-        expect(find.text('P45  第45集'), findsOneWidget);
-        expect(_pillHasPrimaryFocus('P45  第45集'), isTrue);
+        expect(_optionRow(0), findsNothing);
+        _expectOption(44, 'P45  第45集');
+        expect(_focusOn(TvPlayerHud.optionItemKey(44)), isTrue);
         final Rect viewport = tester.getRect(find.byType(ListView));
         expect(
-          viewport.contains(tester.getRect(find.text('P45  第45集')).center),
+          viewport.contains(tester.getRect(_optionRow(44)).center),
           isTrue,
         );
 
         // D-pad stepping continues from the current episode, not from item 0.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('P46  第46集'), isTrue);
+        expect(_focusOn(TvPlayerHud.optionItemKey(45)), isTrue);
       },
     );
 
@@ -1374,11 +1494,12 @@ void main() {
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('选集 (40)'));
+        await tester.tap(find.byKey(TvHudAction.keyOf('episodes.list')));
         await tester.pumpAndSettle();
 
         // Still opens on the current episode, focused (the thicker border).
-        expect(_pillHasPrimaryFocus('P30  第30集'), isTrue);
+        _expectOption(29, 'P30  第30集');
+        expect(_focusOn(TvPlayerHud.optionItemKey(29)), isTrue);
 
         final Iterable<RenderParagraph> labels = tester
             .renderObjectList<RenderParagraph>(
@@ -1399,7 +1520,7 @@ void main() {
         // D-pad stepping still lands on the next episode.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('P31  第31集'), isTrue);
+        expect(_focusOn(TvPlayerHud.optionItemKey(30)), isTrue);
       },
     );
 
@@ -1414,17 +1535,23 @@ void main() {
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('倍速: 0.5x'));
+        expect(
+          _textIn(TvHudAction.keyOf('speed'), '倍速: 0.5x'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(TvHudAction.keyOf('speed')));
         await tester.pumpAndSettle();
 
-        expect(find.text('选择播放倍速'), findsOneWidget);
-        expect(_pillHasPrimaryFocus('0.5x'), isTrue);
-        expect(find.text('2.0x'), findsOneWidget);
+        expect(_textIn(TvPlayerHud.optionListKey, '选择播放倍速'), findsOneWidget);
+        _expectOption(0, '0.5x');
+        expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
+        // Six rows fit, so the last is built too: the list starts at the top.
+        _expectOption(5, '2.0x');
       },
     );
 
     testWidgets(
-      'R11: HUD Play/Pause label follows the player status event, not the key press',
+      'R11: the time bar\'s play/pause icon follows the player status event, not the key press',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
@@ -1434,29 +1561,29 @@ void main() {
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBarIcon(Icons.pause_rounded), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.select);
         await tester.pump();
         expect(pl.doubleTapCenterCount, 1);
-        // The player has not reported the new state yet, so the label must not
+        // The player has not reported the new state yet, so the icon must not
         // claim it has.
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBarIcon(Icons.pause_rounded), findsOneWidget);
 
         await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text('播放'), findsOneWidget);
-        expect(find.text('暂停'), findsNothing);
+        expect(_timeBarIcon(Icons.play_arrow_rounded), findsOneWidget);
+        expect(_timeBarIcon(Icons.pause_rounded), findsNothing);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.select);
         await tester.pump(const Duration(milliseconds: 100));
         expect(pl.doubleTapCenterCount, 2);
-        expect(find.text('暂停'), findsOneWidget);
-        expect(find.text('播放'), findsNothing);
+        expect(_timeBarIcon(Icons.pause_rounded), findsOneWidget);
+        expect(_timeBarIcon(Icons.play_arrow_rounded), findsNothing);
       },
     );
 
     testWidgets(
-      'R11: status changes that do not come from the HUD also update the label',
+      'R11: status changes that do not come from the HUD also update the icon',
       (tester) async {
         final pl = FakePlPlayerController()
           ..isFullScreen.value = true
@@ -1465,19 +1592,19 @@ void main() {
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBarIcon(Icons.pause_rounded), findsOneWidget);
 
         pl.emitPlayerStatus(PlayerStatus.paused);
         await tester.pump();
-        expect(find.text('播放'), findsOneWidget);
+        expect(_timeBarIcon(Icons.play_arrow_rounded), findsOneWidget);
 
         pl.emitPlayerStatus(PlayerStatus.completed);
         await tester.pump();
-        expect(find.text('播放'), findsOneWidget);
+        expect(_timeBarIcon(Icons.play_arrow_rounded), findsOneWidget);
 
         pl.emitPlayerStatus(PlayerStatus.playing);
         await tester.pump();
-        expect(find.text('暂停'), findsOneWidget);
+        expect(_timeBarIcon(Icons.pause_rounded), findsOneWidget);
       },
     );
 
@@ -1553,35 +1680,47 @@ void main() {
     );
 
     testWidgets(
-      'R19: the HUD clock keeps ticking while the HUD stays open',
+      'M14.3: the top bar has the title with the viewer count under it, and '
+      'no clock or 退出全屏 button',
       (tester) async {
         final pl = FakePlPlayerController()..isFullScreen.value = true;
+        final vdc = FakeVideoDetailController(plPlayerController: pl);
+        final intro = FakeUgcIntroController(videoDetailCtr: vdc)
+          ..isShowOnlineTotal = true
+          ..total.value = '123';
 
-        await _pumpHud(tester, plPlayerController: pl);
+        await _pumpHud(tester, plPlayerController: pl, introController: intro);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
 
-        final DateFormat format = DateFormat('HH:mm');
-        String clock() =>
-            format.format(WidgetsBinding.instance.samplingClock.now());
-        final Finder clockFinder = find.byWidgetPredicate(
-          (Widget w) => w.runtimeType.toString() == '_TvHudClock',
+        final Rect title = tester.getRect(find.byKey(TvPlayerHud.titleKey));
+        final Rect viewers = tester.getRect(find.byKey(TvPlayerHud.viewersKey));
+        expect(
+          tester.widget<Text>(find.byKey(TvPlayerHud.viewersKey)).data,
+          '123人正在看',
         );
-
-        final String opened = clock();
-        final Element clockElement = tester.element(clockFinder);
-        expect(find.text(opened), findsOneWidget);
-
-        // Two minutes of D-pad activity inside the 5 s auto-hide window: the
-        // HUD never closes, so the same clock has to move on by itself.
-        for (int i = 0; i < 30; i++) {
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-          await tester.pump(const Duration(seconds: 4));
-        }
-        expect(tester.element(clockFinder), same(clockElement));
-        expect(clock(), isNot(opened));
-        expect(find.text(clock()), findsOneWidget);
-        expect(find.text(opened), findsNothing);
+        expect(viewers.top, greaterThanOrEqualTo(title.bottom));
+        expect(
+          tester
+              .widget<Text>(find.byKey(TvPlayerHud.viewersKey))
+              .style!
+              .fontSize,
+          lessThan(
+            tester
+                .widget<Text>(find.byKey(TvPlayerHud.titleKey))
+                .style!
+                .fontSize!,
+          ),
+        );
+        expect(
+          find.byWidgetPredicate(
+            (Widget w) => w.runtimeType.toString() == '_TvHudClock',
+          ),
+          findsNothing,
+        );
+        expect(find.text('退出全屏'), findsNothing);
+        expect(find.text('关闭面板'), findsNothing);
+        expect(find.textContaining('快退'), findsNothing);
       },
     );
 
@@ -1658,30 +1797,65 @@ void main() {
     );
   });
 
+  group('action table (M14.2)', _actionTableTests);
+
   group('recorded D-pad paths (M13.3)', _recordedPaths);
+
+  group('layout, groups and editor (M14.3)', _layoutTests);
 }
 
-/// The private `_TvHudPillButton` that owns the [label] text.
-Finder _pill(String label) => find.ancestor(
-  of: find.text(label),
-  matching: find.byWidgetPredicate(
-    (w) => w.runtimeType.toString() == '_TvHudPillButton',
-  ),
+/// The remote's menu key, which opens and closes the HUD.
+const LogicalKeyboardKey menuKey = LogicalKeyboardKey.contextMenu;
+
+/// The HUD's time bar; present while the full HUD is open over a video.
+final Finder _timeBar = find.byKey(TvPlayerHud.timeBarKey);
+
+/// The time bar's play/pause status icon.
+Finder _timeBarIcon(IconData icon) =>
+    find.descendant(of: _timeBar, matching: find.byIcon(icon));
+
+/// The seek preview's time text.
+Finder _seekText(String text) => find.descendant(
+  of: find.byKey(TvPlayerHud.seekPreviewKey),
+  matching: find.text(text),
 );
 
-/// Whether the primary focus node lives inside the pill labelled [label].
-bool _pillHasPrimaryFocus(String label) {
-  final BuildContext? focusContext = FocusManager.instance.primaryFocus?.context;
+Finder _seekIcon(IconData icon) => find.descendant(
+  of: find.byKey(TvPlayerHud.seekPreviewKey),
+  matching: find.byIcon(icon),
+);
+
+/// Whether the primary focus node lives inside the widget with [key].
+bool _focusOn(Key key) {
+  final BuildContext? focusContext =
+      FocusManager.instance.primaryFocus?.context;
   if (focusContext == null) return false;
   return find
       .descendant(
-        of: _pill(label),
+        of: find.byKey(key),
         matching: find.byElementPredicate((e) => identical(e, focusContext)),
         matchRoot: true,
       )
       .evaluate()
       .isNotEmpty;
 }
+
+/// [text] inside the widget with [key].
+Finder _textIn(Key key, String text) =>
+    find.descendant(of: find.byKey(key), matching: find.text(text));
+
+/// The open TV option list (倍速, 画面比例, 选集, 字幕 and the rest).
+final Finder _optionList = find.byKey(TvPlayerHud.optionListKey);
+
+/// The option list's row at [index].
+Finder _optionRow(int index) => find.byKey(TvPlayerHud.optionItemKey(index));
+
+/// Expects the option list's row at [index] to be labelled [label].
+void _expectOption(int index, String label) => expect(
+  find.descendant(of: _optionRow(index), matching: find.text(label)),
+  findsOneWidget,
+  reason: 'option row $index',
+);
 
 // ---------------------------------------------------------------------------
 // Recorded D-pad paths (M13.3) for the video page in split view, its
@@ -1955,7 +2129,12 @@ class _VideoPageScene {
     ),
   );
 
-  Widget build(FakePlPlayerController pl, {int tab = 0}) => GetMaterialApp(
+  Widget build(
+    FakePlPlayerController pl, {
+    int tab = 0,
+    FakeUgcIntroController? intro,
+    TvHudUpstream? upstream,
+  }) => GetMaterialApp(
     navigatorObservers: [FlutterSmartDialog.observer],
     builder: FlutterSmartDialog.init(
       builder: (context, child) => TvNavigation(child: child!),
@@ -1979,6 +2158,8 @@ class _VideoPageScene {
                   height: 315,
                   child: TvPlayerHud(
                     plPlayerController: pl,
+                    introController: intro,
+                    debugUpstream: upstream,
                     onSendDanmaku: () {},
                     child: Container(color: Colors.black),
                   ),
@@ -2058,12 +2239,17 @@ Future<_VideoPageScene> _pumpVideoPage(
   WidgetTester tester, {
   bool fullScreen = false,
   int tab = 0,
+  FakePlPlayerController? player,
+  FakeUgcIntroController? intro,
+  TvHudUpstream? upstream,
 }) async {
   useTvScreen(tester);
   final _VideoPageScene scene = _VideoPageScene();
-  final FakePlPlayerController pl = FakePlPlayerController()
+  final FakePlPlayerController pl = (player ?? FakePlPlayerController())
     ..isFullScreen.value = fullScreen;
-  await tester.pumpWidget(scene.build(pl, tab: tab));
+  await tester.pumpWidget(
+    scene.build(pl, tab: tab, intro: intro, upstream: upstream),
+  );
   await tester.pumpAndSettle();
   return scene;
 }
@@ -2073,11 +2259,7 @@ void _recordedPaths() {
       'list beside them', (tester) async {
     await _pumpVideoPage(tester);
     await walkPath(tester, '全屏', [
-      (dpadRight, '播/暂'),
-      (dpadRight, '播控'),
-      (dpadRight, '返回'),
-      (dpadLeft, '播控'),
-      (dpadLeft, '播/暂'),
+      (dpadRight, '暂停'),
       (dpadLeft, '全屏'),
       (dpadDown, 'title'),
       (dpadDown, '点赞'),
@@ -2148,23 +2330,1498 @@ void _recordedPaths() {
     ]);
   });
 
-  testWidgets('player HUD: 播控 opens it, the D-pad moves through it, and '
-      'Back closes it', (tester) async {
+  testWidgets('player HUD: the menu key opens it on the time bar, the D-pad '
+      'moves through the default layout and the ⋮ menu, and Back closes it', (
+    tester,
+  ) async {
     await _pumpVideoPage(tester);
     await walkPath(tester, '全屏', [
-      (dpadRight, '播/暂'),
-      (dpadRight, '播控'),
-      (dpadSelect, '暂停'),
-      (dpadRight, '全屏播放'),
-      (dpadRight, '弹幕: 开'),
-      (dpadRight, '弹幕设置'),
-      (dpadLeft, '弹幕: 开'),
+      (menuKey, '00:30'),
+      (dpadDown, '倍速: 1.0x'),
+      (dpadRight, '画面: 自动'),
+      (dpadLeft, '倍速: 1.0x'),
       (dpadUp, '00:30'),
-      (dpadUp, '关闭面板'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadRight, '更多'),
+      (dpadSelect, '倍速: 1.0x'),
+      (dpadDown, '画面: 自动'),
+      (dpadBack, '更多'),
       (dpadDown, '00:30'),
-      // The HUD puts focus back on the strip's first pill today; its
-      // trigger would be right too.
-      (dpadBack, '全屏|播控'),
+      (dpadBack, '全屏'),
     ]);
+  });
+
+  testWidgets('player HUD: a custom layout, with labels off and 点赞 and '
+      '收藏 pinned top right', (tester) async {
+    _saveGroups(
+      const TvHudGroups(
+        topRight: [TvHudActionId.like, TvHudActionId.favorite],
+        bottom: [TvHudActionId.speed, TvHudActionId.danmakuToggle],
+        showLabels: false,
+      ),
+    );
+    final FakePlPlayerController pl = FakePlPlayerController();
+    final FakeVideoDetailController vdc = FakeVideoDetailController(
+      plPlayerController: pl,
+    );
+    await _pumpVideoPage(
+      tester,
+      player: pl,
+      intro: FakeUgcIntroController(videoDetailCtr: vdc),
+    );
+    await walkPath(tester, '全屏', [
+      (menuKey, '00:30'),
+      // Icon-only: the name is the focus label drawn under the button.
+      (dpadDown, '倍速: 1.0x'),
+      (dpadRight, '弹幕: 开'),
+      (dpadUp, '00:30'),
+      (dpadUp, '点赞 (长按三连)'),
+      (dpadRight, '收藏'),
+      (dpadRight, '更多'),
+      (dpadLeft, '收藏'),
+      (dpadDown, '00:30'),
+      (dpadBack, '全屏'),
+    ]);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The action table (M14.2): one test per entry, for when it's available and
+// what it does, plus upstream's own panels opened with the D-pad.
+
+/// Upstream's header panels, recorded. Each opens a small `PublishRoute`
+/// through upstream's `PageUtils.showVideoBottomSheet`, as the real ones do,
+/// so the HUD's focus hand-off around a panel is exercised.
+class _FakeHeaderPanels implements TvHudHeaderPanels {
+  final List<String> calls = [];
+
+  void _open(String name) {
+    calls.add(name);
+    PageUtils.showVideoBottomSheet(
+      Get.key.currentContext!,
+      child: Material(
+        child: ListView(
+          children: [
+            for (int i = 0; i < 3; i++)
+              ListTile(title: Text('$name $i'), onTap: () {}),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void showSetVideoQa() => _open('showSetVideoQa');
+
+  @override
+  void showSetAudioQa() => _open('showSetAudioQa');
+
+  @override
+  void showSetDecodeFormats() => _open('showSetDecodeFormats');
+
+  @override
+  void showSetSubtitle() => _open('showSetSubtitle');
+
+  @override
+  void showDanmakuPool() => _open('showDanmakuPool');
+
+  @override
+  void showSettingSheet() => _open('showSettingSheet');
+}
+
+class _FakeUpstream implements TvHudUpstream {
+  _FakeUpstream({this.header});
+
+  /// `null`: upstream's header isn't mounted.
+  _FakeHeaderPanels? header;
+
+  @override
+  TvHudHeaderPanels? headerOf(VideoDetailController ctr) => header;
+
+  int playerInfoCount = 0;
+  @override
+  void showPlayerInfo(BuildContext context, Player player) {
+    playerInfoCount++;
+  }
+
+  int volumeCount = 0;
+  @override
+  Future<void> showPlayerVolume(BuildContext context, Player player) async {
+    volumeCount++;
+  }
+
+  int viewPointsCount = 0;
+  @override
+  void showViewPoints(BuildContext context, VideoDetailController ctr) {
+    viewPointsCount++;
+    PageUtils.showVideoBottomSheet(
+      context,
+      child: Material(
+        child: ListView(
+          children: [
+            for (final ViewPointSegment s in ctr.viewPointList)
+              ListTile(title: Text(s.title ?? ''), onTap: () {}),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int shutdownCount = 0;
+  bool? shutdownIsLive;
+  @override
+  void showShutdownTimer(
+    BuildContext context, {
+    required bool isFullScreen,
+    required bool isLive,
+  }) {
+    shutdownCount++;
+    shutdownIsLive = isLive;
+  }
+}
+
+class _FakeDanmakuController extends Fake
+    implements DanmakuController<DanmakuExtra> {}
+
+/// A fullscreen HUD over a UGC video in a three-part list, with upstream's
+/// header mounted unless [header] is false.
+class _ActionScene {
+  _ActionScene({bool header = true}) {
+    vdc = FakeVideoDetailController(plPlayerController: pl);
+    intro = FakeUgcIntroController(videoDetailCtr: vdc);
+    upstream = _FakeUpstream(header: header ? _FakeHeaderPanels() : null);
+  }
+
+  final FakePlPlayerController pl = FakePlPlayerController()
+    ..isFullScreen.value = true;
+  late final FakeVideoDetailController vdc;
+  late final FakeUgcIntroController intro;
+  late final _FakeUpstream upstream;
+  bool withIntro = true;
+  VoidCallback? onRefresh;
+
+  _FakeHeaderPanels get header => upstream.header!;
+
+  Future<TvHudActionSource> pump(WidgetTester tester) async {
+    await _pumpHud(
+      tester,
+      plPlayerController: pl,
+      introController: withIntro ? intro : null,
+      upstream: upstream,
+      onRefresh: onRefresh,
+    );
+    return tester.state(find.byType(TvPlayerHud)) as TvHudActionSource;
+  }
+}
+
+List<String> _ids(TvHudActionSource source, TvHudActionId id) => [
+  for (final TvHudAction a in source.resolveAction(id)) a.buttonId,
+];
+
+TvHudAction _one(TvHudActionSource source, TvHudActionId id) {
+  final List<TvHudAction> actions = source.resolveAction(id);
+  expect(actions, hasLength(1), reason: '$id resolves to one button');
+  return actions.single;
+}
+
+/// Whether primary focus is on a control (not just a scope) inside the route
+/// that shows [text].
+bool _focusInsideRouteOf(String text) {
+  final FocusNode? node = FocusManager.instance.primaryFocus;
+  if (node == null || node is FocusScopeNode) return false;
+  final BuildContext? focus = node.context;
+  if (focus == null) return false;
+  final Element textElement = find.text(text).evaluate().first;
+  return ModalRoute.of(focus) == ModalRoute.of(textElement);
+}
+
+void _actionTableTests() {
+  test('every entry has a menu group, in menu order; only 编辑按钮 is '
+      'not pinnable', () {
+    final List<int> groups = [
+      for (final TvHudActionId id in TvHudActionId.values) id.group.index,
+    ];
+    expect(groups, orderedEquals([...groups]..sort()));
+    expect(TvHudMenuGroup.values.map((g) => g.label), [
+      '播放',
+      '弹幕',
+      '互动',
+      '画面与声音',
+      '其他',
+    ]);
+    expect(
+      TvHudActionId.values.where((id) => !id.pinnable),
+      [TvHudActionId.editButtons],
+    );
+  });
+
+  test('TV defaults turn on the danmaku trend that 高能进度条 needs', () {
+    expect(TvPlatform.defaultTvSettings[SettingBoxKey.showDmChart], isTrue);
+  });
+
+  testWidgets('画质 opens upstream\'s quality panel; hidden without the '
+      'header, for offline files and in picture-in-picture', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+
+    final TvHudAction quality = _one(source, TvHudActionId.quality);
+    expect(quality.label, '画质: 1080P');
+    quality.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetVideoQa']);
+    expect(find.text('showSetVideoQa 0'), findsOneWidget);
+
+    Navigator.of(tester.element(find.text('showSetVideoQa 0'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+    scene.pl.isPipMode = false;
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+    scene.vdc.isFileSource = false;
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.quality), isEmpty);
+  });
+
+  testWidgets('the HUD drops its 画质 button while upstream\'s header '
+      'isn\'t mounted', (tester) async {
+    final _ActionScene scene = _ActionScene(header: false);
+    await scene.pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvHudAction.keyOf('quality')), findsNothing);
+    expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
+  });
+
+  testWidgets('倍速 shows the speed and opens the speed list; not in live '
+      'rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.pl.playbackSpeed = 1.25;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction speed = _one(source, TvHudActionId.speed);
+    expect(speed.label, '倍速: 1.25x');
+    speed.onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(4, '1.5x');
+    await tester.tap(_optionRow(4));
+    await tester.pumpAndSettle();
+    expect(scene.pl.playbackSpeed, 1.5);
+
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.speed), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('画面比例 is always there and sets the fit', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction fit = _one(source, TvHudActionId.videoFit);
+    expect(fit.label, '画面: ${VideoFitType.contain.desc}');
+    fit.onPressed();
+    await tester.pumpAndSettle();
+    final int fillRow = VideoFitType.values.indexOf(VideoFitType.fill);
+    _expectOption(fillRow, VideoFitType.fill.desc);
+    await tester.tap(_optionRow(fillRow));
+    await tester.pumpAndSettle();
+    expect(scene.pl.videoFit.value, VideoFitType.fill);
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.videoFit), ['videoFit']);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('字幕 lists the tracks with upstream\'s 字幕设置 at the end; '
+      'hidden without tracks', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.subtitle), isEmpty);
+
+    scene.vdc.subtitles.addAll([
+      Subtitle(id: 1, lan: 'zh', lanDoc: '中文'),
+      Subtitle(id: 2, lan: 'en', lanDoc: 'English'),
+    ]);
+    TvHudAction subtitle = _one(source, TvHudActionId.subtitle);
+    expect(subtitle.label, '字幕: 关闭');
+    expect(subtitle.active, isFalse);
+
+    subtitle.onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(0, '关闭字幕');
+    _expectOption(1, '中文');
+    _expectOption(2, 'English');
+    _expectOption(3, '字幕设置');
+    await tester.tap(_optionRow(2));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.vttSubtitlesIndex.value, 2);
+
+    subtitle = _one(source, TvHudActionId.subtitle);
+    expect(subtitle.label, '字幕: English');
+    expect(subtitle.active, isTrue);
+    subtitle.onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(3, '字幕设置');
+    await tester.tap(_optionRow(3));
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetSubtitle']);
+    Navigator.of(tester.element(find.text('showSetSubtitle 0'))).pop();
+    await tester.pumpAndSettle();
+
+    // Without upstream's header the list has no 字幕设置 row.
+    scene.upstream.header = null;
+    _one(source, TvHudActionId.subtitle).onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(0, '关闭字幕');
+    _expectOption(2, 'English');
+    expect(_optionRow(3), findsNothing);
+    expect(_textIn(TvPlayerHud.optionListKey, '字幕设置'), findsNothing);
+  });
+
+  testWidgets('翻译 lists the video\'s languages and switches them; hidden '
+      'without languages and for offline files', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.aiTranslate), isEmpty);
+
+    scene.vdc.languages.value = [
+      play_url.LanguageItem(lang: 'en', title: '英语'),
+      play_url.LanguageItem(lang: 'ja', title: '日语'),
+    ];
+    TvHudAction translate = _one(source, TvHudActionId.aiTranslate);
+    expect((translate.label, translate.active), ('翻译: 关闭', false));
+    translate.onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(0, '关闭翻译');
+    _expectOption(1, '英语');
+    _expectOption(2, '日语');
+    await tester.tap(_optionRow(2));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.currLang.value, 'ja');
+
+    translate = _one(source, TvHudActionId.aiTranslate);
+    expect((translate.label, translate.active), ('翻译: 日语', true));
+    translate.onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(0, '关闭翻译');
+    await tester.tap(_optionRow(0));
+    await tester.pumpAndSettle();
+    expect(scene.vdc.currLang.value, '');
+
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.aiTranslate), isEmpty);
+  });
+
+  testWidgets('分段信息 opens upstream\'s chapter panel; hidden without '
+      'chapters, with the setting off, offline and in picture-in-picture', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+
+    scene.vdc.viewPointList.addAll(const [
+      ViewPointSegment(end: 0.4, title: '开场', from: 0, to: 120),
+      ViewPointSegment(end: 1.0, title: '正片', from: 120, to: 300),
+    ]);
+    final TvHudAction chapters = _one(source, TvHudActionId.viewPoints);
+    expect((chapters.label, chapters.active), ('分段信息', true));
+    chapters.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.viewPointsCount, 1);
+    expect(find.text('正片'), findsOneWidget);
+    Navigator.of(tester.element(find.text('正片'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.vdc.showVP.value = false;
+    expect(_one(source, TvHudActionId.viewPoints).active, isFalse);
+    scene.pl.showViewPoints = false;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+    scene.pl
+      ..showViewPoints = true
+      ..isFileSource = true;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isPipMode = true;
+    expect(_ids(source, TvHudActionId.viewPoints), isEmpty);
+  });
+
+  testWidgets('选集: 上集 / 下集 / 选集 in a list, 下个视频 outside one, '
+      'nothing for offline files or live rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+
+    final List<TvHudAction> inList = source.resolveAction(
+      TvHudActionId.episodes,
+    );
+    expect(inList.map((a) => a.buttonId), [
+      'episodes.prev',
+      'episodes.next',
+      'episodes.list',
+    ]);
+    expect(inList.map((a) => a.label), ['上集', '下集', '选集 (3)']);
+    inList[0].onPressed();
+    inList[1].onPressed();
+    expect(scene.intro.prevPlayCount, 1);
+    expect(scene.intro.nextPlayCount, 1);
+
+    scene.intro.videoDetail.value = VideoDetailData(
+      title: '单个视频',
+      pages: [Part(cid: 1001, page: 1, part: '单P')],
+    );
+    final TvHudAction next = _one(source, TvHudActionId.episodes);
+    expect(next.buttonId, 'episodes.nextVideo');
+    expect(next.label, '下个视频');
+    next.onPressed();
+    expect(scene.intro.playRelatedCount, 1);
+
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isLive = true;
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+  });
+
+  testWidgets('选集 is hidden without an introduction', (tester) async {
+    final _ActionScene scene = _ActionScene()..withIntro = false;
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.episodes), isEmpty);
+  });
+
+  testWidgets('播放顺序 shows the order and sets it; not in live rooms', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction order = _one(source, TvHudActionId.playOrder);
+    expect(order.label, '播放顺序: ${PlayRepeat.pause.label}');
+    order.onPressed();
+    await tester.pumpAndSettle();
+    final int cycleRow = PlayRepeat.values.indexOf(PlayRepeat.listCycle);
+    _expectOption(cycleRow, PlayRepeat.listCycle.label);
+    await tester.tap(_optionRow(cycleRow));
+    await tester.pumpAndSettle();
+    expect(scene.pl.playRepeat, PlayRepeat.listCycle);
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.playOrder), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕开关 switches danmaku and shows its state', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    TvHudAction toggle = _one(source, TvHudActionId.danmakuToggle);
+    expect((toggle.label, toggle.active), ('弹幕: 开', true));
+    toggle.onPressed();
+    expect(scene.pl.enableShowDanmakuAdaptive.value, isFalse);
+    toggle = _one(source, TvHudActionId.danmakuToggle);
+    expect((toggle.label, toggle.active), ('弹幕: 关', false));
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕设置 opens upstream\'s danmaku panel, not the old TV '
+      'dialog; hidden in picture-in-picture', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.danmakuSettings).onPressed();
+    await tester.pumpAndSettle();
+    // Upstream's panel: smart blocking, its block types and sliders.
+    expect(find.textContaining('智能云屏蔽'), findsOneWidget);
+    expect(find.text('高级'), findsOneWidget);
+    expect(find.textContaining('遥控器方向键选择'), findsNothing);
+    Navigator.of(tester.element(find.textContaining('智能云屏蔽'))).pop();
+    await tester.pumpAndSettle();
+
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.danmakuSettings), isEmpty);
+  });
+
+  testWidgets('高能进度条 shows once the trend has loaded and switches the '
+      'chart; hidden with the setting off and for offline files', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+
+    scene.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
+    final TvHudAction chart = _one(source, TvHudActionId.dmChart);
+    expect((chart.label, chart.active), ('高能进度条', true));
+    chart.onPressed();
+    expect(scene.vdc.showDmTrendChart.value, isFalse);
+    expect(_one(source, TvHudActionId.dmChart).active, isFalse);
+
+    scene.pl.showDmChart = false;
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+    scene.pl
+      ..showDmChart = true
+      ..isFileSource = true;
+    expect(_ids(source, TvHudActionId.dmChart), isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('弹幕列表 opens upstream\'s danmaku pool; hidden without '
+      'danmaku or the header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.danmakuPool), isEmpty);
+    scene.pl.danmakuController = _FakeDanmakuController();
+    _one(source, TvHudActionId.danmakuPool).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showDanmakuPool']);
+    Navigator.of(tester.element(find.text('showDanmakuPool 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.danmakuPool), isEmpty);
+  });
+
+  testWidgets('点赞 likes on a press and starts 三连 on a hold; hidden for '
+      'offline files and live rooms', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvHudAction like = _one(source, TvHudActionId.like);
+    expect(like.label, '点赞 (长按三连)');
+    like.onPressed();
+    expect(scene.intro.likeCount, 1);
+    like.onHoldStart!();
+    expect(scene.pl.tripling, isTrue);
+    like.onHoldEnd!(true);
+    expect(scene.pl.tripling, isFalse);
+
+    scene.intro.hasLike.value = true;
+    expect(_one(source, TvHudActionId.like).label, '已赞 (长按三连)');
+    scene.pl.isFileSource = true;
+    expect(_ids(source, TvHudActionId.like), isEmpty);
+    scene.pl
+      ..isFileSource = false
+      ..isLive = true;
+    expect(_ids(source, TvHudActionId.like), isEmpty);
+  });
+
+  testWidgets('投币 closes the HUD and opens upstream\'s coin flow', (
+    tester,
+  ) async {
+    _saveGroups(
+      TvHudGroups.defaults.copyWith(bottom: const [TvHudActionId.coin]),
+    );
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvHudAction.keyOf('coin')), findsOneWidget);
+    _one(source, TvHudActionId.coin).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.intro.coinCount, 1);
+    expect(find.byKey(TvHudAction.keyOf('coin')), findsNothing);
+    scene.intro.coinNum.value = 1;
+    expect(_one(source, TvHudActionId.coin).label, '已投币');
+  });
+
+  testWidgets('收藏 closes the HUD and opens upstream\'s favourites sheet', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.favorite).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.intro.favSheetCount, 1);
+    scene.intro.hasFav.value = true;
+    final TvHudAction fav = _one(source, TvHudActionId.favorite);
+    expect((fav.label, fav.active), ('已收藏', true));
+  });
+
+  testWidgets('稍后再看 adds to and removes from the watch-later list', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_one(source, TvHudActionId.watchLater).label, '稍后再看');
+    _one(source, TvHudActionId.watchLater).onPressed();
+    await tester.pump();
+    final TvHudAction later = _one(source, TvHudActionId.watchLater);
+    expect((later.label, later.active), ('已在稍后再看', true));
+    scene.withIntro = false;
+    scene.pl.isLive = true;
+    expect(_ids(source, TvHudActionId.watchLater), isEmpty);
+  });
+
+  testWidgets('音质 opens upstream\'s audio panel once the video has audio '
+      'streams', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.audioQuality), isEmpty);
+
+    scene.vdc
+      ..currentAudioQa = AudioQuality.k192
+      ..data = play_url.PlayUrlModel.fromJson({
+        'dash': {
+          'duration': 300,
+          'video': [
+            {'id': VideoQuality.high1080.code},
+          ],
+          'audio': [
+            {'id': AudioQuality.k192.code},
+          ],
+        },
+        'support_formats': [
+          {'quality': VideoQuality.high1080.code, 'new_description': '1080P'},
+        ],
+      });
+    final TvHudAction audio = _one(source, TvHudActionId.audioQuality);
+    expect(audio.label, '音质: ${AudioQuality.k192.desc}');
+    audio.onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetAudioQa']);
+    Navigator.of(tester.element(find.text('showSetAudioQa 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.audioQuality), isEmpty);
+  });
+
+  testWidgets('解码格式 opens upstream\'s codec panel; hidden without the '
+      'header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.decodeFormat).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSetDecodeFormats']);
+    Navigator.of(tester.element(find.text('showSetDecodeFormats 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.decodeFormat), isEmpty);
+  });
+
+  testWidgets('超分辨率 is for animation only and sets the shader', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.superResolution), isEmpty);
+    scene.pl.isAnim = true;
+    final TvHudAction sr = _one(source, TvHudActionId.superResolution);
+    expect(sr.label, '超分辨率: ${SuperResolutionType.disable.label}');
+    sr.onPressed();
+    await tester.pumpAndSettle();
+    final int qualityRow = SuperResolutionType.values.indexOf(
+      SuperResolutionType.quality,
+    );
+    _expectOption(qualityRow, SuperResolutionType.quality.label);
+    await tester.tap(_optionRow(qualityRow));
+    await tester.pumpAndSettle();
+    expect(scene.pl.superResolutionType.value, SuperResolutionType.quality);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('播放器音量 opens upstream\'s volume dialog; hidden without a '
+      'player', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(
+      _one(source, TvHudActionId.playerVolume).label,
+      startsWith('播放器音量: '),
+    );
+    _one(source, TvHudActionId.playerVolume).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.volumeCount, 1);
+    scene.pl.noPlayer = true;
+    expect(_ids(source, TvHudActionId.playerVolume), isEmpty);
+  });
+
+  testWidgets('定时关闭 opens upstream\'s timer panel, for live rooms too', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.shutdownTimer).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.shutdownCount, 1);
+    expect(scene.upstream.shutdownIsLive, isFalse);
+    scene.pl.isLive = true;
+    _one(source, TvHudActionId.shutdownTimer).onPressed();
+    expect(scene.upstream.shutdownIsLive, isTrue);
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.shutdownTimer), isEmpty);
+  });
+
+  testWidgets('重载视频 reloads the video, or refreshes a live room', (
+    tester,
+  ) async {
+    int refreshed = 0;
+    final _ActionScene scene = _ActionScene()..onRefresh = () => refreshed++;
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.reload).onPressed();
+    expect(scene.vdc.reloadCount, 1);
+
+    scene.vdc.isFileSource = true;
+    expect(_ids(source, TvHudActionId.reload), isEmpty);
+    scene.pl.isLive = true;
+    _one(source, TvHudActionId.reload).onPressed();
+    expect(refreshed, 1);
+  });
+
+  testWidgets('重载视频 is hidden in a live room with nothing to refresh', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    scene.pl.isLive = true;
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.reload), isEmpty);
+  });
+
+  testWidgets('播放信息 opens upstream\'s player info; hidden without a '
+      'player', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.playerInfo).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.playerInfoCount, 1);
+    scene.pl.noPlayer = true;
+    expect(_ids(source, TvHudActionId.playerInfo), isEmpty);
+  });
+
+  testWidgets('完整设置 opens upstream\'s whole settings sheet; hidden '
+      'without the header', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.fullSettings).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, ['showSettingSheet']);
+    Navigator.of(tester.element(find.text('showSettingSheet 0'))).pop();
+    await tester.pumpAndSettle();
+    scene.upstream.header = null;
+    expect(_ids(source, TvHudActionId.fullSettings), isEmpty);
+  });
+
+  testWidgets('编辑按钮 is always there and opens the editor', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvPlayerHud.editorKey), findsOneWidget);
+  });
+
+  testWidgets('D-pad: 弹幕设置 opens upstream\'s danmaku panel with focus '
+      'inside it, and Back returns to the player', (tester) async {
+    await _pumpVideoPage(tester);
+    await walkPath(tester, '全屏', [
+      (menuKey, '00:30'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+    ]);
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('智能云屏蔽'), findsOneWidget);
+    expect(_focusInsideRouteOf('弹幕设置'), isTrue);
+    for (int i = 0; i < 3; i++) {
+      await tester.sendKeyEvent(dpadDown);
+      await tester.pumpAndSettle();
+      expect(_focusInsideRouteOf('弹幕设置'), isTrue);
+    }
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('智能云屏蔽'), findsNothing);
+    expect(focusedLabel(), '全屏');
+  });
+
+  testWidgets('D-pad: 画质 opens upstream\'s quality panel with focus inside '
+      'it, and Back returns to the player', (tester) async {
+    final FakePlPlayerController pl = FakePlPlayerController();
+    final FakeVideoDetailController vdc = FakeVideoDetailController(
+      plPlayerController: pl,
+    );
+    final _FakeUpstream upstream = _FakeUpstream(header: _FakeHeaderPanels());
+    await _pumpVideoPage(
+      tester,
+      player: pl,
+      intro: FakeUgcIntroController(videoDetailCtr: vdc),
+      upstream: upstream,
+    );
+    await walkPath(tester, '全屏', [
+      (menuKey, '00:30'),
+      (dpadDown, '上集'),
+    ]);
+    // Right along the row until 画质.
+    for (int i = 0; i < 12 && focusedLabel() != '画质: 1080P'; i++) {
+      await tester.sendKeyEvent(dpadRight);
+      await tester.pumpAndSettle();
+    }
+    expect(focusedLabel(), '画质: 1080P');
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pumpAndSettle();
+    expect(upstream.header!.calls, ['showSetVideoQa']);
+    expect(_focusInsideRouteOf('showSetVideoQa 0'), isTrue);
+    await tester.sendKeyEvent(dpadDown);
+    await tester.pumpAndSettle();
+    expect(_focusInsideRouteOf('showSetVideoQa 0'), isTrue);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('showSetVideoQa 0'), findsNothing);
+    expect(focusedLabel(), '全屏');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// M14.3: the layout, the editable groups, the ⋮ menu and the editor.
+
+/// Saves [groups] as the editor does. The test box is in memory, and Hive
+/// updates it at once, so the write needn't be awaited inside the fake clock.
+void _saveGroups(TvHudGroups groups) =>
+    unawaited(groups.save(GStorage.setting));
+
+/// The saved lists, read straight from the settings box.
+List<Object?> _savedIds(String key) =>
+    (GStorage.setting.get(key) as List?)?.toList() ?? const ['(nothing)'];
+
+/// Focuses the HUD control with [key] (a pill, or an editor button).
+Future<void> _focusKey(WidgetTester tester, Key key) async {
+  // The control's own Focus is the outermost one under the key; the pills'
+  // `ExcludeFocus` adds another further down.
+  final Element focus = find
+      .descendant(
+        of: find.byKey(key),
+        matching: find.byType(Focus),
+        matchRoot: true,
+      )
+      .evaluate()
+      .first;
+  Element? child;
+  focus.visitChildElements((Element e) => child = e);
+  Focus.of(child!, createDependency: false).requestFocus();
+  await tester.pumpAndSettle();
+}
+
+Future<void> _press(WidgetTester tester, LogicalKeyboardKey key) async {
+  if (key == dpadBack) {
+    await tester.binding.handlePopRoute();
+  } else {
+    await tester.sendKeyEvent(key);
+  }
+  await tester.pumpAndSettle();
+}
+
+/// The ids of the buttons drawn inside [group], left to right.
+List<String> _drawn(WidgetTester tester, Key group) {
+  final List<(Offset, String)> found = [];
+  for (final Element e
+      in find
+          .descendant(
+            of: find.byKey(group),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w.key is ValueKey<String> &&
+                  (w.key! as ValueKey<String>).value.startsWith('tvHudAction:'),
+            ),
+          )
+          .evaluate()) {
+    final String id = (e.widget.key! as ValueKey<String>).value.substring(
+      'tvHudAction:'.length,
+    );
+    found.add((tester.getRect(find.byKey(e.widget.key!)).topLeft, id));
+  }
+  // Reading order: by row, then left to right.
+  found.sort(
+    (a, b) => a.$1.dy != b.$1.dy
+        ? a.$1.dy.compareTo(b.$1.dy)
+        : a.$1.dx.compareTo(b.$1.dx),
+  );
+  return [for (final (_, String id) in found) id];
+}
+
+void _layoutTests() {
+  test('saved lists: unknown, unpinnable and repeated ids are skipped, the '
+      'top right keeps its first 17, and an empty list stays empty', () {
+    // The 24 pinnable entries, in menu order, with noise mixed in.
+    final List<String> all = [
+      for (final TvHudActionId id in TvHudActionId.values)
+        if (id.pinnable) id.name,
+    ];
+    expect(all, hasLength(24));
+    final TvHudGroups groups = TvHudGroups.fromSaved(
+      topRight: ['gone', 'editButtons', all[0], all[0], ...all.skip(1)],
+      bottom: [all[0], all[17], 42, all[23]],
+      showLabels: false,
+      buttonsAboveBar: true,
+    );
+    // 3 rows of 6, less ⋮.
+    expect(TvHudGroups.maxTopRight, 17);
+    expect(groups.topRight.map((e) => e.name), all.take(17));
+    // all[17] fell off the top right, so the bottom can have it; all[0] is
+    // already pinned.
+    expect(groups.bottom.map((e) => e.name), [all[17], all[23]]);
+    expect(groups.showLabels, isFalse);
+    expect(groups.buttonsAboveBar, isTrue);
+
+    expect(TvHudGroups.fromSaved(), TvHudGroups.defaults);
+    expect(TvHudGroups.defaults.buttonsAboveBar, isFalse);
+    expect(
+      TvHudGroups.fromSaved(buttonsAboveBar: 'yes').buttonsAboveBar,
+      isFalse,
+    );
+    expect(
+      TvHudGroups.fromSaved(topRight: const [], bottom: 'not a list'),
+      TvHudGroups.defaults.copyWith(topRight: const []),
+    );
+    expect(TvHudGroups.defaults.topRight, [
+      TvHudActionId.danmakuToggle,
+      TvHudActionId.danmakuSettings,
+      TvHudActionId.dmChart,
+    ]);
+    expect(TvHudGroups.defaults.bottom, [
+      TvHudActionId.episodes,
+      TvHudActionId.quality,
+      TvHudActionId.subtitle,
+      TvHudActionId.speed,
+      TvHudActionId.videoFit,
+    ]);
+    expect(
+      TvHudGroups.defaults.unpinned,
+      isNot(contains(TvHudActionId.editButtons)),
+    );
+  });
+
+  testWidgets('the HUD draws both groups from the saved lists and skips '
+      'unknown ids; the top right is rows of 6, aligned right, with ⋮ last '
+      'in the first row', (tester) async {
+    unawaited(
+      GStorage.setting.putAll(<String, Object>{
+        TvHudGroups.topRightKey: [
+          'speed',
+          'noSuchButton',
+          'videoFit',
+          'danmakuToggle',
+          'playOrder',
+          'danmakuSettings',
+          'like',
+          'coin',
+          'favorite',
+        ],
+        TvHudGroups.bottomKey: ['quality', 'removedLongAgo', 'watchLater'],
+      }),
+    );
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+
+    expect(_drawn(tester, TvPlayerHud.topRightGroupKey), [
+      'speed',
+      'videoFit',
+      'danmakuToggle',
+      'playOrder',
+      'danmakuSettings',
+      'like',
+      'coin',
+      'favorite',
+    ]);
+    expect(_drawn(tester, TvPlayerHud.bottomGroupKey), [
+      'quality',
+      'watchLater',
+    ]);
+    Rect rect(Key key) => tester.getRect(find.byKey(key));
+    Rect button(String id) => rect(TvHudAction.keyOf(id));
+    // First row: five buttons, then ⋮; the second row holds the rest.
+    final Rect menu = rect(TvPlayerHud.menuButtonKey);
+    for (final String id in [
+      'speed',
+      'videoFit',
+      'danmakuToggle',
+      'playOrder',
+      'danmakuSettings',
+    ]) {
+      expect(button(id).center.dy, moreOrLessEquals(menu.center.dy));
+      expect(button(id).right, lessThan(menu.left));
+    }
+    expect(button('like').top, greaterThan(menu.bottom));
+    expect(button('favorite').center.dy, button('like').center.dy);
+    // Aligned right: both rows end at the same edge.
+    expect(button('favorite').right, moreOrLessEquals(menu.right));
+    // Icon-only.
+    expect(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.topRightGroupKey),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+    );
+    // The bottom row shows its labels by default, under the time bar.
+    expect(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.bottomGroupKey),
+        matching: find.text('画质: 1080P'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      rect(TvPlayerHud.bottomGroupKey).top,
+      greaterThan(rect(TvPlayerHud.timeBarKey).bottom),
+    );
+  });
+
+  testWidgets('按钮在时间条上方: the bottom row moves above the time bar, '
+      'and the D-pad follows', (tester) async {
+    _saveGroups(TvHudGroups.defaults.copyWith(buttonsAboveBar: true));
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    Rect rect(Key key) => tester.getRect(find.byKey(key));
+    expect(
+      rect(TvPlayerHud.bottomGroupKey).bottom,
+      lessThan(rect(TvPlayerHud.timeBarKey).top),
+    );
+    // Still the first focus, with the buttons above it.
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvHudAction.keyOf('episodes.prev')), isTrue);
+    await _press(tester, dpadDown);
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+  });
+
+  testWidgets('按钮在时间条上方 with 显示按钮文字 off: the focus label is '
+      'drawn above the button, clear of the time bar', (tester) async {
+    _saveGroups(
+      TvHudGroups.defaults.copyWith(buttonsAboveBar: true, showLabels: false),
+    );
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    final Key prev = TvHudAction.keyOf('episodes.prev');
+    expect(_focusOn(prev), isTrue);
+    final Rect label = tester.getRect(find.byKey(TvPlayerHud.focusLabelKey));
+    expect(
+      label.bottom,
+      lessThanOrEqualTo(tester.getRect(find.byKey(prev)).top),
+    );
+    expect(
+      label.overlaps(tester.getRect(find.byKey(TvPlayerHud.timeBarKey))),
+      isFalse,
+    );
+  });
+
+  testWidgets('a long title wraps to three lines and ends in … only past '
+      'them', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.intro.videoDetail.value = VideoDetailData(
+      title: List<String>.filled(40, '很长的视频标题').join(),
+    );
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    final Text title = tester.widget<Text>(find.byKey(TvPlayerHud.titleKey));
+    expect((title.maxLines, title.overflow), (3, TextOverflow.ellipsis));
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.titleKey),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(paragraph.didExceedMaxLines, isTrue);
+    final double line = paragraph.getFullHeightForCaret(
+      const TextPosition(offset: 0),
+    );
+    expect(paragraph.size.height, moreOrLessEquals(3 * line, epsilon: 2));
+
+    // A short one stays on one line.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene other = _ActionScene();
+    other.intro.videoDetail.value = VideoDetailData(title: '短标题');
+    await other.pump(tester);
+    await _press(tester, dpadUp);
+    expect(tester.widget<Text>(find.byKey(TvPlayerHud.titleKey)).data, '短标题');
+    final RenderParagraph short = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.titleKey),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(short.didExceedMaxLines, isFalse);
+    expect(short.size.height, moreOrLessEquals(line, epsilon: 2));
+  });
+
+  testWidgets('显示按钮文字 off: the bottom row is icon-only, and the focused '
+      'button\'s name is drawn under it without moving the row', (
+    tester,
+  ) async {
+    _saveGroups(TvHudGroups.defaults.copyWith(showLabels: false));
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+
+    expect(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.bottomGroupKey),
+        matching: find.text('画质: 1080P'),
+      ),
+      findsNothing,
+    );
+    expect(find.byKey(TvPlayerHud.focusLabelKey), findsNothing);
+
+    final Key next = TvHudAction.keyOf('episodes.next');
+    final Rect row = tester.getRect(find.byKey(TvPlayerHud.bottomGroupKey));
+    final Rect nextBefore = tester.getRect(find.byKey(next));
+
+    await _press(tester, dpadDown);
+    expect(_focusOn(TvHudAction.keyOf('episodes.prev')), isTrue);
+    expect(find.byKey(TvPlayerHud.focusLabelKey), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.focusLabelKey),
+        matching: find.text('上集'),
+      ),
+      findsOneWidget,
+    );
+
+    await _press(tester, dpadRight);
+    expect(_focusOn(next), isTrue);
+    final Rect label = tester.getRect(find.byKey(TvPlayerHud.focusLabelKey));
+    expect(_textIn(TvPlayerHud.focusLabelKey, '下集'), findsOneWidget);
+    expect(
+      label.top,
+      greaterThanOrEqualTo(tester.getRect(find.byKey(next)).bottom),
+    );
+    expect(label.center.dx, moreOrLessEquals(nextBefore.center.dx, epsilon: 1));
+    // Neither the label nor the focused border moves anything.
+    expect(tester.getRect(find.byKey(next)), nextBefore);
+    expect(tester.getRect(find.byKey(TvPlayerHud.bottomGroupKey)), row);
+  });
+
+  testWidgets('the time bar with the HUD open: Left / Right seek, Select '
+      'plays and pauses; the 高能进度条 chart is drawn over the bar', (
+    tester,
+  ) async {
+    final _ActionScene scene = _ActionScene();
+    scene.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+
+    await tester.sendKeyEvent(dpadRight);
+    await tester.pump();
+    expect(scene.pl.seekTargets.last, const Duration(seconds: 40));
+    expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.sendKeyEvent(dpadLeft);
+    await tester.pump();
+    expect(scene.pl.seekTargets.last, const Duration(seconds: 20));
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pump();
+    expect(scene.pl.doubleTapCenterCount, 1);
+    expect(_timeBar, findsOneWidget);
+
+    final Finder chart = find.descendant(
+      of: find.byKey(TvPlayerHud.dmChartKey),
+      matching: find.byType(LineChart),
+    );
+    expect(chart, findsOneWidget);
+    final Rect bar = tester.getRect(_timeBar);
+    final Rect chartRect = tester.getRect(chart);
+    expect(chartRect.bottom, lessThanOrEqualTo(bar.bottom));
+    expect(chartRect.top, greaterThanOrEqualTo(bar.top - 4));
+    expect(
+      find.ancestor(of: chart, matching: find.byType(RepaintBoundary)),
+      findsWidgets,
+    );
+
+    scene.vdc.showDmTrendChart.value = false;
+    await tester.pumpAndSettle();
+    expect(chart, findsNothing);
+  });
+
+  testWidgets('the ⋮ menu lists every available entry by group, with 翻译 and '
+      '分段信息 in 播放; the HUD waits while it is open; a choice runs and '
+      'focus returns to ⋮', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.vdc
+      ..languages.value = [play_url.LanguageItem(lang: 'en', title: '英语')]
+      ..viewPointList.addAll(const [
+        ViewPointSegment(end: 0.4, title: '开场', from: 0, to: 120),
+        ViewPointSegment(end: 1.0, title: '正片', from: 120, to: 300),
+      ]);
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _focusKey(tester, TvPlayerHud.menuButtonKey);
+    await _press(tester, dpadSelect);
+
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsOneWidget);
+    double top(String text) => tester
+        .getRect(
+          find.descendant(
+            of: find.byKey(TvPlayerHud.menuPanelKey),
+            matching: find.text(text),
+          ),
+        )
+        .top;
+    final List<double> headers = [
+      for (final TvHudMenuGroup g in TvHudMenuGroup.values) top(g.label),
+    ];
+    expect(headers, orderedEquals([...headers]..sort()));
+    double entry(String buttonId) =>
+        tester.getRect(find.byKey(TvPlayerHud.menuEntryKey(buttonId))).top;
+    expect(entry('aiTranslate'), greaterThan(top('播放')));
+    expect(entry('viewPoints'), lessThan(top('弹幕')));
+    expect(entry('coin'), greaterThan(top('互动')));
+    expect(entry('editButtons'), greaterThan(top('其他')));
+    // Focus starts on the first entry.
+    expect(_focusOn(TvPlayerHud.menuEntryKey('quality')), isTrue);
+
+    // The HUD stays while the menu is open.
+    await tester.pump(const Duration(seconds: 6));
+    expect(_timeBar, findsOneWidget);
+
+    await _focusKey(tester, TvPlayerHud.menuEntryKey('danmakuToggle'));
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsNothing);
+    expect(scene.pl.enableShowDanmakuAdaptive.value, isFalse);
+    expect(_timeBar, findsOneWidget);
+    expect(_focusOn(TvPlayerHud.menuButtonKey), isTrue);
+
+    // Auto-hide runs again once the menu is closed.
+    await tester.pump(const Duration(seconds: 6));
+    expect(_timeBar, findsNothing);
+  });
+
+  testWidgets('editor: Select picks a button up, Left / Right reorder, Up / '
+      'Down move between the rows, Back puts it down, and the result '
+      'survives a restart', (tester) async {
+    final _ActionScene scene = _ActionScene();
+    scene.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvPlayerHud.editorKey), findsOneWidget);
+    // The first pinned button has focus.
+    expect(
+      _focusOn(TvPlayerHud.editorItemKey(TvHudActionId.danmakuToggle)),
+      isTrue,
+    );
+
+    // Auto-hide is paused while the editor is open.
+    await tester.pump(const Duration(seconds: 6));
+    expect(_timeBar, findsOneWidget);
+
+    String hint() =>
+        tester.widget<Text>(find.byKey(TvPlayerHud.editorHintKey)).data!;
+
+    await _press(tester, dpadSelect);
+    expect(hint(), contains('正在移动「弹幕开关」'));
+    await _press(tester, dpadRight);
+    expect(_savedIds(TvHudGroups.topRightKey), [
+      'danmakuSettings',
+      'danmakuToggle',
+      'dmChart',
+    ]);
+    expect(
+      _focusOn(TvPlayerHud.editorItemKey(TvHudActionId.danmakuToggle)),
+      isTrue,
+    );
+    await _press(tester, dpadDown);
+    expect(_savedIds(TvHudGroups.topRightKey), ['danmakuSettings', 'dmChart']);
+    expect(_savedIds(TvHudGroups.bottomKey), [
+      'episodes',
+      'quality',
+      'subtitle',
+      'speed',
+      'videoFit',
+      'danmakuToggle',
+    ]);
+    await _press(tester, dpadLeft);
+    expect(_savedIds(TvHudGroups.bottomKey).last, 'videoFit');
+    // Down from the bottom row unpins it.
+    await _press(tester, dpadDown);
+    expect(_savedIds(TvHudGroups.bottomKey), isNot(contains('danmakuToggle')));
+    expect(
+      _focusOn(TvPlayerHud.editorItemKey(TvHudActionId.danmakuToggle)),
+      isTrue,
+    );
+
+    // Back puts it down; the editor stays.
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.editorKey), findsOneWidget);
+    expect(hint(), isNot(contains('正在移动')));
+    // Now Left / Right move focus, not the button.
+    await _press(tester, dpadRight);
+    expect(
+      _focusOn(TvPlayerHud.editorItemKey(TvHudActionId.danmakuToggle)),
+      isFalse,
+    );
+
+    // Pin 弹幕列表 and 点赞 top right.
+    for (final TvHudActionId id in [
+      TvHudActionId.danmakuPool,
+      TvHudActionId.like,
+    ]) {
+      await _focusKey(tester, TvPlayerHud.editorItemKey(id));
+      await _press(tester, dpadSelect);
+      await _press(tester, dpadUp);
+      await _press(tester, dpadUp);
+      await _press(tester, dpadSelect);
+    }
+    expect(_savedIds(TvHudGroups.topRightKey), [
+      'danmakuSettings',
+      'dmChart',
+      'danmakuPool',
+      'like',
+    ]);
+
+    // Back closes the editor; the HUD redraws its groups and focus returns
+    // to ⋮.
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
+    expect(_timeBar, findsOneWidget);
+    expect(_focusOn(TvPlayerHud.menuButtonKey), isTrue);
+    expect(_drawn(tester, TvPlayerHud.topRightGroupKey), [
+      'danmakuSettings',
+      'dmChart',
+      'like',
+    ]);
+    expect(
+      find.byKey(TvHudAction.keyOf('danmakuToggle')),
+      findsNothing,
+    );
+
+    // A restart reads the same lists.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene again = _ActionScene();
+    again.vdc.dmTrend.value = const Success<List<double>>([0.1, 0.8, 0.3]);
+    await again.pump(tester);
+    await _press(tester, dpadUp);
+    expect(_drawn(tester, TvPlayerHud.topRightGroupKey), [
+      'danmakuSettings',
+      'dmChart',
+      'like',
+    ]);
+    expect(_drawn(tester, TvPlayerHud.bottomGroupKey), [
+      'episodes.prev',
+      'episodes.next',
+      'episodes.list',
+      'quality',
+      'speed',
+      'videoFit',
+    ]);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('editor: 显示按钮文字 saves at once and survives a restart; '
+      '恢复默认 asks first, and 取消 changes nothing', (tester) async {
+    _saveGroups(
+      const TvHudGroups(
+        topRight: [TvHudActionId.coin],
+        bottom: [TvHudActionId.speed],
+        showLabels: true,
+      ),
+    );
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+
+    await _focusKey(tester, TvPlayerHud.editorShowLabelsKey);
+    await _press(tester, dpadSelect);
+    expect(GStorage.setting.get(TvHudGroups.showLabelsKey), isFalse);
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 关'),
+      findsOneWidget,
+    );
+
+    await _focusKey(tester, TvPlayerHud.editorResetKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsOneWidget);
+    // Focus starts on 取消.
+    expect(focusedLabel(), '取消');
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsNothing);
+    expect(_savedIds(TvHudGroups.topRightKey), ['coin']);
+    expect(GStorage.setting.get(TvHudGroups.showLabelsKey), isFalse);
+
+    // Back closes the editor; the bottom row is icon-only now.
+    await _press(tester, dpadBack);
+    expect(
+      find.descendant(
+        of: find.byKey(TvPlayerHud.bottomGroupKey),
+        matching: find.text('倍速: 1.0x'),
+      ),
+      findsNothing,
+    );
+
+    // After a restart, the option still holds; 恢复默认 then resets it all.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene again = _ActionScene();
+    final TvHudActionSource source2 = await again.pump(tester);
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
+    expect(_textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'), findsNothing);
+    _one(source2, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 关'),
+      findsOneWidget,
+    );
+    await _focusKey(tester, TvPlayerHud.editorResetKey);
+    await _press(tester, dpadSelect);
+    await _focusKey(tester, TvPlayerHud.editorResetConfirmKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsNothing);
+    expect(TvHudGroups.read(GStorage.setting), TvHudGroups.defaults);
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 开'),
+      findsOneWidget,
+    );
+    await _focusKey(tester, TvPlayerHud.editorDoneKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
+    expect(_textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('editor: a top right of 17 refuses an 18th; 按钮在时间条上方 '
+      'saves at once and flips the HUD when the editor closes', (
+    tester,
+  ) async {
+    const List<TvHudActionId> bottom = [
+      TvHudActionId.quality,
+      TvHudActionId.speed,
+      TvHudActionId.videoFit,
+      TvHudActionId.subtitle,
+      TvHudActionId.episodes,
+      TvHudActionId.playOrder,
+      TvHudActionId.fullSettings,
+    ];
+    final List<TvHudActionId> top = [
+      for (final TvHudActionId id in TvHudActionId.values)
+        if (id.pinnable && !bottom.contains(id)) id,
+    ];
+    expect(top, hasLength(TvHudGroups.maxTopRight));
+    _saveGroups(TvHudGroups(topRight: top, bottom: bottom, showLabels: true));
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+    expect(_textIn(TvPlayerHud.editorKey, '右上角 17/17'), findsOneWidget);
+
+    await _focusKey(tester, TvPlayerHud.editorItemKey(TvHudActionId.speed));
+    await _press(tester, dpadSelect);
+    await _press(tester, dpadUp);
+    expect(_savedIds(TvHudGroups.topRightKey), hasLength(17));
+    expect(_savedIds(TvHudGroups.bottomKey), contains('speed'));
+    expect(find.textContaining('右上角最多 17 个'), findsOneWidget);
+    await _press(tester, dpadSelect);
+
+    await _focusKey(tester, TvPlayerHud.editorButtonsAboveBarKey);
+    await _press(tester, dpadSelect);
+    expect(GStorage.setting.get(TvHudGroups.buttonsAboveBarKey), isTrue);
+    expect(
+      _textIn(TvPlayerHud.editorButtonsAboveBarKey, '按钮在时间条上方: 开'),
+      findsOneWidget,
+    );
+
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
+    expect(
+      tester.getRect(find.byKey(TvPlayerHud.bottomGroupKey)).bottom,
+      lessThan(tester.getRect(_timeBar).top),
+    );
+    await tester.pump(const Duration(seconds: 6));
   });
 }

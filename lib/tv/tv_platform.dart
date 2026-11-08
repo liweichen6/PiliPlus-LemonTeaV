@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:PiliPlus/utils/storage.dart';
@@ -21,14 +22,15 @@ class _TvTextInputGateControl with TextInputControl {
 /// Runtime detection, Hive preference seeding (fills only keys that are not set
 /// yet), and soft-keyboard gating for Android TV / Leanback devices.
 abstract final class TvPlatform {
-  static const MethodChannel _channel = MethodChannel('com.example.piliplus/tv');
+  static const MethodChannel _channel = MethodChannel(
+    'com.example.piliplus/tv',
+  );
 
   static const bool _forceTvFromEnv =
       bool.fromEnvironment('PILI_FORCE_TV') ||
       bool.fromEnvironment('PILIPLUS_TV');
 
-  static final _TvTextInputGateControl _gateControl =
-      _TvTextInputGateControl();
+  static final _TvTextInputGateControl _gateControl = _TvTextInputGateControl();
 
   static bool _initialized = false;
   static bool _isTv = false;
@@ -61,6 +63,9 @@ abstract final class TvPlatform {
     // even if upstream's own default ever changes; a user who switches it off
     // on a TV still loses the HUD.
     SettingBoxKey.keyboardControl: true,
+    // Loads the danmaku trend for the HUD's 高能进度条 (one small request per
+    // video); upstream's default is off.
+    SettingBoxKey.showDmChart: true,
   };
 
   /// Returns `true` when running on an Android TV / Leanback device or when
@@ -107,6 +112,11 @@ abstract final class TvPlatform {
 
     if (isTv) {
       await _seedTvDefaultsIfNeeded();
+      try {
+        watchForResets(GStorage.setting);
+      } catch (_) {
+        // GStorage.setting may not be initialized in isolated widget tests.
+      }
       _installSoftKeyboardGate();
     }
   }
@@ -123,6 +133,50 @@ abstract final class TvPlatform {
     if (pending.isNotEmpty) {
       await settingBox.putAll(pending);
     }
+  }
+
+  static StreamSubscription<BoxEvent>? _resetWatch;
+  static bool _reseedScheduled = false;
+
+  /// Puts the TV defaults back as soon as something deletes one of them from
+  /// [settingBox]: upstream's 关于 → 重置所有设置 (both of its options clear
+  /// the box, and neither restarts the app) or 导入设置 (which clears the box,
+  /// then writes the imported values).
+  ///
+  /// Without this the running app reads upstream's defaults until the next
+  /// cold start (8K for `defaultVideoQa`), and upstream's getters for
+  /// `horizontalScreen` and `fullScreenMode` write a phone or tablet value on
+  /// their first read, which the launch seed then never replaces.
+  ///
+  /// Hive marks a key as present as soon as a write starts, so imported
+  /// values always win: the seed only fills keys that are still missing.
+  static void watchForResets(Box<dynamic> settingBox) {
+    _resetWatch?.cancel();
+    _reseedScheduled = false;
+    _resetWatch = settingBox.watch().listen((BoxEvent event) {
+      if (!event.deleted ||
+          _reseedScheduled ||
+          !defaultTvSettings.containsKey(event.key)) {
+        return;
+      }
+      _reseedScheduled = true;
+      scheduleMicrotask(() async {
+        _reseedScheduled = false;
+        if (!settingBox.isOpen) return;
+        try {
+          await seedTvDefaultsToBox(settingBox);
+        } catch (_) {
+          // The box was closed while the write was pending.
+        }
+      });
+    });
+  }
+
+  @visibleForTesting
+  static Future<void> stopWatchingResets() async {
+    await _resetWatch?.cancel();
+    _resetWatch = null;
+    _reseedScheduled = false;
   }
 
   static Future<void> _seedTvDefaultsIfNeeded() async {
