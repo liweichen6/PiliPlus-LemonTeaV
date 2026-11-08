@@ -751,7 +751,7 @@
   * **Moved**: the play/pause pill goes (the time bar takes its keys); 点赞 (hold for 三连), 投币, 收藏 and the danmaku buttons move into the `⋮` menu, from where they can be pinned. The `全屏播放` pill goes, since the Quick Strip has 全屏.
   * **No remote key for danmaku** (the user's answer).
 * **`⋮` menu** (agreed by the user, 2026-11-07): grouped and ordered by how often a TV viewer needs them. Every entry except the last group can be pinned to either group.
-  1. **播放**: 画质, 倍速, 画面比例, 字幕, 翻译 (upstream's AI 翻译, where the video offers other languages), 选集 / 上集 / 下集 / 下个视频, 分段信息 (upstream's chapter panel), 播放顺序. 翻译 and 分段信息 were added by the user on 2026-11-07, during `M14.2`.
+  1. **播放**: 画质, 倍速, 画面比例, 字幕, 翻译 (upstream's AI 翻译, where the video offers other languages), 选集 / 上集 / 下集 / 下个视频, 分段信息 (upstream's chapter panel), 片段信息 (upstream's SponsorBlock list, `showSBDetail`), 播放顺序. 翻译 and 分段信息 were added by the user on 2026-11-07, during `M14.2`; 片段信息 on 2026-11-08, after M14, with the segments and chapters drawn on the time bar.
   2. **弹幕**: 弹幕开关, 弹幕设置 (upstream's panel), 高能进度条, 弹幕列表 (upstream's `showDanmakuPool`).
   3. **互动**: 点赞 (hold for 三连), 投币, 收藏, 稍后再看.
   4. **画面与声音**: 音质, 解码格式, 超分辨率 (animation only), 播放器音量, 定时关闭.
