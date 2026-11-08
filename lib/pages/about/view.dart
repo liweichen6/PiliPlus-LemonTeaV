@@ -11,6 +11,8 @@ import 'package:PiliPlus/common/widgets/dialog/simple_dialog_option.dart';
 import 'package:PiliPlus/common/widgets/flutter/list_tile.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/services/logger.dart';
+import 'package:PiliPlus/tv/tv_app_exit.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/app_scheme.dart';
@@ -295,6 +297,7 @@ Commit Hash: ${BuildConfig.commitHash}''',
               },
             ),
           ),
+          if (TvPlatform.isTv) TvAppExit.restartTile(context),
         ],
       ),
     );

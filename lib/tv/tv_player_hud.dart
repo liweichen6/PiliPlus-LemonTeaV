@@ -111,6 +111,12 @@ class TvPlayerHud extends StatefulWidget {
   static const Key editorDoneKey = ValueKey<String>('tvHud:editDone');
   static const Key editorHintKey = ValueKey<String>('tvHud:editHint');
 
+  /// A TV option list (倍速, 画面比例, 选集, 字幕 and the other HUD lists).
+  static const Key optionListKey = ValueKey<String>('tvHud:optionList');
+
+  /// The row at [index] in the open option list.
+  static Key optionItemKey(int index) => ValueKey<String>('tvHudOption:$index');
+
   /// The `⋮` menu's entry for a button ([TvHudAction.buttonId]).
   static Key menuEntryKey(String buttonId) =>
       ValueKey<String>('tvHudMenu:$buttonId');
@@ -932,6 +938,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     TvHudAction action, {
     required bool iconOnly,
     bool compact = false,
+    bool labelAbove = false,
     FocusNode? focusNode,
   }) {
     if (action.onHoldStart != null && action.onHoldEnd != null) {
@@ -942,6 +949,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
         focusNode: focusNode,
         compact: compact,
         iconOnly: iconOnly,
+        labelAbove: labelAbove,
         icon: action.icon,
         label: action.label,
         active: action.active,
@@ -955,6 +963,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
       focusNode: focusNode,
       compact: compact,
       iconOnly: iconOnly,
+      labelAbove: labelAbove,
       icon: action.icon,
       label: action.label,
       active: action.active,
@@ -1107,6 +1116,9 @@ class _TvPlayerHudState extends State<TvPlayerHud>
               _buildActionButton(
                 actions[i],
                 iconOnly: iconOnly,
+                // Above the time bar, a label under the button would cover
+                // the bar's position.
+                labelAbove: _groups.value.buttonsAboveBar,
                 focusNode: i == 0 ? _firstBottomFocusNode : null,
               ),
           ],
@@ -1394,6 +1406,7 @@ mixin _TvFocusLabelHost<T extends StatefulWidget> on State<T> {
     required bool focused,
     required String label,
     required Widget child,
+    bool above = false,
   }) {
     if (!iconOnly) return child;
     return CompositedTransformTarget(
@@ -1407,9 +1420,13 @@ mixin _TvFocusLabelHost<T extends StatefulWidget> on State<T> {
                 child: CompositedTransformFollower(
                   link: _labelLink,
                   showWhenUnlinked: false,
-                  targetAnchor: Alignment.bottomCenter,
-                  followerAnchor: Alignment.topCenter,
-                  offset: const Offset(0, 6),
+                  targetAnchor: above
+                      ? Alignment.topCenter
+                      : Alignment.bottomCenter,
+                  followerAnchor: above
+                      ? Alignment.bottomCenter
+                      : Alignment.topCenter,
+                  offset: Offset(0, above ? -6 : 6),
                   child: IgnorePointer(
                     child: Container(
                       key: TvPlayerHud.focusLabelKey,
@@ -1487,6 +1504,7 @@ class _TvHudPillButton extends StatefulWidget {
     this.autofocus = false,
     this.compact = false,
     this.iconOnly = false,
+    this.labelAbove = false,
     this.active = false,
     this.alignment,
     this.icon,
@@ -1502,6 +1520,9 @@ class _TvHudPillButton extends StatefulWidget {
 
   /// Draws the icon alone, with [label] under it while focused.
   final bool iconOnly;
+
+  /// Draws the focus label above the button instead of under it.
+  final bool labelAbove;
   final bool active;
 
   /// Aligns the label inside a pill that is laid out with tight constraints,
@@ -1552,6 +1573,7 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
         iconOnly: iconOnly,
         focused: _focused,
         label: widget.label,
+        above: widget.labelAbove,
         child: ExcludeFocus(
           child: GestureDetector(
             onTap: widget.onPressed,
@@ -1612,6 +1634,7 @@ class _TvTripleLikePill extends StatefulWidget {
     this.autofocus = false,
     this.compact = false,
     this.iconOnly = false,
+    this.labelAbove = false,
     this.alignment,
     required this.icon,
     required this.label,
@@ -1625,6 +1648,7 @@ class _TvTripleLikePill extends StatefulWidget {
   final bool autofocus;
   final bool compact;
   final bool iconOnly;
+  final bool labelAbove;
   final AlignmentGeometry? alignment;
   final IconData icon;
   final String label;
@@ -1686,6 +1710,7 @@ class _TvTripleLikePillState extends State<_TvTripleLikePill>
         iconOnly: iconOnly,
         focused: _focused,
         label: widget.label,
+        above: widget.labelAbove,
         child: AnimatedBuilder(
           animation: widget.tripleAnimation,
           builder: (context, _) {
@@ -1843,6 +1868,7 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
     final int autofocusIndex = _autofocusIndex;
 
     return AlertDialog(
+      key: TvPlayerHud.optionListKey,
       backgroundColor: const Color(0xF21A1C1E),
       title: Text(
         widget.title,
@@ -1865,6 +1891,7 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
               itemBuilder: (context, index) {
                 final item = items[index];
                 return Padding(
+                  key: TvPlayerHud.optionItemKey(index),
                   padding: const EdgeInsets.symmetric(vertical: 3),
                   child: _TvHudPillButton(
                     autofocus: index == autofocusIndex,
