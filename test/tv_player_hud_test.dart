@@ -3281,6 +3281,28 @@ void _layoutTests() {
     expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
   });
 
+  testWidgets('按钮在时间条上方 with 显示按钮文字 off: the focus label is '
+      'drawn above the button, clear of the time bar', (tester) async {
+    _saveGroups(
+      TvHudGroups.defaults.copyWith(buttonsAboveBar: true, showLabels: false),
+    );
+    final _ActionScene scene = _ActionScene();
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    final Key prev = TvHudAction.keyOf('episodes.prev');
+    expect(_focusOn(prev), isTrue);
+    final Rect label = tester.getRect(find.byKey(TvPlayerHud.focusLabelKey));
+    expect(
+      label.bottom,
+      lessThanOrEqualTo(tester.getRect(find.byKey(prev)).top),
+    );
+    expect(
+      label.overlaps(tester.getRect(find.byKey(TvPlayerHud.timeBarKey))),
+      isFalse,
+    );
+  });
+
   testWidgets('a long title wraps to three lines and ends in … only past '
       'them', (tester) async {
     final _ActionScene scene = _ActionScene();
