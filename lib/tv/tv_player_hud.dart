@@ -4,6 +4,12 @@ import 'dart:math' as math;
 import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models/video/play/url.dart' show LanguageItem;
+import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
+import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart'
+    as live_format;
+import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart'
+    as live_stream;
+import 'package:PiliPlus/models_new/live/live_room_play_info/url_info.dart';
 import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart' as pgc_ep;
 import 'package:PiliPlus/common/widgets/progress_bar/segment_progress_bar.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
@@ -73,6 +79,7 @@ class TvPlayerHud extends StatefulWidget {
     this.onSkipSegment,
     this.onRefresh,
     @visibleForTesting this.debugUpstream,
+    @visibleForTesting this.debugLiveRoom,
   });
 
   final Widget child;
@@ -86,6 +93,10 @@ class TvPlayerHud extends StatefulWidget {
   /// Replaces upstream's panels and dialogs in tests.
   @visibleForTesting
   final TvHudUpstream? debugUpstream;
+
+  /// Replaces the live room's controller in tests.
+  @visibleForTesting
+  final LiveRoomController? debugLiveRoom;
 
   // Widget keys, for tests.
   static const Key timeBarKey = ValueKey<String>('tvHud:timeBar');
@@ -274,6 +285,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
   @override
   LiveRoomController? get _liveRoomCtr {
     if (!_pl.isLive) return null;
+    if (widget.debugLiveRoom case final LiveRoomController ctr?) return ctr;
     final tag = PlPlayerController.playOwner?.tag;
     if (tag != null && Get.isRegistered<LiveRoomController>(tag: tag)) {
       return Get.find<LiveRoomController>(tag: tag);
@@ -379,7 +391,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     if (!_hudVisible) {
       setState(() {
         _hudVisible = true;
-        _groups.value = TvHudGroups.load();
+        _groups.value = TvHudGroups.load(live: _pl.isLive);
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_hudVisible) return;
@@ -451,10 +463,11 @@ class _TvPlayerHudState extends State<TvPlayerHud>
   @override
   Future<void> _openEditor() => _showOverHud<void>(
     (_) => _TvHudEditor(
-      initial: TvHudGroups.load(),
+      initial: TvHudGroups.load(live: _pl.isLive),
       onChanged: (TvHudGroups groups) => groups.store(),
     ),
-    onResult: (_) => setState(() => _groups.value = TvHudGroups.load()),
+    onResult: (_) =>
+        setState(() => _groups.value = TvHudGroups.load(live: _pl.isLive)),
   );
 
   @override
@@ -1024,10 +1037,27 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     return KeyEventResult.ignored;
   }
 
+  /// The line under a live room's title: the streamer, the viewer count and
+  /// the 高能观众 count, as upstream's fullscreen header shows them; `null`
+  /// until any of them has loaded.
+  static String? _liveInfoLine(LiveRoomController liveCtr) {
+    final String? upName =
+        liveCtr.roomInfoH5.value?.anchorInfo?.baseInfo?.uname;
+    final String? watched = liveCtr.watchedShow.value;
+    final String? online = liveCtr.onlineCount.value;
+    final List<String> parts = [
+      if (upName != null && upName.isNotEmpty) upName,
+      if (watched != null && watched.isNotEmpty) watched,
+      if (online != null && online.isNotEmpty) '高能观众($online)',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
   Widget _buildTopBar() {
     final title = _resolveTitle();
     final intro = widget.introController;
     final bool hasViewers = intro != null && intro.isShowOnlineTotal;
+    final LiveRoomController? liveCtr = _liveRoomCtr;
     return Container(
       padding: const EdgeInsets.fromLTRB(28, 22, 28, 32),
       decoration: const BoxDecoration(
@@ -1062,7 +1092,22 @@ class _TvPlayerHudState extends State<TvPlayerHud>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (hasViewers)
+                if (liveCtr != null)
+                  Obx(() {
+                    final String? line = _liveInfoLine(liveCtr);
+                    if (line == null) return const SizedBox.shrink();
+                    return Text(
+                      line,
+                      key: TvPlayerHud.viewersKey,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    );
+                  })
+                else if (hasViewers)
                   Obx(
                     () => Text(
                       '${intro.total.value}人正在看',
@@ -1732,15 +1777,11 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
                             size: widget.compact ? 16 : 18,
                             color: Colors.white,
                           ),
-                        Text(
+                        _pillLabel(
                           widget.label,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.compact ? 13 : 14,
-                            fontWeight: _focused || widget.active
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
+                          compact: widget.compact,
+                          bold: _focused || widget.active,
+                          bounded: widget.alignment != null,
                         ),
                       ],
                     ),
@@ -1750,6 +1791,28 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
       ),
     );
   }
+}
+
+/// A pill's label. A [bounded] pill (one with an alignment: an option list
+/// or menu row) has a bounded width, so a long label (切换路线's hosts, a
+/// large text scale) ends in `…` there instead of overflowing.
+Widget _pillLabel(
+  String label, {
+  required bool compact,
+  required bool bold,
+  required bool bounded,
+}) {
+  final Text text = Text(
+    label,
+    maxLines: bounded ? 1 : null,
+    overflow: bounded ? TextOverflow.ellipsis : null,
+    style: TextStyle(
+      color: Colors.white,
+      fontSize: compact ? 13 : 14,
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+    ),
+  );
+  return bounded ? Flexible(child: text) : text;
 }
 
 /// Like / Hold-to-Triple-Like pill button for the 10-foot HUD.
@@ -1872,15 +1935,11 @@ class _TvTripleLikePillState extends State<_TvTripleLikePill>
                       spacing: 6,
                       children: [
                         icon,
-                        Text(
+                        _pillLabel(
                           widget.label,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.compact ? 13 : 14,
-                            fontWeight: _focused || widget.active
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
+                          compact: widget.compact,
+                          bold: _focused || widget.active,
+                          bounded: widget.alignment != null,
                         ),
                       ],
                     ),
@@ -1898,7 +1957,18 @@ class _TvDialogOptionItem {
     this.icon,
     required this.selected,
     required this.onSelect,
-  });
+  }) : isHeader = false;
+
+  /// A group title between rows (切换路线's `协议 · 格式`); not focusable.
+  const _TvDialogOptionItem.header(this.title)
+    : icon = null,
+      selected = false,
+      onSelect = _noop,
+      isHeader = true;
+
+  static void _noop() {}
+
+  final bool isHeader;
 
   final String title;
 
@@ -1942,7 +2012,8 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
 
   int get _autofocusIndex {
     final int selectedIndex = widget.items.indexWhere((e) => e.selected);
-    return selectedIndex >= 0 ? selectedIndex : 0;
+    if (selectedIndex >= 0) return selectedIndex;
+    return math.max(0, widget.items.indexWhere((e) => !e.isHeader));
   }
 
   /// Measures the row height once, with the text style the pill labels inherit
@@ -2016,6 +2087,25 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
+                if (item.isHeader) {
+                  return Align(
+                    key: TvPlayerHud.optionItemKey(index),
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 6),
+                      child: Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }
                 return Padding(
                   key: TvPlayerHud.optionItemKey(index),
                   padding: const EdgeInsets.symmetric(vertical: 3),

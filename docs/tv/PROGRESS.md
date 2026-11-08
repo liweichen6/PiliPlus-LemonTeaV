@@ -137,7 +137,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M14: Player HUD, Video** | Epic M14.3 | `M14.4` | Tests, Device Pass & Docs | ✅ Done (M14 closed 2026-11-07; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `lib/tv/tv_player_hud.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (Discussion Gate) | ✅ Done (agreed 2026-11-08) | `docs/tv/PLAN.md` |
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.2` | Close a SuperChat | ⏳ Planned (added by the user 2026-11-07; shape agreed in `M15.1`) | `lib/tv/tv_player_hud.dart`, `LiveRoomController.fsSC`, `test/tv_player_hud_test.dart` |
-| **M15: Player HUD, Live** | Epic M15.2 | `M15.3` | Live Entries & Groups | ⏳ Planned | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
+| **M15: Player HUD, Live** | Epic M15.2 | `M15.3` | Live Entries & Groups | ✅ Done (merging the pull request publishes a release) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
 | **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M17 |
@@ -2197,3 +2197,21 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Changed by the user**: 发弹幕 is not in the live top-right default (proposed: 弹幕开关, 弹幕设置, 发弹幕); the live quality list gets no mark on the rows above 1080p (proposed: a warning such as `可能导致电视关机`).
 * **New tasks**: `M15.3` (live entries and groups) and `M15.4` (tests, device pass and docs). `M15.2` is renamed "Close a SuperChat", since minimizing is out.
 * **Next**: `M15.2` and `M15.3`, each on its own branch; both touch the HUD files, so one after the other.
+
+### [2026-11-08] Milestone M15 (Task `M15.3`): Live Entries & Groups
+* **Status**: ✅ Done on its own branch; lands by pull request. Merging it publishes a release.
+* **Files Changed**: `[MODIFY] lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **Built** (as agreed in `M15.1`):
+  * **Scopes**: every `TvHudActionId` has a `TvHudScope` (both, video or live). `resolveAction` gives nothing outside an entry's scope, the saved lists skip ids of the other kind, and the editor's `未固定` row only offers entries of its kind. The video-only entries were already hidden in live rooms by their own checks; the scope makes it one rule.
+  * **New live entries**, pinnable: 切换路线 (播放), 发弹幕, 屏蔽词 and 醒目留言 (弹幕).
+    * 切换路线: a TV option list over `LiveRoomController`'s public `stream` and indices, with `协议 · 格式` header rows (not focusable) and one row per codec and host (`avc (原画) · cn-….bilivideo.com`), focus starting on the current route. Choosing another calls `initLiveUrl(...)` and saves `SettingBoxKey.liveStream`, as upstream's `_showLiveStreamDialog` does; the current one changes nothing. Hidden until the room's URLs have loaded (`stream` is `late`).
+    * 发弹幕: hides the HUD and calls the `onSendDanmaku` the HUD was already given (upstream's `PublishRoute` send sheet); focus comes back when it closes. Upstream's own not-signed-in toast applies.
+    * 屏蔽词: upstream's `/liveDmBlockPage` (through `TvHudUpstream.openLiveDmBlock`), or the toast `账号未登录` when signed out. Upstream also lets debug builds through; the TV doesn't.
+    * 醒目留言: in split view with SuperChat on, switches upstream's chat `PageView` to the SuperChat list (`醒目留言 (n)`) and back (`返回聊天`, shown active). Hidden in fullscreen, where the chat area is hidden too. The Quick Strip button and Back are `M15.2`.
+  * **刷新**: 重载视频's label and editor name in a live room (`TvHudActionId.titleFor`).
+  * **Title line**: under the room title, the streamer, upstream's viewer text (`N人看过`) and `高能观众(n)`, each once it has loaded, on one line.
+  * **Live groups**: `TvHudGroups` has a `live` flag. A live room reads and saves `tvHudLiveTopRight` and `tvHudLiveBottom`, with the defaults top right 弹幕开关, 弹幕设置 and bottom 刷新, 画质, 切换路线, 画面比例; `显示按钮文字` is shared. A live room's groups never write `按钮在时间条上方`, and the editor there hides it; its `恢复默认` resets the live lists and says so.
+  * **Long labels in lists**: a pill with an alignment (the option lists and the `⋮` menu rows, which have a bounded width) now ends a label that doesn't fit in `…`, instead of overflowing. 切换路线's hosts overflowed at a large text scale.
+* **Tests** (`test/tv_player_hud_test.dart`, a `FakeLiveRoomController` and `TvPlayerHud.debugLiveRoom` for it): the scopes and the live entry list; no live entry in a video and no video entry in a live room; 切换路线's rows, headers, first focus, D-pad over the headers, choosing a route and the saved `liveStream`; hidden before the URLs load, and the current route changing nothing; 发弹幕; 屏蔽词 signed in and out; 醒目留言 switching the page and back, hidden in fullscreen and with SuperChat off; the title line; the live lists' parsing and saving; the live HUD's default groups and first focus with the video lists untouched; the editor in a live room (no `按钮在时间条上方`, live entries only, 刷新, carrying 发弹幕 into 底部 saves the live list only, `恢复默认`). The two tests that counted every pinnable entry now count a video's. The test set-up also clears `按钮在时间条上方`, the live lists and `liveStream`.
+* **Verification**: TV analyze clean over the CI file list; 217 TV tests pass, with the SDK patches applied. No device run: `M15.4` has the device pass.
+* **Next**: `M15.2` (closing a SuperChat), then `M15.4`.
