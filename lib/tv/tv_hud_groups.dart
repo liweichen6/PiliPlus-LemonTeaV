@@ -3,7 +3,8 @@ part of 'tv_player_hud.dart';
 // The HUD's editable groups (M14.3, docs/tv/PLAN.md, Milestone M14): the
 // top-right group, the bottom group, `显示按钮文字` and whether the buttons
 // sit above the time bar, saved in the settings box and read once each time
-// the HUD opens.
+// the HUD opens. Live rooms keep lists of their own, with their own
+// defaults, and share `显示按钮文字` with videos (M15.1, the user, 2026-11-08).
 
 /// The two editable groups, whether the bottom row shows its labels, and
 /// whether it sits above the time bar.
@@ -14,25 +15,34 @@ class TvHudGroups {
     required this.bottom,
     required this.showLabels,
     this.buttonsAboveBar = false,
+    this.live = false,
   });
 
   /// Builds the groups from saved values: ids that aren't known, can't be
-  /// pinned or are already in a group are skipped, and the top-right group
-  /// keeps its first [maxTopRight]. A missing list or option falls back to its
-  /// default; a saved empty list stays empty.
+  /// pinned, can't show in a video (or, with [live], in a live room) or are
+  /// already in a group are skipped, and the top-right group keeps its first
+  /// [maxTopRight]. A missing list or option falls back to its default; a
+  /// saved empty list stays empty.
   factory TvHudGroups.fromSaved({
     Object? topRight,
     Object? bottom,
     Object? showLabels,
     Object? buttonsAboveBar,
+    bool live = false,
   }) {
+    final TvHudGroups defaults = defaultsFor(live: live);
     final Set<TvHudActionId> seen = {};
     List<TvHudActionId> parse(Object? saved, List<TvHudActionId> fallback) {
       if (saved is! Iterable) return [...fallback.where(seen.add)];
       final List<TvHudActionId> ids = [];
       for (final Object? name in saved) {
         final TvHudActionId? id = TvHudActionId.values.asNameMap()[name];
-        if (id != null && id.pinnable && seen.add(id)) ids.add(id);
+        if (id != null &&
+            id.pinnable &&
+            id.scope.allows(live: live) &&
+            seen.add(id)) {
+          ids.add(id);
+        }
       }
       return ids;
     }
@@ -46,29 +56,37 @@ class TvHudGroups {
       topRight: List.unmodifiable(top),
       bottom: List.unmodifiable(parse(bottom, defaults.bottom)),
       showLabels: showLabels is bool ? showLabels : defaults.showLabels,
-      buttonsAboveBar: buttonsAboveBar is bool
+      // A live room has no time bar, so the option isn't its own.
+      buttonsAboveBar: !live && buttonsAboveBar is bool
           ? buttonsAboveBar
           : defaults.buttonsAboveBar,
+      live: live,
     );
   }
 
-  /// The groups saved in [box], or the defaults where nothing is saved.
-  factory TvHudGroups.read(Box<dynamic> box) => TvHudGroups.fromSaved(
-    topRight: box.get(topRightKey),
-    bottom: box.get(bottomKey),
-    showLabels: box.get(showLabelsKey),
-    buttonsAboveBar: box.get(buttonsAboveBarKey),
-  );
+  /// The groups saved in [box] for videos or, with [live], for live rooms;
+  /// the defaults where nothing is saved.
+  factory TvHudGroups.read(Box<dynamic> box, {bool live = false}) =>
+      TvHudGroups.fromSaved(
+        topRight: box.get(live ? liveTopRightKey : topRightKey),
+        bottom: box.get(live ? liveBottomKey : bottomKey),
+        showLabels: box.get(showLabelsKey),
+        buttonsAboveBar: box.get(buttonsAboveBarKey),
+        live: live,
+      );
 
   /// The saved groups; the defaults where the settings box isn't open (some
   /// widget tests).
-  static TvHudGroups load() {
+  static TvHudGroups load({bool live = false}) {
     try {
-      return TvHudGroups.read(GStorage.setting);
+      return TvHudGroups.read(GStorage.setting, live: live);
     } catch (_) {
-      return defaults;
+      return defaultsFor(live: live);
     }
   }
+
+  static TvHudGroups defaultsFor({required bool live}) =>
+      live ? liveDefaults : defaults;
 
   /// Settings-box keys. TV-only, so they live here and not in upstream's
   /// `SettingBoxKey`.
@@ -76,6 +94,8 @@ class TvHudGroups {
   static const String bottomKey = 'tvHudBottom';
   static const String showLabelsKey = 'tvHudShowLabels';
   static const String buttonsAboveBarKey = 'tvHudButtonsAboveBar';
+  static const String liveTopRightKey = 'tvHudLiveTopRight';
+  static const String liveBottomKey = 'tvHudLiveBottom';
 
   /// The top-right group is laid out in rows of this many buttons, aligned
   /// right; the first row's last place is the `⋮` button's.
@@ -103,6 +123,19 @@ class TvHudGroups {
     showLabels: true,
   );
 
+  /// A live room's groups, agreed with the user, 2026-11-08 (`M15.1`).
+  static const TvHudGroups liveDefaults = TvHudGroups(
+    topRight: [TvHudActionId.danmakuToggle, TvHudActionId.danmakuSettings],
+    bottom: [
+      TvHudActionId.reload,
+      TvHudActionId.quality,
+      TvHudActionId.liveRoute,
+      TvHudActionId.videoFit,
+    ],
+    showLabels: true,
+    live: true,
+  );
+
   final List<TvHudActionId> topRight;
   final List<TvHudActionId> bottom;
 
@@ -114,10 +147,18 @@ class TvHudGroups {
   /// under it.
   final bool buttonsAboveBar;
 
-  /// Every pinnable entry that's in neither group, in menu order.
+  /// Whether these are a live room's groups, saved apart from the video ones.
+  final bool live;
+
+  /// Every pinnable entry that can show here and is in neither group, in menu
+  /// order.
   List<TvHudActionId> get unpinned => [
     for (final TvHudActionId id in TvHudActionId.values)
-      if (id.pinnable && !topRight.contains(id) && !bottom.contains(id)) id,
+      if (id.pinnable &&
+          id.scope.allows(live: live) &&
+          !topRight.contains(id) &&
+          !bottom.contains(id))
+        id,
   ];
 
   TvHudGroups copyWith({
@@ -130,13 +171,20 @@ class TvHudGroups {
     bottom: List.unmodifiable(bottom ?? this.bottom),
     showLabels: showLabels ?? this.showLabels,
     buttonsAboveBar: buttonsAboveBar ?? this.buttonsAboveBar,
+    live: live,
   );
 
+  /// Saves the lists under the video or live keys. A live room's groups
+  /// leave `按钮在时间条上方` alone, since it isn't theirs.
   Future<void> save(Box<dynamic> box) => box.putAll(<String, Object>{
-    topRightKey: [for (final TvHudActionId id in topRight) id.name],
-    bottomKey: [for (final TvHudActionId id in bottom) id.name],
+    live ? liveTopRightKey : topRightKey: [
+      for (final TvHudActionId id in topRight) id.name,
+    ],
+    live ? liveBottomKey : bottomKey: [
+      for (final TvHudActionId id in bottom) id.name,
+    ],
     showLabelsKey: showLabels,
-    buttonsAboveBarKey: buttonsAboveBar,
+    if (!live) buttonsAboveBarKey: buttonsAboveBar,
   });
 
   /// Saves to the settings box; does nothing where it isn't open.
@@ -152,7 +200,8 @@ class TvHudGroups {
       const ListEquality<TvHudActionId>().equals(other.topRight, topRight) &&
       const ListEquality<TvHudActionId>().equals(other.bottom, bottom) &&
       other.showLabels == showLabels &&
-      other.buttonsAboveBar == buttonsAboveBar;
+      other.buttonsAboveBar == buttonsAboveBar &&
+      other.live == live;
 
   @override
   int get hashCode => Object.hash(
@@ -160,11 +209,12 @@ class TvHudGroups {
     Object.hashAll(bottom),
     showLabels,
     buttonsAboveBar,
+    live,
   );
 
   @override
   String toString() =>
       'TvHudGroups(topRight: ${topRight.map((e) => e.name)}, '
       'bottom: ${bottom.map((e) => e.name)}, showLabels: $showLabels, '
-      'buttonsAboveBar: $buttonsAboveBar)';
+      'buttonsAboveBar: $buttonsAboveBar, live: $live)';
 }
