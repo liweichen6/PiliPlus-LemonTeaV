@@ -111,6 +111,12 @@ class TvPlayerHud extends StatefulWidget {
   static const Key editorDoneKey = ValueKey<String>('tvHud:editDone');
   static const Key editorHintKey = ValueKey<String>('tvHud:editHint');
 
+  /// A TV option list (倍速, 画面比例, 选集, 字幕 and the other HUD lists).
+  static const Key optionListKey = ValueKey<String>('tvHud:optionList');
+
+  /// The row at [index] in the open option list.
+  static Key optionItemKey(int index) => ValueKey<String>('tvHudOption:$index');
+
   /// The `⋮` menu's entry for a button ([TvHudAction.buttonId]).
   static Key menuEntryKey(String buttonId) =>
       ValueKey<String>('tvHudMenu:$buttonId');
@@ -1843,6 +1849,7 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
     final int autofocusIndex = _autofocusIndex;
 
     return AlertDialog(
+      key: TvPlayerHud.optionListKey,
       backgroundColor: const Color(0xF21A1C1E),
       title: Text(
         widget.title,
@@ -1865,6 +1872,7 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
               itemBuilder: (context, index) {
                 final item = items[index];
                 return Padding(
+                  key: TvPlayerHud.optionItemKey(index),
                   padding: const EdgeInsets.symmetric(vertical: 3),
                   child: _TvHudPillButton(
                     autofocus: index == autofocusIndex,

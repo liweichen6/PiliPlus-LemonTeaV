@@ -587,7 +587,10 @@ void main() {
         expect(_focusOn(TvPlayerHud.timeBarKey), isTrue);
         expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
         expect(find.byKey(TvHudAction.keyOf('videoFit')), findsOneWidget);
-        expect(find.text('倍速: 1.0x'), findsOneWidget);
+        expect(
+          _textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'),
+          findsOneWidget,
+        );
 
         // Down: the bottom row's first button.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -1003,17 +1006,18 @@ void main() {
         await tester.tap(speedBtnFinder);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选择播放倍速'), findsOneWidget);
-        expect(find.text('1.0x'), findsOneWidget);
-        expect(find.text('1.25x'), findsOneWidget);
+        // Dialog opened, focus on the current speed.
+        expect(_textIn(TvPlayerHud.optionListKey, '选择播放倍速'), findsOneWidget);
+        _expectOption(1, '1.0x');
+        _expectOption(2, '1.25x');
+        expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
 
         // Select 1.25x
-        await tester.tap(find.text('1.25x'));
+        await tester.tap(_optionRow(2));
         await tester.pumpAndSettle();
 
         // Dialog dismissed and speed updated
-        expect(find.text('选择播放倍速'), findsNothing);
+        expect(_optionList, findsNothing);
         expect(pl.playbackSpeed, 1.25);
         await tester.pump(const Duration(seconds: 3));
       },
@@ -1041,17 +1045,21 @@ void main() {
         await tester.tap(fitBtnFinder);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选择画面比例'), findsOneWidget);
+        // Dialog opened, focus on the current fit.
+        expect(_textIn(TvPlayerHud.optionListKey, '选择画面比例'), findsOneWidget);
+        final int containRow = VideoFitType.values.indexOf(
+          VideoFitType.contain,
+        );
+        expect(_focusOn(TvPlayerHud.optionItemKey(containRow)), isTrue);
 
         // Select '拉伸'
-        final fillFinder = find.text('拉伸');
-        expect(fillFinder, findsOneWidget);
-        await tester.tap(fillFinder);
+        final int fillRow = VideoFitType.values.indexOf(VideoFitType.fill);
+        _expectOption(fillRow, '拉伸');
+        await tester.tap(_optionRow(fillRow));
         await tester.pumpAndSettle();
 
         // Dialog dismissed and fit updated
-        expect(find.text('选择画面比例'), findsNothing);
+        expect(_optionList, findsNothing);
         expect(pl.videoFit.value, VideoFitType.fill);
         await tester.pump(const Duration(seconds: 3));
       },
@@ -1086,15 +1094,18 @@ void main() {
         await tester.tap(epBtn);
         await tester.pumpAndSettle();
 
-        // Dialog opened
-        expect(find.text('选集 (3)'), findsWidgets); // Title and list
-        expect(find.text('P1  第一集：初始篇'), findsOneWidget);
-        expect(find.text('P2  第二集：进阶篇'), findsOneWidget);
-        expect(find.text('P3  第三集：完结篇'), findsOneWidget);
+        // Dialog opened, focus on the current episode.
+        expect(_textIn(TvPlayerHud.optionListKey, '选集 (3)'), findsOneWidget);
+        _expectOption(0, 'P1  第一集：初始篇');
+        _expectOption(1, 'P2  第二集：进阶篇');
+        _expectOption(2, 'P3  第三集：完结篇');
+        expect(_optionRow(3), findsNothing);
+        expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
 
         // Select P2
-        await tester.tap(find.text('P2  第二集：进阶篇'));
+        await tester.tap(_optionRow(1));
         await tester.pumpAndSettle();
+        expect(_optionList, findsNothing);
 
         // Dialog dismissed and episode changed callback fired
         expect(introCtr.changedEpisode, isNotNull);
@@ -1336,25 +1347,25 @@ void main() {
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('选集 (60)'));
+        await tester.tap(find.byKey(TvHudAction.keyOf('episodes.list')));
         await tester.pumpAndSettle();
 
         // The list is lazy: item 0 is far outside the viewport, so the current
         // episode is only built (and its autofocus only fires) if the list
         // starts scrolled to it.
-        expect(find.text('P1  第1集'), findsNothing);
-        expect(find.text('P45  第45集'), findsOneWidget);
-        expect(_pillHasPrimaryFocus('P45  第45集'), isTrue);
+        expect(_optionRow(0), findsNothing);
+        _expectOption(44, 'P45  第45集');
+        expect(_focusOn(TvPlayerHud.optionItemKey(44)), isTrue);
         final Rect viewport = tester.getRect(find.byType(ListView));
         expect(
-          viewport.contains(tester.getRect(find.text('P45  第45集')).center),
+          viewport.contains(tester.getRect(_optionRow(44)).center),
           isTrue,
         );
 
         // D-pad stepping continues from the current episode, not from item 0.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('P46  第46集'), isTrue);
+        expect(_focusOn(TvPlayerHud.optionItemKey(45)), isTrue);
       },
     );
 
@@ -1388,11 +1399,12 @@ void main() {
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('选集 (40)'));
+        await tester.tap(find.byKey(TvHudAction.keyOf('episodes.list')));
         await tester.pumpAndSettle();
 
         // Still opens on the current episode, focused (the thicker border).
-        expect(_pillHasPrimaryFocus('P30  第30集'), isTrue);
+        _expectOption(29, 'P30  第30集');
+        expect(_focusOn(TvPlayerHud.optionItemKey(29)), isTrue);
 
         final Iterable<RenderParagraph> labels = tester
             .renderObjectList<RenderParagraph>(
@@ -1413,7 +1425,7 @@ void main() {
         // D-pad stepping still lands on the next episode.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(_pillHasPrimaryFocus('P31  第31集'), isTrue);
+        expect(_focusOn(TvPlayerHud.optionItemKey(30)), isTrue);
       },
     );
 
@@ -1428,12 +1440,18 @@ void main() {
         await _pumpHud(tester, plPlayerController: pl);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('倍速: 0.5x'));
+        expect(
+          _textIn(TvHudAction.keyOf('speed'), '倍速: 0.5x'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(TvHudAction.keyOf('speed')));
         await tester.pumpAndSettle();
 
-        expect(find.text('选择播放倍速'), findsOneWidget);
-        expect(_pillHasPrimaryFocus('0.5x'), isTrue);
-        expect(find.text('2.0x'), findsOneWidget);
+        expect(_textIn(TvPlayerHud.optionListKey, '选择播放倍速'), findsOneWidget);
+        _expectOption(0, '0.5x');
+        expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
+        // Six rows fit, so the last is built too: the list starts at the top.
+        _expectOption(5, '2.0x');
       },
     );
 
@@ -1582,7 +1600,10 @@ void main() {
 
         final Rect title = tester.getRect(find.byKey(TvPlayerHud.titleKey));
         final Rect viewers = tester.getRect(find.byKey(TvPlayerHud.viewersKey));
-        expect(find.text('123人正在看'), findsOneWidget);
+        expect(
+          tester.widget<Text>(find.byKey(TvPlayerHud.viewersKey)).data,
+          '123人正在看',
+        );
         expect(viewers.top, greaterThanOrEqualTo(title.bottom));
         expect(
           tester
@@ -1724,28 +1745,22 @@ bool _focusOn(Key key) {
       .isNotEmpty;
 }
 
-/// The private `_TvHudPillButton` that owns the [label] text.
-Finder _pill(String label) => find.ancestor(
-  of: find.text(label),
-  matching: find.byWidgetPredicate(
-    (w) => w.runtimeType.toString() == '_TvHudPillButton',
-  ),
-);
+/// [text] inside the widget with [key].
+Finder _textIn(Key key, String text) =>
+    find.descendant(of: find.byKey(key), matching: find.text(text));
 
-/// Whether the primary focus node lives inside the pill labelled [label].
-bool _pillHasPrimaryFocus(String label) {
-  final BuildContext? focusContext =
-      FocusManager.instance.primaryFocus?.context;
-  if (focusContext == null) return false;
-  return find
-      .descendant(
-        of: _pill(label),
-        matching: find.byElementPredicate((e) => identical(e, focusContext)),
-        matchRoot: true,
-      )
-      .evaluate()
-      .isNotEmpty;
-}
+/// The open TV option list (倍速, 画面比例, 选集, 字幕 and the rest).
+final Finder _optionList = find.byKey(TvPlayerHud.optionListKey);
+
+/// The option list's row at [index].
+Finder _optionRow(int index) => find.byKey(TvPlayerHud.optionItemKey(index));
+
+/// Expects the option list's row at [index] to be labelled [label].
+void _expectOption(int index, String label) => expect(
+  find.descendant(of: _optionRow(index), matching: find.text(label)),
+  findsOneWidget,
+  reason: 'option row $index',
+);
 
 // ---------------------------------------------------------------------------
 // Recorded D-pad paths (M13.3) for the video page in split view, its
@@ -2494,7 +2509,8 @@ void _actionTableTests() {
     expect(speed.label, '倍速: 1.25x');
     speed.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('1.5x'));
+    _expectOption(4, '1.5x');
+    await tester.tap(_optionRow(4));
     await tester.pumpAndSettle();
     expect(scene.pl.playbackSpeed, 1.5);
 
@@ -2510,7 +2526,9 @@ void _actionTableTests() {
     expect(fit.label, '画面: ${VideoFitType.contain.desc}');
     fit.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VideoFitType.fill.desc));
+    final int fillRow = VideoFitType.values.indexOf(VideoFitType.fill);
+    _expectOption(fillRow, VideoFitType.fill.desc);
+    await tester.tap(_optionRow(fillRow));
     await tester.pumpAndSettle();
     expect(scene.pl.videoFit.value, VideoFitType.fill);
     scene.pl.isLive = true;
@@ -2534,10 +2552,11 @@ void _actionTableTests() {
 
     subtitle.onPressed();
     await tester.pumpAndSettle();
-    expect(find.text('关闭字幕'), findsOneWidget);
-    expect(find.text('中文'), findsOneWidget);
-    expect(find.text('字幕设置'), findsOneWidget);
-    await tester.tap(find.text('English'));
+    _expectOption(0, '关闭字幕');
+    _expectOption(1, '中文');
+    _expectOption(2, 'English');
+    _expectOption(3, '字幕设置');
+    await tester.tap(_optionRow(2));
     await tester.pumpAndSettle();
     expect(scene.vdc.vttSubtitlesIndex.value, 2);
 
@@ -2546,7 +2565,8 @@ void _actionTableTests() {
     expect(subtitle.active, isTrue);
     subtitle.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('字幕设置'));
+    _expectOption(3, '字幕设置');
+    await tester.tap(_optionRow(3));
     await tester.pumpAndSettle();
     expect(scene.header.calls, ['showSetSubtitle']);
     Navigator.of(tester.element(find.text('showSetSubtitle 0'))).pop();
@@ -2556,8 +2576,10 @@ void _actionTableTests() {
     scene.upstream.header = null;
     _one(source, TvHudActionId.subtitle).onPressed();
     await tester.pumpAndSettle();
-    expect(find.text('关闭字幕'), findsOneWidget);
-    expect(find.text('字幕设置'), findsNothing);
+    _expectOption(0, '关闭字幕');
+    _expectOption(2, 'English');
+    expect(_optionRow(3), findsNothing);
+    expect(_textIn(TvPlayerHud.optionListKey, '字幕设置'), findsNothing);
   });
 
   testWidgets('翻译 lists the video\'s languages and switches them; hidden '
@@ -2574,8 +2596,10 @@ void _actionTableTests() {
     expect((translate.label, translate.active), ('翻译: 关闭', false));
     translate.onPressed();
     await tester.pumpAndSettle();
-    expect(find.text('关闭翻译'), findsOneWidget);
-    await tester.tap(find.text('日语'));
+    _expectOption(0, '关闭翻译');
+    _expectOption(1, '英语');
+    _expectOption(2, '日语');
+    await tester.tap(_optionRow(2));
     await tester.pumpAndSettle();
     expect(scene.vdc.currLang.value, 'ja');
 
@@ -2583,7 +2607,8 @@ void _actionTableTests() {
     expect((translate.label, translate.active), ('翻译: 日语', true));
     translate.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('关闭翻译'));
+    _expectOption(0, '关闭翻译');
+    await tester.tap(_optionRow(0));
     await tester.pumpAndSettle();
     expect(scene.vdc.currLang.value, '');
 
@@ -2678,7 +2703,9 @@ void _actionTableTests() {
     expect(order.label, '播放顺序: ${PlayRepeat.pause.label}');
     order.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text(PlayRepeat.listCycle.label));
+    final int cycleRow = PlayRepeat.values.indexOf(PlayRepeat.listCycle);
+    _expectOption(cycleRow, PlayRepeat.listCycle.label);
+    await tester.tap(_optionRow(cycleRow));
     await tester.pumpAndSettle();
     expect(scene.pl.playRepeat, PlayRepeat.listCycle);
     scene.pl.isLive = true;
@@ -2881,7 +2908,11 @@ void _actionTableTests() {
     expect(sr.label, '超分辨率: ${SuperResolutionType.disable.label}');
     sr.onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text(SuperResolutionType.quality.label));
+    final int qualityRow = SuperResolutionType.values.indexOf(
+      SuperResolutionType.quality,
+    );
+    _expectOption(qualityRow, SuperResolutionType.quality.label);
+    await tester.tap(_optionRow(qualityRow));
     await tester.pumpAndSettle();
     expect(scene.pl.superResolutionType.value, SuperResolutionType.quality);
     await tester.pump(const Duration(seconds: 3));
@@ -3278,7 +3309,7 @@ void _layoutTests() {
     other.intro.videoDetail.value = VideoDetailData(title: '短标题');
     await other.pump(tester);
     await _press(tester, dpadUp);
-    expect(find.text('短标题'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(TvPlayerHud.titleKey)).data, '短标题');
     final RenderParagraph short = tester.renderObject<RenderParagraph>(
       find.descendant(
         of: find.byKey(TvPlayerHud.titleKey),
@@ -3325,7 +3356,7 @@ void _layoutTests() {
     await _press(tester, dpadRight);
     expect(_focusOn(next), isTrue);
     final Rect label = tester.getRect(find.byKey(TvPlayerHud.focusLabelKey));
-    expect(find.text('下集'), findsOneWidget);
+    expect(_textIn(TvPlayerHud.focusLabelKey, '下集'), findsOneWidget);
     expect(
       label.top,
       greaterThanOrEqualTo(tester.getRect(find.byKey(next)).bottom),
@@ -3571,15 +3602,18 @@ void _layoutTests() {
     await _focusKey(tester, TvPlayerHud.editorShowLabelsKey);
     await _press(tester, dpadSelect);
     expect(GStorage.setting.get(TvHudGroups.showLabelsKey), isFalse);
-    expect(find.text('显示按钮文字: 关'), findsOneWidget);
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 关'),
+      findsOneWidget,
+    );
 
     await _focusKey(tester, TvPlayerHud.editorResetKey);
     await _press(tester, dpadSelect);
-    expect(find.text('恢复默认按钮？'), findsOneWidget);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsOneWidget);
     // Focus starts on 取消.
     expect(focusedLabel(), '取消');
     await _press(tester, dpadSelect);
-    expect(find.text('恢复默认按钮？'), findsNothing);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsNothing);
     expect(_savedIds(TvHudGroups.topRightKey), ['coin']);
     expect(GStorage.setting.get(TvHudGroups.showLabelsKey), isFalse);
 
@@ -3599,21 +3633,27 @@ void _layoutTests() {
     final TvHudActionSource source2 = await again.pump(tester);
     await _press(tester, dpadUp);
     expect(find.byKey(TvHudAction.keyOf('speed')), findsOneWidget);
-    expect(find.text('倍速: 1.0x'), findsNothing);
+    expect(_textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'), findsNothing);
     _one(source2, TvHudActionId.editButtons).onPressed();
     await tester.pumpAndSettle();
-    expect(find.text('显示按钮文字: 关'), findsOneWidget);
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 关'),
+      findsOneWidget,
+    );
     await _focusKey(tester, TvPlayerHud.editorResetKey);
     await _press(tester, dpadSelect);
     await _focusKey(tester, TvPlayerHud.editorResetConfirmKey);
     await _press(tester, dpadSelect);
-    expect(find.text('恢复默认按钮？'), findsNothing);
+    expect(find.byKey(TvPlayerHud.editorResetConfirmKey), findsNothing);
     expect(TvHudGroups.read(GStorage.setting), TvHudGroups.defaults);
-    expect(find.text('显示按钮文字: 开'), findsOneWidget);
+    expect(
+      _textIn(TvPlayerHud.editorShowLabelsKey, '显示按钮文字: 开'),
+      findsOneWidget,
+    );
     await _focusKey(tester, TvPlayerHud.editorDoneKey);
     await _press(tester, dpadSelect);
     expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
-    expect(find.text('倍速: 1.0x'), findsOneWidget);
+    expect(_textIn(TvHudAction.keyOf('speed'), '倍速: 1.0x'), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
 
@@ -3641,7 +3681,7 @@ void _layoutTests() {
     await _press(tester, dpadUp);
     _one(source, TvHudActionId.editButtons).onPressed();
     await tester.pumpAndSettle();
-    expect(find.text('右上角 17/17'), findsOneWidget);
+    expect(_textIn(TvPlayerHud.editorKey, '右上角 17/17'), findsOneWidget);
 
     await _focusKey(tester, TvPlayerHud.editorItemKey(TvHudActionId.speed));
     await _press(tester, dpadSelect);
@@ -3654,7 +3694,10 @@ void _layoutTests() {
     await _focusKey(tester, TvPlayerHud.editorButtonsAboveBarKey);
     await _press(tester, dpadSelect);
     expect(GStorage.setting.get(TvHudGroups.buttonsAboveBarKey), isTrue);
-    expect(find.text('按钮在时间条上方: 开'), findsOneWidget);
+    expect(
+      _textIn(TvPlayerHud.editorButtonsAboveBarKey, '按钮在时间条上方: 开'),
+      findsOneWidget,
+    );
 
     await _press(tester, dpadBack);
     expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
