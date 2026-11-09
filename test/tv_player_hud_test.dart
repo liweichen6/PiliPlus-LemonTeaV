@@ -13,12 +13,23 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models/user/danmaku_rule.dart';
+import 'package:PiliPlus/models_new/live/live_room_info_h5/anchor_info.dart';
+import 'package:PiliPlus/models_new/live/live_room_info_h5/base_info.dart';
+import 'package:PiliPlus/models_new/live/live_room_info_h5/data.dart';
+import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
+import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart'
+    as live_format;
+import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart'
+    as live_stream;
+import 'package:PiliPlus/models_new/live/live_room_play_info/url_info.dart';
+import 'package:PiliPlus/models_new/live/live_superchat/item.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/models/video/play/url.dart' as play_url;
 import 'package:PiliPlus/models_new/video/video_play_info/subtitle.dart';
 import 'package:PiliPlus/pages/danmaku/danmaku_model.dart';
+import 'package:PiliPlus/pages/live_room/controller.dart';
 import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/pages/video/widgets/header_control.dart'
@@ -511,6 +522,7 @@ Widget _buildTestApp({
   TvHudUpstream? upstream,
   VoidCallback? onRefresh,
   ValueGetter<bool>? onSkipSegment,
+  LiveRoomController? liveRoom,
 }) {
   return MaterialApp(
     // Upstream's panels open on `Get.key` (PageUtils.showVideoBottomSheet).
@@ -535,6 +547,7 @@ Widget _buildTestApp({
           onRefresh: onRefresh,
           onSkipSegment: onSkipSegment,
           debugUpstream: upstream,
+          debugLiveRoom: liveRoom,
           child: child ?? Container(color: Colors.black),
         ),
       ),
@@ -552,6 +565,7 @@ Future<void> _pumpHud(
   TvHudUpstream? upstream,
   VoidCallback? onRefresh,
   ValueGetter<bool>? onSkipSegment,
+  LiveRoomController? liveRoom,
 }) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1.0;
@@ -567,6 +581,7 @@ Future<void> _pumpHud(
       upstream: upstream,
       onRefresh: onRefresh,
       onSkipSegment: onSkipSegment,
+      liveRoom: liveRoom,
     ),
   );
   await tester.pumpAndSettle();
@@ -599,6 +614,10 @@ void main() {
       TvHudGroups.topRightKey,
       TvHudGroups.bottomKey,
       TvHudGroups.showLabelsKey,
+      TvHudGroups.buttonsAboveBarKey,
+      TvHudGroups.liveTopRightKey,
+      TvHudGroups.liveBottomKey,
+      SettingBoxKey.liveStream,
     ]);
   });
 
@@ -1833,6 +1852,12 @@ void main() {
   group('recorded D-pad paths (M13.3)', _recordedPaths);
 
   group('layout, groups and editor (M14.3)', _layoutTests);
+
+  group('live room entries and groups (M15.3)', _liveRoomTests);
+
+  group('closing a SuperChat (M15.2)', _superChatTests);
+
+  group('Back with the HUD shown', _hudBackTests);
 }
 
 /// The remote's menu key, which opens and closes the HUD.
@@ -2383,6 +2408,40 @@ void _recordedPaths() {
     ]);
   });
 
+  testWidgets('live room HUD (M15.4): the Quick Strip with 醒目留言, then the '
+      'menu key opens the live defaults on 刷新, the D-pad walks both '
+      'groups and the ⋮ menu, and Back closes it', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false)..onRefresh = () {};
+    final FakeLiveRoomController live = _liveOf(scene);
+    live.superChatMsg.add(SuperChatItem.random);
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+    // The TV's logical screen, as the other recorded paths.
+    useTvScreen(tester);
+    await tester.pumpAndSettle();
+    await walkPath(tester, '全屏', [
+      (dpadRight, '暂停'),
+      (dpadRight, '醒目留言 (1)'),
+      (dpadLeft, '暂停'),
+      (dpadLeft, '全屏'),
+      (menuKey, '刷新'),
+      (dpadRight, '画质: 原画'),
+      (dpadRight, '切换路线'),
+      (dpadRight, '画面: 自动'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadRight, '更多'),
+      (dpadSelect, '画质: 原画'),
+      (dpadDown, '切换路线'),
+      (dpadBack, '更多'),
+      (dpadDown, '刷新|画质: 原画|切换路线|画面: 自动'),
+      (dpadBack, '全屏'),
+    ]);
+  });
+
   testWidgets('player HUD: a custom layout, with labels off and 点赞 and '
       '收藏 pinned top right', (tester) async {
     _saveGroups(
@@ -2499,6 +2558,12 @@ class _FakeUpstream implements TvHudUpstream {
     );
   }
 
+  int liveDmBlockCount = 0;
+  @override
+  void openLiveDmBlock(LiveRoomController ctr) {
+    liveDmBlockCount++;
+  }
+
   int shutdownCount = 0;
   bool? shutdownIsLive;
   @override
@@ -2532,6 +2597,9 @@ class _ActionScene {
   bool withIntro = true;
   VoidCallback? onRefresh;
   ValueGetter<bool>? onSkipSegment;
+  VoidCallback? onSendDanmaku;
+  LiveRoomController? liveRoom;
+  Widget? child;
 
   _FakeHeaderPanels get header => upstream.header!;
 
@@ -2543,6 +2611,9 @@ class _ActionScene {
       upstream: upstream,
       onRefresh: onRefresh,
       onSkipSegment: onSkipSegment,
+      onSendDanmaku: onSendDanmaku,
+      liveRoom: liveRoom,
+      child: child,
     );
     return tester.state(find.byType(TvPlayerHud)) as TvHudActionSource;
   }
@@ -3230,18 +3301,20 @@ void _actionTableTests() {
     expect(_ids(source, TvHudActionId.shutdownTimer), isEmpty);
   });
 
-  testWidgets('重载视频 reloads the video, or refreshes a live room', (
+  testWidgets('重载视频 reloads the video, or refreshes a live room as 刷新', (
     tester,
   ) async {
     int refreshed = 0;
     final _ActionScene scene = _ActionScene()..onRefresh = () => refreshed++;
     final TvHudActionSource source = await scene.pump(tester);
+    expect(_one(source, TvHudActionId.reload).label, '重载视频');
     _one(source, TvHudActionId.reload).onPressed();
     expect(scene.vdc.reloadCount, 1);
 
     scene.vdc.isFileSource = true;
     expect(_ids(source, TvHudActionId.reload), isEmpty);
     scene.pl.isLive = true;
+    expect(_one(source, TvHudActionId.reload).label, '刷新');
     _one(source, TvHudActionId.reload).onPressed();
     expect(refreshed, 1);
   });
@@ -3417,10 +3490,10 @@ List<String> _drawn(WidgetTester tester, Key group) {
 void _layoutTests() {
   test('saved lists: unknown, unpinnable and repeated ids are skipped, the '
       'top right keeps its first 17, and an empty list stays empty', () {
-    // The 25 pinnable entries, in menu order, with noise mixed in.
+    // The 25 pinnable entries of a video, in menu order, with noise mixed in.
     final List<String> all = [
       for (final TvHudActionId id in TvHudActionId.values)
-        if (id.pinnable) id.name,
+        if (id.pinnable && id.scope.allows(live: false)) id.name,
     ];
     expect(all, hasLength(25));
     final TvHudGroups groups = TvHudGroups.fromSaved(
@@ -3973,10 +4046,12 @@ void _layoutTests() {
       TvHudActionId.playOrder,
       TvHudActionId.fullSettings,
     ];
-    // A full top right: the first 17 pinnable entries not in the bottom row.
+    // A full top right: the first 17 pinnable video entries not in the
+    // bottom row.
     final List<TvHudActionId> top = [
       for (final TvHudActionId id in TvHudActionId.values)
-        if (id.pinnable && !bottom.contains(id)) id,
+        if (id.pinnable && id.scope.allows(live: false) && !bottom.contains(id))
+          id,
     ].take(TvHudGroups.maxTopRight).toList();
     expect(top, hasLength(TvHudGroups.maxTopRight));
     _saveGroups(TvHudGroups(topRight: top, bottom: bottom, showLabels: true));
@@ -4009,6 +4084,831 @@ void _layoutTests() {
       tester.getRect(find.byKey(TvPlayerHud.bottomGroupKey)).bottom,
       lessThan(tester.getRect(_timeBar).top),
     );
+    await tester.pump(const Duration(seconds: 6));
+  });
+}
+
+// -----------------------------------------------------------------------------
+// M15.3: the live room's entries and groups.
+
+class FakeLiveRoomController extends Fake implements LiveRoomController {
+  /// `null` until the room's URLs load (upstream's `late` field).
+  List<live_stream.Stream>? streams;
+
+  @override
+  List<live_stream.Stream> get stream =>
+      streams ?? (throw StateError('stream not loaded'));
+
+  @override
+  int streamIndex = 0;
+  @override
+  int formatIndex = 0;
+  @override
+  int codecIndex = 0;
+  @override
+  int liveUrlIndex = 0;
+
+  final List<(int, int, int, int)> initLiveUrlCalls = [];
+  @override
+  Future<void>? initLiveUrl({
+    int streamIndex = 0,
+    int formatIndex = 0,
+    int codecIndex = 0,
+    int liveUrlIndex = 0,
+  }) {
+    initLiveUrlCalls.add((streamIndex, formatIndex, codecIndex, liveUrlIndex));
+    this.streamIndex = streamIndex;
+    this.formatIndex = formatIndex;
+    this.codecIndex = codecIndex;
+    this.liveUrlIndex = liveUrlIndex;
+    return null;
+  }
+
+  @override
+  List<LiveQuality> acceptQnList = const [LiveQuality.origin];
+
+  @override
+  final Rxn<LiveQuality> currentQn = Rxn<LiveQuality>(LiveQuality.origin);
+
+  @override
+  bool isLogin = true;
+
+  @override
+  int roomId = 42;
+
+  @override
+  bool showSuperChat = true;
+
+  @override
+  PageController? pageController = PageController();
+
+  @override
+  final RxInt pageIndex = 0.obs;
+
+  @override
+  final RxList<SuperChatItem> superChatMsg = <SuperChatItem>[].obs;
+
+  @override
+  final Rxn<SuperChatItem> fsSC = Rxn<SuperChatItem>();
+
+  @override
+  final RxString title = '直播间标题'.obs;
+
+  @override
+  final Rxn<RoomInfoH5Data> roomInfoH5 = Rxn<RoomInfoH5Data>();
+
+  @override
+  final RxnString watchedShow = RxnString();
+
+  @override
+  final RxnString onlineCount = RxnString();
+}
+
+/// Two protocols: one format with an AVC and an HEVC codec (two hosts on
+/// AVC), and one format with one codec and host.
+List<live_stream.Stream> _liveStreams() => [
+  live_stream.Stream(
+    protocolName: 'http_stream',
+    format: [
+      live_format.Format(
+        formatName: 'flv',
+        codec: [
+          CodecItem(
+            codecName: 'avc',
+            currentQn: LiveQuality.origin,
+            acceptQn: const [LiveQuality.origin],
+            baseUrl: '/live',
+            urlInfo: [
+              UrlInfo(host: 'https://cn-a.bilivideo.com', extra: ''),
+              UrlInfo(host: 'https://cn-b.bilivideo.com', extra: ''),
+            ],
+          ),
+          CodecItem(
+            codecName: 'hevc',
+            currentQn: LiveQuality.origin,
+            acceptQn: const [LiveQuality.origin],
+            baseUrl: '/live',
+            urlInfo: [UrlInfo(host: 'https://cn-c.bilivideo.com', extra: '')],
+          ),
+        ],
+      ),
+    ],
+  ),
+  live_stream.Stream(
+    protocolName: 'http_hls',
+    format: [
+      live_format.Format(
+        formatName: 'fmp4',
+        codec: [
+          CodecItem(
+            codecName: 'avc',
+            currentQn: LiveQuality.bluRay,
+            acceptQn: const [LiveQuality.bluRay],
+            baseUrl: '/live',
+            urlInfo: [UrlInfo(host: 'https://cn-d.bilivideo.com', extra: '')],
+          ),
+        ],
+      ),
+    ],
+  ),
+];
+
+/// A fullscreen HUD in a live room with [_liveStreams] loaded.
+_ActionScene _liveScene({bool fullScreen = true}) {
+  final _ActionScene scene = _ActionScene()
+    ..withIntro = false
+    ..liveRoom = (FakeLiveRoomController()..streams = _liveStreams());
+  scene.pl
+    ..isLive = true
+    ..isFullScreen.value = fullScreen;
+  return scene;
+}
+
+FakeLiveRoomController _liveOf(_ActionScene scene) =>
+    scene.liveRoom! as FakeLiveRoomController;
+
+void _liveRoomTests() {
+  test('every entry is scoped: a live room keeps the agreed entries, and the '
+      'new ones are live-only', () {
+    expect(
+      [
+        for (final TvHudActionId id in TvHudActionId.values)
+          if (id.scope.allows(live: true)) id,
+      ],
+      [
+        TvHudActionId.quality,
+        TvHudActionId.liveRoute,
+        TvHudActionId.videoFit,
+        TvHudActionId.danmakuToggle,
+        TvHudActionId.danmakuSettings,
+        TvHudActionId.sendDanmaku,
+        TvHudActionId.liveDmBlock,
+        TvHudActionId.superChat,
+        TvHudActionId.playerVolume,
+        TvHudActionId.shutdownTimer,
+        TvHudActionId.reload,
+        TvHudActionId.playerInfo,
+        TvHudActionId.editButtons,
+      ],
+    );
+    for (final TvHudActionId id in [
+      TvHudActionId.liveRoute,
+      TvHudActionId.sendDanmaku,
+      TvHudActionId.liveDmBlock,
+      TvHudActionId.superChat,
+    ]) {
+      expect(id.scope, TvHudScope.live, reason: '$id');
+      expect(id.pinnable, isTrue, reason: '$id');
+    }
+    expect(TvHudActionId.reload.titleFor(live: true), '刷新');
+    expect(TvHudActionId.reload.titleFor(live: false), '重载视频');
+  });
+
+  testWidgets('a video resolves no live entry, and a live room no video '
+      'entry', (tester) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    final TvHudActionSource source = await scene.pump(tester);
+    for (final TvHudActionId id in TvHudActionId.values) {
+      if (!id.scope.allows(live: true)) {
+        expect(_ids(source, id), isEmpty, reason: '$id in a live room');
+      }
+    }
+    expect(_ids(source, TvHudActionId.liveRoute), ['liveRoute']);
+    expect(_ids(source, TvHudActionId.sendDanmaku), ['sendDanmaku']);
+    expect(_ids(source, TvHudActionId.liveDmBlock), ['liveDmBlock']);
+
+    scene.pl.isLive = false;
+    for (final TvHudActionId id in [
+      TvHudActionId.liveRoute,
+      TvHudActionId.sendDanmaku,
+      TvHudActionId.liveDmBlock,
+      TvHudActionId.superChat,
+    ]) {
+      expect(_ids(source, id), isEmpty, reason: '$id in a video');
+    }
+  });
+
+  testWidgets('切换路线 lists the routes under 协议 · 格式 headers with the '
+      'current one marked; choosing one reloads from it and saves it', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene)
+      ..codecIndex = 0
+      ..liveUrlIndex = 1; // cn-b
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+
+    _one(source, TvHudActionId.liveRoute).onPressed();
+    await tester.pumpAndSettle();
+    expect(_optionList, findsOneWidget);
+    final List<String> rows = [
+      for (int i = 0; i < 6; i++)
+        tester
+            .widgetList<Text>(
+              find.descendant(of: _optionRow(i), matching: find.byType(Text)),
+            )
+            .first
+            .data!,
+    ];
+    expect(rows, [
+      'http_stream · flv',
+      'avc (原画) · cn-a.bilivideo.com',
+      'avc (原画) · cn-b.bilivideo.com',
+      'hevc (原画) · cn-c.bilivideo.com',
+      'http_hls · fmp4',
+      'avc (蓝光) · cn-d.bilivideo.com',
+    ]);
+    // Focus starts on the current route; headers can't take focus.
+    expect(_focusOn(TvPlayerHud.optionItemKey(2)), isTrue);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
+    await _press(tester, dpadDown);
+    await _press(tester, dpadDown);
+    await _press(tester, dpadDown);
+    expect(_focusOn(TvPlayerHud.optionItemKey(5)), isTrue);
+    await _press(tester, dpadSelect);
+
+    expect(_optionList, findsNothing);
+    expect(live.initLiveUrlCalls, [(1, 0, 0, 0)]);
+    expect(GStorage.setting.get(SettingBoxKey.liveStream), [
+      'http_hls',
+      'fmp4',
+      'avc',
+    ]);
+  });
+
+  testWidgets('切换路线 is hidden until the room\'s routes have loaded, and '
+      'choosing the current route changes nothing', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene)..streams = null;
+    final TvHudActionSource source = await scene.pump(tester);
+    expect(_ids(source, TvHudActionId.liveRoute), isEmpty);
+
+    live.streams = _liveStreams();
+    _one(source, TvHudActionId.liveRoute).onPressed();
+    await tester.pumpAndSettle();
+    expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsNothing);
+    expect(live.initLiveUrlCalls, isEmpty);
+    expect(GStorage.setting.get(SettingBoxKey.liveStream), isNull);
+  });
+
+  testWidgets('发弹幕 hides the HUD and opens upstream\'s send sheet', (
+    tester,
+  ) async {
+    int sent = 0;
+    final _ActionScene scene = _liveScene()..onSendDanmaku = () => sent++;
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+    _one(source, TvHudActionId.sendDanmaku).onPressed();
+    await tester.pumpAndSettle();
+    expect(sent, 1);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    scene.pl.isPipMode = true;
+    expect(_ids(source, TvHudActionId.sendDanmaku), isEmpty);
+  });
+
+  testWidgets('屏蔽词 opens upstream\'s block page when signed in, and only '
+      'says so when signed out', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    _one(source, TvHudActionId.liveDmBlock).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.liveDmBlockCount, 1);
+
+    _liveOf(scene).isLogin = false;
+    _one(source, TvHudActionId.liveDmBlock).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.liveDmBlockCount, 1);
+    expect(find.text('账号未登录'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('醒目留言 switches the split view\'s chat area to the SuperChat '
+      'list and back; hidden in fullscreen and with SuperChat off', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final FakeLiveRoomController live = _liveOf(scene);
+    live.superChatMsg.addAll([SuperChatItem.random, SuperChatItem.random]);
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    final TvHudActionSource source = await scene.pump(tester);
+
+    TvHudAction sc = _one(source, TvHudActionId.superChat);
+    expect((sc.label, sc.active), ('醒目留言 (2)', false));
+    sc.onPressed();
+    await tester.pumpAndSettle();
+    expect(live.pageIndex.value, 1);
+    expect(live.pageController!.page, 1.0);
+
+    sc = _one(source, TvHudActionId.superChat);
+    expect((sc.label, sc.active), ('返回聊天', true));
+    sc.onPressed();
+    await tester.pumpAndSettle();
+    expect(live.pageIndex.value, 0);
+    expect(live.pageController!.page, 0.0);
+
+    scene.pl.isFullScreen.value = true;
+    expect(_ids(source, TvHudActionId.superChat), isEmpty);
+    scene.pl.isFullScreen.value = false;
+    live.showSuperChat = false;
+    expect(_ids(source, TvHudActionId.superChat), isEmpty);
+  });
+
+  testWidgets('the title line shows the streamer, the viewers and the '
+      '高能观众 count once they load', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    expect(tester.widget<Text>(find.byKey(TvPlayerHud.titleKey)).data, '直播间标题');
+    expect(find.byKey(TvPlayerHud.viewersKey), findsNothing);
+
+    live.roomInfoH5.value = RoomInfoH5Data(
+      anchorInfo: AnchorInfo(baseInfo: BaseInfo(uname: '主播')),
+    );
+    live.watchedShow.value = '1.2万人看过';
+    live.onlineCount.value = '345';
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(TvPlayerHud.viewersKey)).data,
+      '主播 · 1.2万人看过 · 高能观众(345)',
+    );
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  test('a live room\'s saved lists are its own: other kinds\' ids are '
+      'skipped, and saving leaves the video lists and 按钮在时间条上方 alone', () {
+    expect(TvHudGroups.liveDefaults.topRight, [
+      TvHudActionId.danmakuToggle,
+      TvHudActionId.danmakuSettings,
+    ]);
+    expect(TvHudGroups.liveDefaults.bottom, [
+      TvHudActionId.reload,
+      TvHudActionId.quality,
+      TvHudActionId.liveRoute,
+      TvHudActionId.videoFit,
+    ]);
+    expect(TvHudGroups.fromSaved(live: true), TvHudGroups.liveDefaults);
+
+    final TvHudGroups live = TvHudGroups.fromSaved(
+      topRight: const ['speed', 'sendDanmaku'],
+      bottom: const ['episodes', 'liveRoute', 'superChat'],
+      buttonsAboveBar: true,
+      live: true,
+    );
+    expect(live.topRight, [TvHudActionId.sendDanmaku]);
+    expect(live.bottom, [TvHudActionId.liveRoute, TvHudActionId.superChat]);
+    expect(live.buttonsAboveBar, isFalse);
+    expect(live.unpinned, isNot(contains(TvHudActionId.speed)));
+    expect(live.unpinned, contains(TvHudActionId.liveDmBlock));
+
+    final TvHudGroups video = TvHudGroups.fromSaved(
+      topRight: const ['sendDanmaku', 'speed'],
+      bottom: const ['liveRoute'],
+    );
+    expect(video.topRight, [TvHudActionId.speed]);
+    expect(video.bottom, isEmpty);
+    expect(video.unpinned, isNot(contains(TvHudActionId.liveRoute)));
+  });
+
+  testWidgets('the live HUD draws the live defaults and starts on 刷新; '
+      'the video groups stay as saved', (tester) async {
+    _saveGroups(
+      TvHudGroups.defaults.copyWith(
+        topRight: const [TvHudActionId.speed],
+        buttonsAboveBar: true,
+      ),
+    );
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+
+    List<String> idsIn(Key group) => [
+      for (final TvHudActionId id in TvHudActionId.values)
+        if (find
+            .descendant(
+              of: find.byKey(group),
+              matching: find.byKey(TvHudAction.keyOf(id.name)),
+            )
+            .evaluate()
+            .isNotEmpty)
+          id.name,
+    ];
+    expect(idsIn(TvPlayerHud.topRightGroupKey), [
+      'danmakuToggle',
+      'danmakuSettings',
+    ]);
+    // Left to right, in the saved order.
+    final List<String> bottom = idsIn(TvPlayerHud.bottomGroupKey)
+      ..sort(
+        (a, b) => tester
+            .getRect(find.byKey(TvHudAction.keyOf(a)))
+            .left
+            .compareTo(tester.getRect(find.byKey(TvHudAction.keyOf(b))).left),
+      );
+    expect(bottom, ['reload', 'quality', 'liveRoute', 'videoFit']);
+    expect(_focusOn(TvHudAction.keyOf('reload')), isTrue);
+    expect(_textIn(TvHudAction.keyOf('reload'), '刷新'), findsOneWidget);
+    expect(_savedIds(TvHudGroups.topRightKey), ['speed']);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('the editor in a live room edits the live lists: no '
+      '按钮在时间条上方, only live entries in 未固定, 刷新 by name, and '
+      '恢复默认 resets the live lists', (tester) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.editButtons).onPressed();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(TvPlayerHud.editorButtonsAboveBarKey), findsNothing);
+    expect(
+      _textIn(TvPlayerHud.editorItemKey(TvHudActionId.reload), '刷新'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(TvPlayerHud.editorItemKey(TvHudActionId.sendDanmaku)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(TvPlayerHud.editorItemKey(TvHudActionId.speed)),
+      findsNothing,
+    );
+
+    // Carry 发弹幕 from 未固定 up into 底部.
+    await _focusKey(
+      tester,
+      TvPlayerHud.editorItemKey(TvHudActionId.sendDanmaku),
+    );
+    await _press(tester, dpadSelect);
+    await _press(tester, dpadUp);
+    await _press(tester, dpadSelect);
+    expect(_savedIds(TvHudGroups.liveBottomKey), [
+      'reload',
+      'quality',
+      'liveRoute',
+      'videoFit',
+      'sendDanmaku',
+    ]);
+    expect(_savedIds(TvHudGroups.bottomKey), ['(nothing)']);
+    expect(GStorage.setting.get(TvHudGroups.buttonsAboveBarKey), isNull);
+
+    await _focusKey(tester, TvPlayerHud.editorResetKey);
+    await _press(tester, dpadSelect);
+    expect(find.text('直播间的右上角、底部和显示按钮文字都会恢复默认。'), findsOneWidget);
+    await _focusKey(tester, TvPlayerHud.editorResetConfirmKey);
+    await _press(tester, dpadSelect);
+    expect(
+      TvHudGroups.read(GStorage.setting, live: true),
+      TvHudGroups.liveDefaults,
+    );
+    await _focusKey(tester, TvPlayerHud.editorDoneKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.editorKey), findsNothing);
+    await tester.pump(const Duration(seconds: 6));
+  });
+}
+
+void _superChatTests() {
+  testWidgets('Back with the HUD hidden in fullscreen closes a SuperChat '
+      'card and stays in fullscreen; with no card it is left alone', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(live.fsSC.value, isNull);
+    expect(scene.pl.isFullScreen.value, isTrue);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+
+    // No card: Back goes on to upstream as before (it leaves fullscreen).
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+
+    // Escape, as on a keyboard, does the same; without a card it leaves
+    // fullscreen, as before.
+    live.fsSC.value = SuperChatItem.random;
+    expect(await tester.sendKeyEvent(LogicalKeyboardKey.escape), isTrue);
+    expect(live.fsSC.value, isNull);
+    expect(scene.pl.isFullScreen.value, isTrue);
+  });
+
+  testWidgets('a held Back that closed a card swallows its repeats and its '
+      'release', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyRepeatEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(live.fsSC.value, isNull);
+    // The next press is a plain Back again.
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('Back leaves a card alone with the HUD shown, in split view and '
+      'in videos', (tester) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+
+    // The HUD shown: Back hides the HUD first, and the card stays.
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(live.fsSC.value, isNotNull);
+
+    // Split view (upstream clears the card there anyway).
+    scene.pl.isFullScreen.value = false;
+    await tester.pumpAndSettle();
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(live.fsSC.value, isNotNull);
+
+    // A video has no SuperChat.
+    scene.pl
+      ..isFullScreen.value = true
+      ..isLive = false;
+    await tester.pumpAndSettle();
+    expect(
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isFalse,
+    );
+    expect(live.fsSC.value, isNotNull);
+  });
+
+  testWidgets('the split view\'s Quick Strip gets a 醒目留言 button that '
+      'switches the chat area to the SuperChat list and back', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final FakeLiveRoomController live = _liveOf(scene);
+    live.superChatMsg.add(SuperChatItem.random);
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+
+    final Finder button = find.byKey(TvPlayerHud.quickSuperChatKey);
+    expect(button, findsOneWidget);
+    expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
+    await _press(tester, dpadRight);
+    await _press(tester, dpadRight);
+    expect(_focusOn(TvPlayerHud.quickSuperChatKey), isTrue);
+    expect(_textIn(TvPlayerHud.quickSuperChatKey, '醒目留言 (1)'), findsOneWidget);
+
+    await _press(tester, dpadSelect);
+    expect(live.pageIndex.value, 1);
+    expect(live.pageController!.page, 1.0);
+    expect(_focusOn(TvPlayerHud.quickSuperChatKey), isTrue);
+    expect(_textIn(TvPlayerHud.quickSuperChatKey, '返回聊天'), findsOneWidget);
+
+    await _press(tester, dpadSelect);
+    expect(live.pageIndex.value, 0);
+    expect(live.pageController!.page, 0.0);
+  });
+
+  testWidgets('no 醒目留言 button with SuperChat off or in a video', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final FakeLiveRoomController live = _liveOf(scene)..showSuperChat = false;
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+    expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsOneWidget);
+    expect(find.byKey(TvPlayerHud.quickSuperChatKey), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _ActionScene video = _ActionScene();
+    video.pl.isFullScreen.value = false;
+    await video.pump(tester);
+    expect(find.byKey(TvPlayerHud.quickFullscreenKey), findsOneWidget);
+    expect(find.byKey(TvPlayerHud.quickSuperChatKey), findsNothing);
+  });
+}
+
+/// The test key maps have no physical key for Back; the HUD only reads the
+/// logical one.
+const PhysicalKeyboardKey _backPhysical = PhysicalKeyboardKey.escape;
+
+/// Upstream's pop entry on the video and live pages, as a [PopScope] under
+/// the HUD: it can pop in split view, and on a refused pop it leaves
+/// fullscreen, or in split view leaves the page
+/// (`PlPlayerController.onPopInvokedWithResult`).
+class _UpstreamPopEntry {
+  _UpstreamPopEntry(this.pl);
+
+  final FakePlPlayerController pl;
+  final List<String> calls = [];
+
+  Widget build() => Obx(
+    () => PopScope(
+      canPop: !pl.isFullScreen.value,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (didPop) return;
+        if (pl.isFullScreen.value) {
+          calls.add('leave fullscreen');
+        } else {
+          calls.add('leave page');
+        }
+      },
+      child: Container(color: Colors.black),
+    ),
+  );
+}
+
+Future<bool> _sendBack(WidgetTester tester) => tester.sendKeyEvent(
+  LogicalKeyboardKey.goBack,
+  physicalKey: _backPhysical,
+);
+
+void _hudBackTests() {
+  testWidgets('a refused pop with the HUD shown also reaches upstream\'s '
+      'pop entry, which would leave the page in split view', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final _UpstreamPopEntry upstream = _UpstreamPopEntry(scene.pl);
+    scene.child = upstream.build();
+    await scene.pump(tester);
+    await _press(tester, menuKey);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+
+    // What Android does with a Back key that nothing in the app handled.
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(upstream.calls, ['leave page']);
+  });
+
+  for (final bool live in [true, false]) {
+    final String where = live ? 'a live room' : 'a video';
+    testWidgets('in $where, the Back key with the HUD shown only hides it: in '
+        'split view and in fullscreen, upstream\'s pop entry isn\'t reached', (
+      tester,
+    ) async {
+      final _ActionScene scene = live
+          ? (_liveScene(fullScreen: false)..onRefresh = () {})
+          : (_ActionScene()..pl.isFullScreen.value = false);
+      final _UpstreamPopEntry upstream = _UpstreamPopEntry(scene.pl);
+      scene.child = upstream.build();
+      await scene.pump(tester);
+
+      // Split view.
+      await _press(tester, menuKey);
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+      expect(await _sendBack(tester), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+      expect(find.byType(TvPlayerHud), findsOneWidget);
+      expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
+
+      // With the HUD hidden in split view, Back goes on as before.
+      expect(await _sendBack(tester), isFalse);
+
+      // Fullscreen.
+      scene.pl.isFullScreen.value = true;
+      await tester.pumpAndSettle();
+      await _press(tester, dpadUp);
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+      expect(await _sendBack(tester), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+      expect(scene.pl.isFullScreen.value, isTrue);
+
+      // With the HUD hidden in fullscreen, Back goes on as before.
+      expect(await _sendBack(tester), isFalse);
+      expect(upstream.calls, isEmpty);
+    });
+  }
+
+  testWidgets('a held Back that hid the HUD swallows its repeats and its '
+      'release, and doesn\'t close a SuperChat card under it', (tester) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyRepeatEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(live.fsSC.value, isNotNull);
+
+    // The next Back, with the HUD hidden, closes the card.
+    expect(await _sendBack(tester), isTrue);
+    expect(live.fsSC.value, isNull);
+  });
+
+  testWidgets('Back in a dialog over the HUD still closes only the dialog', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _focusKey(tester, TvPlayerHud.menuButtonKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsOneWidget);
+
+    // The dialog's own route takes the key; the HUD stays shown.
+    expect(await _sendBack(tester), isFalse);
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsNothing);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
 }

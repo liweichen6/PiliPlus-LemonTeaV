@@ -287,9 +287,11 @@ class _TvHudEditorState extends State<_TvHudEditor> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
-          '右上角、底部、显示按钮文字和按钮位置都会恢复默认。',
-          style: TextStyle(color: Colors.white70, fontSize: 14),
+        content: Text(
+          _groups.live
+              ? '直播间的右上角、底部和显示按钮文字都会恢复默认。'
+              : '右上角、底部、显示按钮文字和按钮位置都会恢复默认。',
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
         ),
         actions: [
           _TvHudPillButton(
@@ -311,7 +313,7 @@ class _TvHudEditorState extends State<_TvHudEditor> {
     );
     if (reset != true || !mounted) return;
     _carried = null;
-    _update(TvHudGroups.defaults);
+    _update(TvHudGroups.defaultsFor(live: _groups.live));
     SmartDialog.showToast('已恢复默认按钮');
   }
 
@@ -319,6 +321,7 @@ class _TvHudEditorState extends State<_TvHudEditor> {
     return _TvHudEditorItem(
       key: _keyOf(id),
       id: id,
+      title: id.titleFor(live: _groups.live),
       focusNode: _nodeOf(id),
       autofocus: autofocus,
       carried: _carried == id,
@@ -399,18 +402,20 @@ class _TvHudEditorState extends State<_TvHudEditor> {
                         label: '显示按钮文字: ${groups.showLabels ? '开' : '关'}',
                         onPressed: _toggleLabels,
                       ),
-                      _TvHudPillButton(
-                        key: TvPlayerHud.editorButtonsAboveBarKey,
-                        compact: true,
-                        active: groups.buttonsAboveBar,
-                        icon: groups.buttonsAboveBar
-                            ? Icons.check_box_rounded
-                            : Icons.check_box_outline_blank_rounded,
-                        label:
-                            '按钮在时间条上方: '
-                            '${groups.buttonsAboveBar ? '开' : '关'}',
-                        onPressed: _toggleButtonsAboveBar,
-                      ),
+                      // A live room has no time bar.
+                      if (!groups.live)
+                        _TvHudPillButton(
+                          key: TvPlayerHud.editorButtonsAboveBarKey,
+                          compact: true,
+                          active: groups.buttonsAboveBar,
+                          icon: groups.buttonsAboveBar
+                              ? Icons.check_box_rounded
+                              : Icons.check_box_outline_blank_rounded,
+                          label:
+                              '按钮在时间条上方: '
+                              '${groups.buttonsAboveBar ? '开' : '关'}',
+                          onPressed: _toggleButtonsAboveBar,
+                        ),
                       _TvHudPillButton(
                         key: TvPlayerHud.editorResetKey,
                         compact: true,
@@ -513,7 +518,7 @@ class _TvHudEditorState extends State<_TvHudEditor> {
                   Text(
                     carried == null
                         ? 'OK 拿起按钮 · 返回 关闭'
-                        : '正在移动「${carried.title}」 · ◀ ▶ 移动 · ▲ ▼ 换行 · '
+                        : '正在移动「${carried.titleFor(live: groups.live)}」 · ◀ ▶ 移动 · ▲ ▼ 换行 · '
                               'OK 或 返回 放下',
                     key: TvPlayerHud.editorHintKey,
                     style: const TextStyle(color: Colors.white54, fontSize: 13),
@@ -534,6 +539,7 @@ class _TvHudEditorItem extends StatefulWidget {
   const _TvHudEditorItem({
     super.key,
     required this.id,
+    required this.title,
     required this.focusNode,
     required this.autofocus,
     required this.carried,
@@ -542,6 +548,7 @@ class _TvHudEditorItem extends StatefulWidget {
   });
 
   final TvHudActionId id;
+  final String title;
   final FocusNode focusNode;
   final bool autofocus;
   final bool carried;
@@ -603,7 +610,7 @@ class _TvHudEditorItemState extends State<_TvHudEditorItem> {
                 color: Colors.white,
               ),
               Text(
-                widget.id.title,
+                widget.title,
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 13,

@@ -21,6 +21,21 @@ enum TvHudMenuGroup {
   final String label;
 }
 
+/// Where an entry can show: in videos, in live rooms, or in both. An entry
+/// is never resolved, offered in the editor or kept in a saved group where it
+/// can't show (M15.1, docs/tv/PLAN.md, Milestone M15).
+enum TvHudScope {
+  both,
+  video,
+  live;
+
+  bool allows({required bool live}) => switch (this) {
+    TvHudScope.both => true,
+    TvHudScope.video => !live,
+    TvHudScope.live => live,
+  };
+}
+
 /// One entry of the action table.
 ///
 /// The names are the ids saved in the settings box for the editable groups
@@ -29,44 +44,150 @@ enum TvHudMenuGroup {
 /// is the `⋮` menu's order.
 enum TvHudActionId {
   quality(TvHudMenuGroup.play, '画质', Icons.hd_rounded),
-  speed(TvHudMenuGroup.play, '倍速', Icons.speed_rounded),
+
+  /// 切换路线: upstream's live route picker (protocol, format, codec and CDN),
+  /// rebuilt as a TV list.
+  liveRoute(
+    TvHudMenuGroup.play,
+    '切换路线',
+    Icons.alt_route_rounded,
+    scope: TvHudScope.live,
+  ),
+  speed(
+    TvHudMenuGroup.play,
+    '倍速',
+    Icons.speed_rounded,
+    scope: TvHudScope.video,
+  ),
   videoFit(TvHudMenuGroup.play, '画面比例', Icons.aspect_ratio_rounded),
-  subtitle(TvHudMenuGroup.play, '字幕', Icons.closed_caption_rounded),
+  subtitle(
+    TvHudMenuGroup.play,
+    '字幕',
+    Icons.closed_caption_rounded,
+    scope: TvHudScope.video,
+  ),
 
   /// Upstream's 翻译 bar button: the video in another language, where
   /// Bilibili offers one (likely AI dubbing; it reloads the streams).
-  aiTranslate(TvHudMenuGroup.play, '翻译', Icons.translate_rounded),
+  aiTranslate(
+    TvHudMenuGroup.play,
+    '翻译',
+    Icons.translate_rounded,
+    scope: TvHudScope.video,
+  ),
 
   /// 上集 / 下集 / 选集 while the video is in a list (an episode list, parts or
   /// a collection), otherwise 下个视频; nothing when there's nothing to play
   /// next.
-  episodes(TvHudMenuGroup.play, '选集', Icons.playlist_play_rounded),
+  episodes(
+    TvHudMenuGroup.play,
+    '选集',
+    Icons.playlist_play_rounded,
+    scope: TvHudScope.video,
+  ),
 
   /// 分段信息: the uploader's chapters.
-  viewPoints(TvHudMenuGroup.play, '分段信息', Icons.view_list_rounded),
+  viewPoints(
+    TvHudMenuGroup.play,
+    '分段信息',
+    Icons.view_list_rounded,
+    scope: TvHudScope.video,
+  ),
 
   /// 片段信息: SponsorBlock's segments (and Bilibili's 片头 / 片尾 for PGC),
   /// upstream's `showSBDetail`, where each can be skipped or jumped to.
-  segments(TvHudMenuGroup.play, '片段信息', Icons.fast_forward_outlined),
-  playOrder(TvHudMenuGroup.play, '播放顺序', Icons.repeat_rounded),
+  segments(
+    TvHudMenuGroup.play,
+    '片段信息',
+    Icons.fast_forward_outlined,
+    scope: TvHudScope.video,
+  ),
+  playOrder(
+    TvHudMenuGroup.play,
+    '播放顺序',
+    Icons.repeat_rounded,
+    scope: TvHudScope.video,
+  ),
   danmakuToggle(TvHudMenuGroup.danmaku, '弹幕开关', Icons.subtitles_rounded),
   danmakuSettings(TvHudMenuGroup.danmaku, '弹幕设置', Icons.tune_rounded),
-  dmChart(TvHudMenuGroup.danmaku, '高能进度条', Icons.show_chart_rounded),
+
+  /// 发弹幕: upstream's live send sheet (`LiveRoomController.onSendDanmaku`).
+  sendDanmaku(
+    TvHudMenuGroup.danmaku,
+    '发弹幕',
+    Icons.comment_outlined,
+    scope: TvHudScope.live,
+  ),
+
+  /// 屏蔽词: upstream's live block page (`/liveDmBlockPage`), signed in only.
+  liveDmBlock(
+    TvHudMenuGroup.danmaku,
+    '屏蔽词',
+    Icons.block_rounded,
+    scope: TvHudScope.live,
+  ),
+
+  /// 醒目留言: switches the split view's chat area between the chat and the
+  /// SuperChat list.
+  superChat(
+    TvHudMenuGroup.danmaku,
+    '醒目留言',
+    Icons.paid_outlined,
+    scope: TvHudScope.live,
+  ),
+  dmChart(
+    TvHudMenuGroup.danmaku,
+    '高能进度条',
+    Icons.show_chart_rounded,
+    scope: TvHudScope.video,
+  ),
   danmakuPool(
     TvHudMenuGroup.danmaku,
     '弹幕列表',
     Icons.format_list_bulleted_rounded,
+    scope: TvHudScope.video,
   ),
-  like(TvHudMenuGroup.interact, '点赞', Icons.thumb_up_off_alt_rounded),
-  coin(TvHudMenuGroup.interact, '投币', Icons.monetization_on_rounded),
-  favorite(TvHudMenuGroup.interact, '收藏', Icons.star_border_rounded),
-  watchLater(TvHudMenuGroup.interact, '稍后再看', Icons.watch_later_outlined),
-  audioQuality(TvHudMenuGroup.pictureAndSound, '音质', Icons.album_outlined),
-  decodeFormat(TvHudMenuGroup.pictureAndSound, '解码格式', Icons.av_timer_outlined),
+  like(
+    TvHudMenuGroup.interact,
+    '点赞',
+    Icons.thumb_up_off_alt_rounded,
+    scope: TvHudScope.video,
+  ),
+  coin(
+    TvHudMenuGroup.interact,
+    '投币',
+    Icons.monetization_on_rounded,
+    scope: TvHudScope.video,
+  ),
+  favorite(
+    TvHudMenuGroup.interact,
+    '收藏',
+    Icons.star_border_rounded,
+    scope: TvHudScope.video,
+  ),
+  watchLater(
+    TvHudMenuGroup.interact,
+    '稍后再看',
+    Icons.watch_later_outlined,
+    scope: TvHudScope.video,
+  ),
+  audioQuality(
+    TvHudMenuGroup.pictureAndSound,
+    '音质',
+    Icons.album_outlined,
+    scope: TvHudScope.video,
+  ),
+  decodeFormat(
+    TvHudMenuGroup.pictureAndSound,
+    '解码格式',
+    Icons.av_timer_outlined,
+    scope: TvHudScope.video,
+  ),
   superResolution(
     TvHudMenuGroup.pictureAndSound,
     '超分辨率',
     Icons.auto_awesome_rounded,
+    scope: TvHudScope.video,
   ),
   playerVolume(
     TvHudMenuGroup.pictureAndSound,
@@ -80,7 +201,12 @@ enum TvHudActionId {
   ),
   reload(TvHudMenuGroup.other, '重载视频', Icons.refresh_rounded),
   playerInfo(TvHudMenuGroup.other, '播放信息', Icons.info_outline_rounded),
-  fullSettings(TvHudMenuGroup.other, '完整设置', Icons.settings_rounded),
+  fullSettings(
+    TvHudMenuGroup.other,
+    '完整设置',
+    Icons.settings_rounded,
+    scope: TvHudScope.video,
+  ),
 
   /// Opens the button editor (M14.3).
   editButtons(
@@ -95,6 +221,7 @@ enum TvHudActionId {
     this.title,
     this.icon, {
     this.pinnable = true,
+    this.scope = TvHudScope.both,
   });
 
   final TvHudMenuGroup group;
@@ -108,6 +235,14 @@ enum TvHudActionId {
 
   /// Whether the entry can be pinned to the top-right or bottom group.
   final bool pinnable;
+
+  /// Whether the entry shows in videos, live rooms or both.
+  final TvHudScope scope;
+
+  /// The entry's name in the editor of a video ([live] false) or a live room:
+  /// 重载视频 is 刷新 in a live room.
+  String titleFor({required bool live}) =>
+      live && this == TvHudActionId.reload ? '刷新' : title;
 }
 
 /// A button that an available entry resolves to.
@@ -190,6 +325,10 @@ abstract interface class TvHudUpstream {
   /// Upstream's chapter panel (`ViewPointsPage`), as its player opens it in
   /// fullscreen.
   void showViewPoints(BuildContext context, VideoDetailController ctr);
+
+  /// Upstream's live block page (`/liveDmBlockPage`), as its live bottom
+  /// bar's `屏蔽` button opens it.
+  void openLiveDmBlock(LiveRoomController ctr);
 }
 
 class _HeaderControlPanels implements TvHudHeaderPanels {
@@ -262,6 +401,40 @@ class _DefaultTvHudUpstream implements TvHudUpstream {
           : child,
     );
   }
+
+  @override
+  void openLiveDmBlock(LiveRoomController ctr) => Get.toNamed(
+    '/liveDmBlockPage',
+    parameters: {'roomId': ctr.roomId.toString()},
+    arguments: ctr,
+  );
+}
+
+/// One row of 切换路线: a CDN host of one codec of one format of one
+/// protocol.
+@immutable
+class _TvLiveRoute {
+  const _TvLiveRoute({
+    required this.streamIndex,
+    required this.formatIndex,
+    required this.codecIndex,
+    required this.urlIndex,
+    required this.label,
+    required this.current,
+    this.protocolName,
+    this.formatName,
+    this.codecName,
+  });
+
+  final int streamIndex;
+  final int formatIndex;
+  final int codecIndex;
+  final int urlIndex;
+  final String label;
+  final bool current;
+  final String? protocolName;
+  final String? formatName;
+  final String? codecName;
 }
 
 /// The action table, mixed into the HUD's state.
@@ -359,9 +532,14 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
 
   @override
   List<TvHudAction> resolveAction(TvHudActionId id) {
+    if (!id.scope.allows(live: !_isVideo)) return const [];
     final TvHudAction? single = switch (id) {
       TvHudActionId.episodes => null,
       TvHudActionId.quality => _qualityAction(),
+      TvHudActionId.liveRoute => _liveRouteAction(),
+      TvHudActionId.sendDanmaku => _sendDanmakuAction(),
+      TvHudActionId.liveDmBlock => _liveDmBlockAction(),
+      TvHudActionId.superChat => _superChatAction(),
       TvHudActionId.speed => _speedAction(),
       TvHudActionId.videoFit => _videoFitAction(),
       TvHudActionId.subtitle => _subtitleAction(),
@@ -439,6 +617,108 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
                 SmartDialog.showToast('画质已切换为：${qn.desc}');
               },
             ),
+        ],
+      );
+    });
+  }
+
+  /// The routes of the current live room, one row per CDN host, grouped
+  /// under `协议 · 格式` headers; `null` before the room has loaded.
+  List<({String header, List<_TvLiveRoute> routes})>? _liveRoutes(
+    LiveRoomController liveCtr,
+  ) {
+    final List<live_stream.Stream> streams;
+    try {
+      streams = liveCtr.stream;
+    } catch (_) {
+      return null; // `stream` is `late`, set once the room's URLs load.
+    }
+    final groups = <({String header, List<_TvLiveRoute> routes})>[];
+    for (final (int si, live_stream.Stream stream) in streams.indexed) {
+      for (final (int fi, live_format.Format format) in stream.format.indexed) {
+        final List<_TvLiveRoute> routes = [
+          for (final (int ci, CodecItem codec) in format.codec.indexed)
+            for (final (int ui, UrlInfo url) in codec.urlInfo.indexed)
+              _TvLiveRoute(
+                streamIndex: si,
+                formatIndex: fi,
+                codecIndex: ci,
+                urlIndex: ui,
+                label:
+                    '${codec.codecName ?? ci} (${codec.currentQn.desc}) · '
+                    '${_hostOf(url.host)}',
+                current:
+                    si == liveCtr.streamIndex &&
+                    fi == liveCtr.formatIndex &&
+                    ci == liveCtr.codecIndex &&
+                    ui == liveCtr.liveUrlIndex,
+                protocolName: stream.protocolName,
+                formatName: format.formatName,
+                codecName: codec.codecName,
+              ),
+        ];
+        if (routes.isEmpty) continue;
+        groups.add((
+          header: '${stream.protocolName ?? si} · ${format.formatName ?? fi}',
+          routes: routes,
+        ));
+      }
+    }
+    return groups.isEmpty ? null : groups;
+  }
+
+  static String _hostOf(String host) =>
+      host.replaceFirst(RegExp(r'^[a-z]+://'), '');
+
+  TvHudAction? _liveRouteAction() {
+    final LiveRoomController? liveCtr = _liveRoomCtr;
+    if (liveCtr == null || _liveRoutes(liveCtr) == null) return null;
+    return _single(
+      TvHudActionId.liveRoute,
+      icon: Icons.alt_route_rounded,
+      label: '切换路线',
+      onPressed: () => _showLiveRouteDialog(liveCtr),
+    );
+  }
+
+  /// As upstream's `_showLiveStreamDialog`: choosing a route reloads the
+  /// stream from it and saves its protocol, format and codec.
+  Future<void> _showLiveRouteDialog(LiveRoomController liveCtr) async {
+    final groups = _liveRoutes(liveCtr);
+    if (groups == null) return;
+    await _showTvDialog((dialogContext) {
+      return _TvOptionListDialog(
+        title: '切换路线',
+        items: [
+          for (final group in groups) ...[
+            _TvDialogOptionItem.header(group.header),
+            for (final _TvLiveRoute route in group.routes)
+              _TvDialogOptionItem(
+                title: route.label,
+                selected: route.current,
+                onSelect: () {
+                  Navigator.of(dialogContext).pop();
+                  if (route.current) return;
+                  liveCtr.initLiveUrl(
+                    streamIndex: route.streamIndex,
+                    formatIndex: route.formatIndex,
+                    codecIndex: route.codecIndex,
+                    liveUrlIndex: route.urlIndex,
+                  );
+                  if (route.protocolName case final String protocol?) {
+                    if (route.formatName case final String format?) {
+                      if (route.codecName case final String codec?) {
+                        GStorage.setting.put(SettingBoxKey.liveStream, [
+                          protocol,
+                          format,
+                          codec,
+                        ]);
+                      }
+                    }
+                  }
+                },
+              ),
+          ],
         ],
       );
     });
@@ -808,6 +1088,72 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     SmartDialog.showToast(newVal ? '已开启弹幕' : '已关闭弹幕');
   }
 
+  /// Upstream's live send sheet. It's a route on `Get.key`, so the HUD hides
+  /// first and focus comes back once the sheet closes.
+  TvHudAction? _sendDanmakuAction() {
+    if (_pl.isPipMode || Get.key.currentState == null) return null;
+    return _single(
+      TvHudActionId.sendDanmaku,
+      icon: Icons.comment_outlined,
+      label: '发弹幕',
+      onPressed: () => _openUpstreamPanel(widget.onSendDanmaku),
+    );
+  }
+
+  /// Upstream's live block page, as its `屏蔽` button opens it.
+  TvHudAction? _liveDmBlockAction() {
+    final LiveRoomController? liveCtr = _liveRoomCtr;
+    if (liveCtr == null || _pl.isPipMode || Get.key.currentState == null) {
+      return null;
+    }
+    return _single(
+      TvHudActionId.liveDmBlock,
+      icon: Icons.block_rounded,
+      label: '屏蔽词',
+      onPressed: () {
+        if (!liveCtr.isLogin) {
+          SmartDialog.showToast('账号未登录');
+          return;
+        }
+        _openUpstreamPanel(
+          () => _upstream.openLiveDmBlock(liveCtr),
+        );
+      },
+    );
+  }
+
+  /// Switches the split view's chat area between the chat and the SuperChat
+  /// list (upstream's `PageView`, swiped on a phone). Only in split view,
+  /// where that area shows, and only with SuperChat on.
+  TvHudAction? _superChatAction() {
+    final LiveRoomController? liveCtr = _liveRoomCtr;
+    final PageController? pages = liveCtr?.pageController;
+    if (liveCtr == null ||
+        !liveCtr.showSuperChat ||
+        pages == null ||
+        !pages.hasClients ||
+        _isFullScreen) {
+      return null;
+    }
+    final bool onList = liveCtr.pageIndex.value == 1;
+    final int count = liveCtr.superChatMsg.length;
+    return _single(
+      TvHudActionId.superChat,
+      icon: onList ? Icons.chat_outlined : Icons.paid_outlined,
+      label: onList ? '返回聊天' : (count > 0 ? '醒目留言 ($count)' : '醒目留言'),
+      active: onList,
+      onPressed: () {
+        final int target = onList ? 0 : 1;
+        liveCtr.pageIndex.value = target;
+        pages.animateToPage(
+          target,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      },
+    );
+  }
+
   /// Upstream's own danmaku panel (`HeaderMixin.showSetDanmaku`), for videos
   /// and live rooms alike.
   TvHudAction? _danmakuSettingsAction() {
@@ -1052,7 +1398,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     return _single(
       TvHudActionId.reload,
       icon: Icons.refresh_rounded,
-      label: '重载视频',
+      label: TvHudActionId.reload.titleFor(live: !_isVideo),
       onPressed: () {
         _hideHud();
         reload!();
