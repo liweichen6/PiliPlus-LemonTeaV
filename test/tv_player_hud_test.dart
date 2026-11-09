@@ -1761,6 +1761,8 @@ void main() {
   group('live room entries and groups (M15.3)', _liveRoomTests);
 
   group('closing a SuperChat (M15.2)', _superChatTests);
+
+  group('Back with the HUD shown', _hudBackTests);
 }
 
 /// The remote's menu key, which opens and closes the HUD.
@@ -4539,7 +4541,7 @@ void _superChatTests() {
     await scene.pump(tester);
     live.fsSC.value = SuperChatItem.random;
 
-    // The HUD shown: Back closes the HUD first, as before.
+    // The HUD shown: Back hides the HUD first, and the card stays.
     await _press(tester, dpadUp);
     expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
     expect(
@@ -4547,10 +4549,9 @@ void _superChatTests() {
         LogicalKeyboardKey.goBack,
         physicalKey: _backPhysical,
       ),
-      isFalse,
+      isTrue,
     );
-    expect(live.fsSC.value, isNotNull);
-    await _press(tester, dpadBack);
+    await tester.pumpAndSettle();
     expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
     expect(live.fsSC.value, isNotNull);
 
@@ -4636,3 +4637,149 @@ void _superChatTests() {
 /// The test key maps have no physical key for Back; the HUD only reads the
 /// logical one.
 const PhysicalKeyboardKey _backPhysical = PhysicalKeyboardKey.escape;
+
+/// Upstream's pop entry on the video and live pages, as a [PopScope] under
+/// the HUD: it can pop in split view, and on a refused pop it leaves
+/// fullscreen, or in split view leaves the page
+/// (`PlPlayerController.onPopInvokedWithResult`).
+class _UpstreamPopEntry {
+  _UpstreamPopEntry(this.pl);
+
+  final FakePlPlayerController pl;
+  final List<String> calls = [];
+
+  Widget build() => Obx(
+    () => PopScope(
+      canPop: !pl.isFullScreen.value,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (didPop) return;
+        if (pl.isFullScreen.value) {
+          calls.add('leave fullscreen');
+        } else {
+          calls.add('leave page');
+        }
+      },
+      child: Container(color: Colors.black),
+    ),
+  );
+}
+
+Future<bool> _sendBack(WidgetTester tester) => tester.sendKeyEvent(
+  LogicalKeyboardKey.goBack,
+  physicalKey: _backPhysical,
+);
+
+void _hudBackTests() {
+  testWidgets('a refused pop with the HUD shown also reaches upstream\'s '
+      'pop entry, which would leave the page in split view', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false);
+    final _UpstreamPopEntry upstream = _UpstreamPopEntry(scene.pl);
+    scene.child = upstream.build();
+    await scene.pump(tester);
+    await _press(tester, menuKey);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+
+    // What Android does with a Back key that nothing in the app handled.
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(upstream.calls, ['leave page']);
+  });
+
+  for (final bool live in [true, false]) {
+    final String where = live ? 'a live room' : 'a video';
+    testWidgets('in $where, the Back key with the HUD shown only hides it: in '
+        'split view and in fullscreen, upstream\'s pop entry isn\'t reached', (
+      tester,
+    ) async {
+      final _ActionScene scene = live
+          ? (_liveScene(fullScreen: false)..onRefresh = () {})
+          : (_ActionScene()..pl.isFullScreen.value = false);
+      final _UpstreamPopEntry upstream = _UpstreamPopEntry(scene.pl);
+      scene.child = upstream.build();
+      await scene.pump(tester);
+
+      // Split view.
+      await _press(tester, menuKey);
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+      expect(await _sendBack(tester), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+      expect(find.byType(TvPlayerHud), findsOneWidget);
+      expect(_focusOn(TvPlayerHud.quickFullscreenKey), isTrue);
+
+      // With the HUD hidden in split view, Back goes on as before.
+      expect(await _sendBack(tester), isFalse);
+
+      // Fullscreen.
+      scene.pl.isFullScreen.value = true;
+      await tester.pumpAndSettle();
+      await _press(tester, dpadUp);
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+      expect(await _sendBack(tester), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+      expect(scene.pl.isFullScreen.value, isTrue);
+
+      // With the HUD hidden in fullscreen, Back goes on as before.
+      expect(await _sendBack(tester), isFalse);
+      expect(upstream.calls, isEmpty);
+    });
+  }
+
+  testWidgets('a held Back that hid the HUD swallows its repeats and its '
+      'release, and doesn\'t close a SuperChat card under it', (tester) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    final FakeLiveRoomController live = _liveOf(scene);
+    await scene.pump(tester);
+    live.fsSC.value = SuperChatItem.random;
+    await _press(tester, dpadUp);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+
+    expect(
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyRepeatEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    expect(
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.goBack,
+        physicalKey: _backPhysical,
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsNothing);
+    expect(live.fsSC.value, isNotNull);
+
+    // The next Back, with the HUD hidden, closes the card.
+    expect(await _sendBack(tester), isTrue);
+    expect(live.fsSC.value, isNull);
+  });
+
+  testWidgets('Back in a dialog over the HUD still closes only the dialog', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene()..onRefresh = () {};
+    await scene.pump(tester);
+    await _press(tester, dpadUp);
+    await _focusKey(tester, TvPlayerHud.menuButtonKey);
+    await _press(tester, dpadSelect);
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsOneWidget);
+
+    // The dialog's own route takes the key; the HUD stays shown.
+    expect(await _sendBack(tester), isFalse);
+    await _press(tester, dpadBack);
+    expect(find.byKey(TvPlayerHud.menuPanelKey), findsNothing);
+    expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+}
