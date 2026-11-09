@@ -138,7 +138,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M15: Player HUD, Live** | Epic M15.1 | `M15.1` | Button List & Tasks (Discussion Gate) | ✅ Done (agreed 2026-11-08) | `docs/tv/PLAN.md` |
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.2` | Close a SuperChat | ✅ Done (the user's try on `<physical-tv>` 2026-11-08; merged) | `lib/tv/tv_player_hud.dart`, `LiveRoomController.fsSC`, `test/tv_player_hud_test.dart` |
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.3` | Live Entries & Groups | ✅ Done (merged) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
-| **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ⏳ Planned | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
+| **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ✅ Done (M15 closed 2026-11-08; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | F1 Spike | ⏳ Planned (later) | `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | F2 TV-Only Player | ⏳ Planned (later) | Decided at the start of M17 |
 
@@ -2233,6 +2233,27 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M15), `docs/tv/PROGRESS.md`.
 * **Device try** (`<physical-tv>`): a `-Pdev` `android-arm` build of the branch (`a4f6ba937`) was installed over `PiliPlus TV dev` with the user's go-ahead and the TV's address given in chat; nothing else was run on the TV. The user tried it in a live room and reported it works, so the "Done when" holds. Afterwards adb was disconnected and its server stopped.
 * **Next**: `M15.4` (the recorded D-pad path for the live HUD, the `<vm-tv>` and `<physical-tv>` passes, docs).
+
+### [2026-11-08] Milestone M15 (Task `M15.4`): Tests, Device Pass & Docs; M15 Closed
+* **Status**: ✅ Done. M15 is closed: every agreed live entry works with the D-pad, pinned or from the menu (发弹幕 and 屏蔽词 by their tests only), the live groups are saved apart from the video ones (tests), 切换路线 switches and remembers the route, and `M15.2`'s "Done when" holds. Lands by pull request; it changes a test file, so merging publishes a release.
+* **Files Changed**: `[MODIFY] test/tv_player_hud_test.dart`, `docs/tv/PLAN.md` (Phase 5 roadmap, M15), `docs/tv/PROGRESS.md` (`3510c3ec5`).
+* **Recorded path** (`3510c3ec5`): a live room in split view on the TV's logical screen: the Quick Strip (全屏, 暂停, `醒目留言 (1)` and back), the menu key opening the HUD on 刷新, Right along 画质, 切换路线 and 画面, Up to 弹幕开关, on to 弹幕设置 and `⋮`, the `⋮` menu (画质, Down to 切换路线), Back to `⋮`, Down to the bottom row, and Back to 全屏. 223 TV tests pass; TV analyze is clean over the CI file list.
+* **`<vm-tv>` pass** (`-Pdev` arm64 build of `main`'s app code, headless, signed out, `开启硬解` off for the run and back on afterwards): a busy room (楚钧艾克, 解说BLG T1!) played at 超清, which the server gave a signed-out viewer.
+  * Split view: the Quick Strip's third button showed `醒目留言 (1)`; Select switched the chat area to the SuperChat list (with a real ¥100 SuperChat) and `返回聊天` switched back.
+  * The menu key opened the HUD on 刷新 with the live defaults (刷新, 画质: 超清, 切换路线, 画面: 自动; 弹幕开关, 弹幕设置 and `⋮` top right) and the title line `楚钧艾克 · 54.3万人看过 · 高能观众(14.2万)`.
+  * 切换路线 listed the routes under `http_stream · flv` and `http_hls · ts`, focus on the current one and long hosts ending in `…`. Choosing the second host reloaded the stream, and reopening the list showed it current; the first host was chosen again afterwards. This saved `http_stream / flv / avc` as `liveStream` on `<vm-tv>`, the room's default route.
+  * In fullscreen, the `⋮` menu listed every live entry except 醒目留言 (split view only); the live editor had no `按钮在时间条上方`, showed 刷新 by name and offered only live entries in 未固定; closed without changes.
+  * Back with a card: a small watcher read the screen once a second and pressed Back as soon as a SuperChat card showed, with the HUD hidden in fullscreen. A ¥500 card closed and the player stayed in fullscreen (screenshots 1.5 s and 4.5 s later). So a Back the HUD handles doesn't also reach Android as a Back. With no card, Back left fullscreen as before.
+  * Afterwards the app was stopped, `开启硬解` is on again, and the emulator was synced and stopped.
+* **`<physical-tv>` pass** (the `M15.2` build, `a4f6ba937`, the same app code as `main`; the user's go-ahead and the TV's address given in chat; signed in): `无痕模式` turned on before playing; 直播默认画质 was 原画 (no resolution bound) and was set to 蓝光 for the run. 【直播】BLG vs T1 played at 超清.
+  * The Quick Strip had the 醒目留言 button; the HUD opened on 刷新 with the live defaults, icon-only (the user's shared `显示按钮文字` is off), with the title line under the room title; 画质 read `画质: 超清`.
+  * 切换路线 opened with the same headers and focus on the current route, and was cancelled without a change.
+  * Back with a card: the same watcher closed a ¥1000 SuperChat card with Back, and the player stayed in fullscreen (screenshots 1.5 s and 4.5 s later).
+  * Along the way the HUD hid itself (5 s) while a screenshot was read, so one Select landed on the Quick Strip's 播放/暂停 and paused the stream; it was resumed at once.
+  * Afterwards 直播默认画质 is 原画 again, `无痕模式` is off, the TV is asleep (`mWakefulness=Asleep`), and adb is disconnected and its server stopped. Nothing was sent, liked or saved on the account.
+* **Seen, not changed**:
+  * With the HUD shown, Back also reaches upstream's pop entry (noted in `M15.2`). In split view that entry calls `Get.back()`, so Back with the HUD shown in a split-view live room may leave the room rather than only close the HUD. Not tried on a device; worth checking. (Confirmed in code and fixed on 2026-11-09, below.)
+  * In split view the Quick Strip sits over upstream's header (the streamer's name and viewer counts), as it does on video pages.
 
 ### [2026-11-09] Fix: Back with the HUD shown also left fullscreen, or the page in split view
 * **Status**: ✅ Fixed on its own branch; lands by pull request. Merging it publishes a release.
