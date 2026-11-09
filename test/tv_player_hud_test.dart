@@ -2311,6 +2311,40 @@ void _recordedPaths() {
     ]);
   });
 
+  testWidgets('live room HUD (M15.4): the Quick Strip with 醒目留言, then the '
+      'menu key opens the live defaults on 刷新, the D-pad walks both '
+      'groups and the ⋮ menu, and Back closes it', (tester) async {
+    final _ActionScene scene = _liveScene(fullScreen: false)..onRefresh = () {};
+    final FakeLiveRoomController live = _liveOf(scene);
+    live.superChatMsg.add(SuperChatItem.random);
+    scene.child = PageView(
+      controller: live.pageController,
+      children: const [Text('聊天页'), Text('醒目留言页')],
+    );
+    await scene.pump(tester);
+    // The TV's logical screen, as the other recorded paths.
+    useTvScreen(tester);
+    await tester.pumpAndSettle();
+    await walkPath(tester, '全屏', [
+      (dpadRight, '暂停'),
+      (dpadRight, '醒目留言 (1)'),
+      (dpadLeft, '暂停'),
+      (dpadLeft, '全屏'),
+      (menuKey, '刷新'),
+      (dpadRight, '画质: 原画'),
+      (dpadRight, '切换路线'),
+      (dpadRight, '画面: 自动'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadRight, '更多'),
+      (dpadSelect, '画质: 原画'),
+      (dpadDown, '切换路线'),
+      (dpadBack, '更多'),
+      (dpadDown, '刷新|画质: 原画|切换路线|画面: 自动'),
+      (dpadBack, '全屏'),
+    ]);
+  });
+
   testWidgets('player HUD: a custom layout, with labels off and 点赞 and '
       '收藏 pinned top right', (tester) async {
     _saveGroups(
