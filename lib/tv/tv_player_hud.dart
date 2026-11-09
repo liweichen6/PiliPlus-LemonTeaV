@@ -601,17 +601,24 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     });
   }
 
-  /// The key whose press closed a SuperChat card, so its release is
-  /// swallowed too and Android never turns it into a Back.
-  LogicalKeyboardKey? _closedSuperChatWith;
+  /// The Back (or Escape) key whose press the HUD took, so its repeats and
+  /// its release are swallowed too and Android never turns it into a Back.
+  LogicalKeyboardKey? _swallowedBack;
 
-  /// Back (or Escape) with the HUD hidden in a fullscreen live room closes a
-  /// SuperChat card that's on screen (`LiveRoomController.fsSC`, upstream's
-  /// touch `×`), instead of leaving fullscreen (`M15.2`). It's handled as a
-  /// key, not in the [PopScope]: upstream's own pop entry on the live page
-  /// leaves fullscreen whenever a Back reaches the route. With no card shown,
-  /// or with the HUD shown, the keys are left alone.
-  KeyEventResult? _handleSuperChatBack(KeyEvent event) {
+  /// Back (or Escape) handled as a key, before Android turns it into a pop.
+  ///
+  /// A pop can't do this: Flutter calls every pop entry of the route when one
+  /// refuses a pop, and upstream's video and live pages have their own
+  /// (`PlPlayerController.onPopInvokedWithResult`), which leaves fullscreen,
+  /// or in split view leaves the page (`Get.back()`), on the same press.
+  ///
+  /// * With the HUD shown, Back only hides it.
+  /// * With the HUD hidden in a fullscreen live room, Back closes a SuperChat
+  ///   card that's on screen (`LiveRoomController.fsSC`, upstream's touch
+  ///   `×`) instead of leaving fullscreen (`M15.2`).
+  ///
+  /// Otherwise the keys are left alone, and Back reaches the route as before.
+  KeyEventResult? _handleBackKey(KeyEvent event) {
     final LogicalKeyboardKey key = event.logicalKey;
     if (key != LogicalKeyboardKey.goBack &&
         key != LogicalKeyboardKey.browserBack &&
@@ -619,27 +626,32 @@ class _TvPlayerHudState extends State<TvPlayerHud>
       return null;
     }
     if (event is KeyUpEvent) {
-      if (_closedSuperChatWith == key) {
-        _closedSuperChatWith = null;
+      if (_swallowedBack == key) {
+        _swallowedBack = null;
         return KeyEventResult.handled;
       }
       return null;
     }
     if (event is KeyRepeatEvent) {
-      return _closedSuperChatWith == key ? KeyEventResult.handled : null;
+      return _swallowedBack == key ? KeyEventResult.handled : null;
     }
-    if (_hudVisible || !_isFullScreen) return null;
+    if (_hudVisible) {
+      _hideHud();
+      _swallowedBack = key;
+      return KeyEventResult.handled;
+    }
+    if (!_isFullScreen) return null;
     final LiveRoomController? liveCtr = _liveRoomCtr;
     if (liveCtr == null || liveCtr.fsSC.value == null) return null;
     liveCtr.fsSC.value = null;
-    _closedSuperChatWith = key;
+    _swallowedBack = key;
     return KeyEventResult.handled;
   }
 
   KeyEventResult _handleRootKeyEvent(FocusNode node, KeyEvent event) {
     final key = event.logicalKey;
 
-    if (_handleSuperChatBack(event) case final KeyEventResult result) {
+    if (_handleBackKey(event) case final KeyEventResult result) {
       return result;
     }
 
@@ -677,25 +689,17 @@ class _TvPlayerHudState extends State<TvPlayerHud>
       }
     }
 
-    // Android dispatches Navigator.maybePop() after KEYCODE_BACK; let PopScope
-    // handle LogicalKeyboardKey.goBack once so one Back press never both closes
-    // the HUD/fullscreen and pops the route.
+    // A Back the HUD doesn't take ([_handleBackKey]) goes on to Android,
+    // which turns it into a pop of the route.
     if (key == LogicalKeyboardKey.goBack ||
         key == LogicalKeyboardKey.browserBack) {
-      if (_hudVisible) {
-        _resetAutoHideTimer();
-      }
       return KeyEventResult.ignored;
     }
 
     // When the 10-foot HUD is open, reset inactivity timer on any key event
-    // and let Escape close the HUD.
+    // (Back and Escape close it: [_handleBackKey]).
     if (_hudVisible) {
       _resetAutoHideTimer();
-      if (event is KeyDownEvent && key == LogicalKeyboardKey.escape) {
-        _hideHud();
-        return KeyEventResult.handled;
-      }
       // Let FocusScope inside the HUD handle directional navigation & select
       return KeyEventResult.ignored;
     }
