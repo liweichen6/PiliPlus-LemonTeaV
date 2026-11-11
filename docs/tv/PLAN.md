@@ -56,7 +56,7 @@
 
 ---
 
-### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M17)
+### Phase 5: Playback Stability, CI Checks, Focus Engine & Player HUD (Milestones M11–M18)
 
 | Milestone | Focus Area | Scope | Dependencies | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -66,7 +66,8 @@
 | **M13: Focus Engine, Staged and Parity-Gated** | Fix odd jumps, a lost or missing ring and D-pad lag; replace the rule chain with adapters, one reconcile loop and one scoring function with column memory | `lib/tv/tv_navigation.dart`, `lib/tv/tv_focus_layers.dart`, new `lib/tv/adapters/`, `test/tv_*.dart` (`M13.0`–`M13.6`) | M11, M16; focus-bug list from the user | ✅ Done (all tasks done; `M13.6` released in `v2.2.0.2-fork.5962`; closed by the user's decision with one part of its bar open: `decide` on the comments list is still over the budget) |
 | **M14: Player HUD, Video** | The TV pill HUD changed in place: the agreed layout, editable top-right and bottom groups, a `⋮` menu with every option; menus open upstream's own panels | `lib/tv/tv_player_hud.dart`, new action table in `lib/tv/`, `lib/tv/tv_platform.dart`, `test/tv_player_hud_test.dart` (`M14.1`–`M14.4`) | M12, M16; button-list discussion (`M14.1`) | ✅ Done (2026-11-07; `M14.1`–`M14.4`) |
 | **M15: Player HUD, Live** | The live room's own entries, saved groups and route picker (agreed in `M15.1`, 2026-11-08); closing a SuperChat with the remote | `lib/tv/tv_player_hud.dart`, `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart` (`M15.1`–`M15.4`) | M14 | ✅ Done (2026-11-08; `M15.1`–`M15.4`) |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Option F of M12: a second player on a `SurfaceView`, for real HDR and Dolby Vision. Deprioritized by the user on 2026-10-30; its place after M15 is proposed | Upstream player files as well as `lib/tv/*`; not a TV-layer-only milestone (`M17.1`–`M17.2`) | M15; M16's spike (`M16.1`) | ⏳ Planned (later) |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Option F of M12: a second player on a `SurfaceView`, for real HDR and Dolby Vision, and 4K in the normal app. Study, then a spike on the TV, then a decision gate, then the build | Upstream player files as well as `lib/tv/*` and new Kotlin; not a TV-layer-only milestone (`M17.1`–`M17.12`) | M15; M16's spike (`M16.1`) | ⏳ Planned (tasks detailed 2026-11-11; not started) |
+| **M18: Video Plane Performance (PiliPlus TVP)** | The UI, danmaku and D-pad over the video plane as good as on the texture path: measure and trace, replace Hybrid Composition with a transparent view, then the thread ripper's load and needless UI frames. May run before M17 or beside it | `variant/4k-passthrough`: `lib/tv/tv_video_plane.dart`, `TvVideoPlane.kt`, `MainActivity`, small hooks; `lib/services/thread_ripper/` only if measured (`M18.1`–`M18.8`) | M16; shares the view question with `M17.4` | ⏳ Planned (2026-11-11; not started) |
 
 ---
 
@@ -553,7 +554,7 @@
   * **CI**: analyze and the TV tests, on pull requests and before every release; a failure blocks the release. Scope: the TV tests and analyze of the TV code and hook files only.
   * **Focus engine**: staged and parity-gated; returning to a column restores the last item focused there; the old rules stay one release behind a hidden switch. The problems seen on the TV (odd jumps, a lost or missing ring, D-pad lag everywhere) are in scope.
   * **Player HUD**: upstream's layout and icons at TV size with the focused button's label shown; menus open upstream's own panels; video first, live later; the button list is agreed before implementation.
-* **Ordering**: M11 → M12 → M16 → M13 and M14 → M15 → M17. M16 runs before M13 by the user's decision (2026-10-30), because 4K is needed sooner; it keeps its number because earlier entries refer to M13–M15, so the numbers don't show the order. M17's place after M15 is proposed. Exceptions to Execution Rule 1, each on its own branch: M11 runs while the device is prepared for M12; M14 can start once M16 is done and run alongside M13.1–M13.2, which touch different files; M14's recorded D-pad path joins M13.3's set.
+* **Ordering**: M11 → M12 → M16 → M13 and M14 → M15 → M17. M16 runs before M13 by the user's decision (2026-10-30), because 4K is needed sooner; it keeps its number because earlier entries refer to M13–M15, so the numbers don't show the order. M17's place after M15 was proposed, and stands: the user asked for its tasks on 2026-11-11. M18 (added 2026-11-11) works on the variant branch and may run before M17 or beside its study tasks; `M17.4` and `M18.3` settle the same view question, so whichever runs second takes the first one's result. Exceptions to Execution Rule 1, each on its own branch: M11 runs while the device is prepared for M12; M14 can start once M16 is done and run alongside M13.1–M13.2, which touch different files; M14's recorded D-pad path joins M13.3's set.
 * **Rules for every Phase 5 task**: the Execution Rules above, including rule 5. Tier 1 first (`lib/tv/*`, `TvBridge.kt`, fork-only workflow files, `test/tv_*.dart`, docs); a hook in an upstream file stays one line where possible (M10.13). Run `./tool/tv_patch.sh apply` before analyze/test/build and `./tool/tv_patch.sh revert` before committing. Device IPs, ports, serials and adb addresses stay out of commits and docs (`<physical-tv>`, `<vm-tv>`).
 
 ### Milestone M11: TV Checks in CI
@@ -814,26 +815,277 @@
   * **Task M15.4 (`✅ Done`) — Tests, Device Pass & Docs**: the recorded D-pad path for the live HUD's default layout; `<vm-tv>` signed out, at 1080p or lower; `<physical-tv>` in a live room at 1080p or lower, with the user's go-ahead and `无痕模式` on. No danmaku is sent and no block word is saved during runs. Done 2026-11-08: the recorded path in `test/tv_player_hud_test.dart`; both passes in a live room (`<vm-tv>` at 超清, `<physical-tv>` at 超清), including Back closing a real SuperChat card in fullscreen on both. 发弹幕 and 屏蔽词 were not opened on a device (an account action; their tests cover them). M15 is done.
 * **Done when**: every agreed live entry works with the D-pad, pinned or from the menu; the live groups survive a restart and don't change the video groups; 切换路线 switches the route and remembers it as upstream does; `M15.2`'s "Done when" holds.
 
-### Milestone M17: ExoPlayer for HDR and Dolby Vision (later)
-* **Goal**: real HDR and Dolby Vision on the panel through a second player, option F of M12. It also brings 4K back for good, if M16 hasn't by then.
-* **Status**: deprioritized by the user on 2026-10-30. The place after M15 is proposed, not confirmed.
-* **Why after M13–M15**:
-  * Option A protects users now, and M16 can bring 4K back sooner and at about half the cost, so nothing urgent waits on F.
-  * M13–M15 are Tier 1 work. F is the one item that breaks the tier model, and upstream sync would carry its hooks during all of that work if it came first.
-  * M14 settles what the HUD needs from a player, which gives F a fixed list to implement instead of a moving one.
-  * G's spike measured Hybrid Composition on this SoC (`M16.1`: 42–55 UI fps with danmaku at 1080p, against 56–59 on the texture), the same cost F1 would pay.
+### Milestone M17: ExoPlayer for HDR and Dolby Vision
+* **Goal**: real HDR and Dolby Vision on the panel through a second player, option F of M12. It also brings 4K to the normal app, where M16 only brought it to the variant.
+* **Status** (2026-11-11): the tasks are detailed, at the user's request, and nothing is started. Deprioritized by the user on 2026-10-30; M13–M16 are done since, so it's the next milestone.
+* **Why it came after M13–M15**:
+  * Option A protects users now, and M16 brought 4K back sooner and at about half the cost, so nothing urgent waited on F.
+  * M13–M15 were Tier 1 work. F is the one item that breaks the tier model, and upstream sync would have carried its hooks during all of that work if it had come first.
+  * M14 settled what the HUD needs from a player, which gives F a fixed list to implement instead of a moving one.
+  * G's spike measured Hybrid Composition on this SoC (`M16.1`: 42–55 UI fps with danmaku at 1080p, against 56–59 on the texture), the same cost F pays.
 * **Option F**: ExoPlayer (Media3) drawing into a `SurfaceView`, as a second player on TV (added 2026-10-29). Unlike option D, the video goes to its own hardware layer, the path the TV's own apps use, instead of into a texture that Flutter composites. It is the only option that could bring real HDR and Dolby Vision to the panel: the app already requests HDR, Dolby Vision, 4K and 8K streams (`fnval` 4048 in `lib/http/video.dart`), the panel reports Dolby Vision, HDR10, HLG and HDR10+ (M12.1), but today mpv renders into a texture that Flutter composites in SDR, so HDR reaches the panel at best tone-mapped. It may also play 4K at the panel's own resolution instead of inside the 1080p UI, and without the deadlock, since nothing in the app holds decoder buffers. The crash-debug track tested the panic half offline: no panic at 4K60 on a warm TV, in Just Player (Media3 1.11.1, with a media session and audio focus) and in a test app, on AVC and AV1, from local files. Not through a Flutter `Texture`: that path is SDR too, and it is in effect what `vo=mediacodec_embed` did.
 * **Prior work in PiliPlus forks** (surveyed 2026-10-29: upstream PR 2145 and the 660 upstream forks pushed to since they were made; none was tested on a TV and none was merged upstream):
   * Upstream PR [#2145](https://github.com/bggRGjQaUbCoE/PiliPlus/pull/2145), closed unmerged by upstream's maintainer on 2026-07-02 without a comment: Media3 only for the HDR qualities (125, 126, 129) when the display reports HDR. Media3's `PlayerView` (a `SurfaceView`) in a Flutter platform view, video and audio joined with `MergingMediaSource` plus the headers, `COLOR_MODE_HDR` on the window, `PixelCopy` screenshots, and a `PlaybackBackend` interface in Dart; about 1,900 lines over 20 files, 529 of them in `controller.dart`. Its author found danmaku too dark over HDR video. `AvalonUltra/PiliPlus` carries the same Kotlin, kept merged with upstream up to 2.1.6.2.
   * `kkren/PiliPlus`: a `播放器内核` setting (mpv or Media3) for every video, with the same `PlayerView` approach, a DASH manifest built from the stream list, and the same thread-ripper proxy as this fork. Based on 2.1.6.2; publishes armeabi-v7a APKs. The closest base for F.
   * `yifgu/PiliPlus`: a separate native fullscreen screen for Dolby Vision Profile 5 only (no danmaku or Flutter controls there). It allows only a real Dolby Vision decoder and refuses to decode Profile 5 as plain HEVC. Its check for `dvhe.05` / `dvh1.05` suggests Bilibili's 杜比视界 is Profile 5, which has no HDR10-compatible base layer, so mpv can't show it correctly. F needs the same decoder rule.
-  * `loneshu7/PiliPlusPlus`: the most complete Media3 player (audio normalization as a Media3 audio processor, super-resolution through Media3 effects, decoder modes, tunneling, unit tests), but drawn through a Flutter texture, so no real HDR. A reference for the features F2 leaves out.
+  * `loneshu7/PiliPlusPlus`: the most complete Media3 player (audio normalization as a Media3 audio processor, super-resolution through Media3 effects, decoder modes, tunneling, unit tests), but drawn through a Flutter texture, so no real HDR. A reference for the features F leaves out.
   * `chenx-dust/PiliPlus`: no ExoPlayer; mpv's `vo=mediacodec_embed` drawn into a `SurfaceView` platform view through its own media_kit fork. HDR10, but not Dolby Vision Profile 5; and on `<physical-tv>` `mediacodec_embed` is the output that panicked (drawing into a texture, not a `SurfaceView`). Stale since 2026-04.
   * Reuse: PiliPlus and these forks are GPL-3.0, so their code can be adapted with credit. Installing kkren's APK on the TV would be the quickest look, but it signs the user's account into a build from an unknown author and probably clashes with upstream's app id; building its source as a `-Pdev` build avoids both.
-* **F1. Spike (1–2 days, go/no-go).** First a five-minute check by the user: does another app on the TV that uses the system's video path (for example 云视听小电视) play 4K60 and 杜比视界 for 10 minutes with the panel's HDR or Dolby Vision badge and no reboot? Then, in an uncommitted `-Pdev` build, a Media3 player adapted from kkren's and PR 2145's Kotlin (`PlayerView` in a platform view) with yifgu's Dolby Vision decoder rule, playing one video stream and its audio stream with the Referer and User-Agent headers: 4K60 AVC and AV1 for 10+ minutes each, then HDR 真彩 (125), 杜比视界 (126) and HDR Vivid (129), checking the panel's mode, dropped frames and logcat. With danmaku on, also the frame times under Hybrid Composition. Run it on a warm TV: a run right after a long power-off proves nothing. A panic ends the option.
-* **F2. TV-only player for videos, opt-in (about 9–13 days from scratch, probably 3–4 fewer when adapted from the prior work; only if F1 passes).** A Kotlin Media3 bridge: video and audio merged, headers, the thread ripper's loopback URLs as they are, play/pause/seek/speed/volume, events to Dart (2–3 days). The `SurfaceView` in a platform view as in the forks, or behind a transparent Flutter view if F1 finds Hybrid Composition too slow, following the split-screen and fullscreen rects, with the fit modes (2–3 days). On the Dart side, a switch at `PlPlayerController._initPlayer` and at the video widget in `lib/plugin/pl_player/view/view.dart`, plus a setting, possibly "ExoPlayer for HDR, Dolby Vision and 4K only" (2–3 days). Subtitles from Media3's cues into the existing Flutter subtitle view (1 day). Tests, two or three device sessions and docs (2–3 days). Not on this path: mpv's shaders (`超分辨率`), audio normalization (`lavfi-complex`), `video-rotate`, flip and zoom, and screenshots. Live rooms stay on mpv.
-* Costs: hooks in upstream files (the player controller, the player view, the settings page, and `MainActivity` if the transparent view is needed) that every upstream sync has to carry; PR 2145's 500+ line change to `controller.dart` would not fit the one-line-hook rule as it is. A couple of MB of APK; two players to maintain. The forks all show the `SurfaceView` through Hybrid Composition (`initSurfaceAndroidView` falls back to it for a view that contains a `SurfaceView`), so danmaku and the HUD drawn over it go through Flutter's overlay layers, a cost on this SoC that F1 measures. Parity on phones and in live rooms would be another 1–2 weeks and is not proposed.
-* Relation to option A: independent. If F1 passes, F2 plays 4K whenever ExoPlayer plays the video.
+* **Re-checked 2026-11-11** (a first look for this task list, read from GitHub and from this repository; nothing was built or run, and `M17.1`–`M17.3` do the full reading):
+  * **The four Media3 forks are all alive** (each pushed to between 2026-11-04 and 2026-11-05) and have moved since the survey, so the survey's descriptions are a starting point, not the current state.
+
+    | Fork | Media3 | Draws into | Change to `lib/plugin/pl_player/controller.dart` against upstream | Changed since the survey |
+    | :--- | :--- | :--- | :--- | :--- |
+    | `kkren/PiliPlus` | 1.10.1 | `PlayerView` in a platform view (`initSurfaceAndroidView`) | +561 −168 (89 files in all) | One 867-line `Media3PlayerPlugin.kt`. Two sources joined with `MergingMediaSource`, or a DASH manifest when the source type says so. Sets `COLOR_MODE_HDR` from the video's format. No Dolby Vision decoder rule found |
+    | `AvalonUltra/PiliPlus` | 1.10.0 | `PlayerView` in a platform view | +635 −32 (67 files) | PR 2145's `PlaybackBackend` interface (`supportsShader`, `supportsNativeSubtitle`, `hasView`…), now with an iOS HDR player too |
+    | `yifgu/PiliPlus` | 1.11.1 | A separate native screen | +271 −23 (42 files) | Its own native controls and Kotlin unit tests. The rule: refuse when the display lacks Dolby Vision or no `video/dolby-vision` decoder exists, and a `MediaCodecSelector` that offers video nothing but that decoder |
+    | `loneshu7/PiliPlusPlus` | 1.10.1 | A Flutter texture, on purpose | +1,029 −128 (128 files) | `docs/android_exoplayer.md`, 1,891 lines: a list of compatibility gates and a log of device checks, with the aim of removing mpv on Android |
+
+  * **Every fork rewrites the player controller**, by 270 to 1,030 lines. None of them is a model for keeping hooks small, which is this fork's first rule.
+  * **This fork's media_kit leaves another way open.** `Player` is `typedef Player = NativePlayer`, and `NativePlayer` is a plain class with a private constructor (`media_kit` at `73771ec38`). A class in `lib/tv/` can't extend it, but it can `implements NativePlayer`. `PlPlayerController` would then keep talking to a `Player`, and upstream's code around it wouldn't change.
+  * **What the app asks of the player beyond play, pause, seek, rate and volume** (a first pass over `lib/`; `M17.3` makes it complete):
+    * In `controller.dart`: `state` (`playing`, `position`, `duration`, `rate`, `buffer`, `width`, `height`, `playlist`); the streams `playing`, `completed`, `position`, `duration`, `buffer`, `buffering`, `error` and `log`; `open(Media)` with one `edl://` string that joins the video and audio URLs, `start` and mpv options in `extras`; `current` (for 重载视频); `setMediaHeader`; `setProperty('force-window')`; `getProperty('demuxer-cache-idle')` (the thread ripper's automatic concurrency); `command` for the 超分辨率 shaders; `screenshot`; and `VideoController.create` with its texture id, for picture-in-picture.
+    * The retry logic matches mpv's own error text (`Failed to open https://`, `tcp: ffurl_read returned`), so a second player has to speak that text or get a hook there.
+    * Elsewhere: `setSubtitleTrack` (the app hands mpv its own VTT text, and `SubtitleView` draws what comes back on the `subtitle` stream), `setProperty('af')` (audio normalization and volume above 100 %), `setProperty('video-rotate')`, `getProperty('hwdec-current')` and `'volume'` plus `state.videoParams`, `audioParams`, `track` and `tracks` (播放信息), `stream.size` (live rooms), and `SimpleVideo(controller:)` in `view.dart`.
+  * **M16 already built half of the view.** On `variant/4k-passthrough`, `TvVideoPlane.kt` (81 lines) is a `SurfaceView` platform view that keeps D-pad focus in Flutter, and `TvVideoPlane.view` gives it the fitted rect above `FittedBox` and `Transform.flip`. Its hook points in `controller.dart`, `view.dart` and `video_settings.dart` are the ones F needs. None of it is on `main`.
+  * **Outside PiliPlus**, these have what the forks lack (a TV in production, or the reference implementation):
+
+    | Project | License | Why read it |
+    | :--- | :--- | :--- |
+    | `androidx/media` (Media3 itself; latest release 1.11.1, 2026-09-11) | Apache-2.0 | `demos/surface` (a `SurfaceView` whose surface outlives its view); `MediaCodecVideoRenderer` and `MediaCodecUtil` (when Dolby Vision silently falls back to an HEVC or AVC decoder, which is what the decoder rule has to stop); the release notes from 1.10 to 1.11.1 |
+    | `flutter/packages`, `video_player_android` | BSD-3-Clause | Flutter's own ExoPlayer on a `SurfaceView` platform view (`platformview/PlatformViewVideoPlayer.java`), beside its texture player: the surface's life across Home and back |
+    | `moneytoo/Player` (Just Player) | Unlicense | The one Media3 app that already played 4K60 on `<physical-tv>` with no panic. Its renderer setup, tunneling switch, Dolby Vision handling and audio passthrough are the known-good settings for this TV |
+    | `aaa1115910/bv` | MIT | A Bilibili client for Android TV on Media3 (`player/core/.../impl/exo/ExoMediaPlayer.kt`, `VideoCodec.kt`): how it feeds Bilibili's DASH streams and picks between AVC, HEVC, AV1, HDR and Dolby Vision, and what its issues say about TVs. Last pushed 2025-12 |
+    | `jellyfin/jellyfin-androidtv` | GPL-2.0 | Media3 on many MediaTek TVs (`playback/media3/exoplayer/`): decoder and format support checks, the audio pipeline. GPL-2.0 can't be mixed into GPL-3.0 code, so it's read for ideas and nothing is copied |
+    | `yuliskov/SmartTube` | MIT | A long list of per-device ExoPlayer workarounds for TVs. It's on an ExoPlayer 2 fork, so the list is the value, not the code |
+
+* **Design to prove** (proposed 2026-11-11; `M17.3` checks it on paper and `M17.4` on the TV, and the gate `M17.6` decides):
+  * **A player-shaped adapter, not a second controller.** `TvExoPlayer implements NativePlayer` in `lib/tv/`, backed by a Kotlin Media3 player over a method channel. It fills `state` and the streams from Media3's events, splits the `edl://` string back into the video and audio URLs, reads `start`, draws subtitles by parsing the VTT text the app already has and feeding the `subtitle` stream by position, and answers the few mpv properties the app reads. What Media3 can't do is a no-op there and hidden in the HUD.
+  * **Hooks**, each a line or a short branch: where `_initPlayer` creates the player and its `VideoController`; where `view.dart` builds `SimpleVideo`; one line in `video_settings.dart`; `TvBridge.kt` registering the Kotlin side. `MainActivity` only if the transparent-view route is taken (below).
+  * **No `noSuchMethod`** in the adapter. If upstream's media_kit adds a member to `NativePlayer`, analyze fails in the TV checks and the release is blocked, which is the wanted result: a loud break in CI instead of a quiet one on a TV.
+  * **Fallbacks if the adapter doesn't hold**: a `PlaybackBackend` interface as in PR 2145 (500+ lines in `controller.dart` for every sync to carry), or a separate native screen as in yifgu's fork (no danmaku, no HUD). Either would reopen the estimate.
+  * **The view**: two routes, measured against each other in `M17.4` (see Performance below). M16's `SurfaceView` platform view under Hybrid Composition, whose cost is known and is the variant's main weakness; or a `SurfaceView` behind a transparent Flutter view with a hole where the video goes, which has no platform view and so no Hybrid Composition cost, but changes `MainActivity` and how the player page paints.
+* **Danmaku and the HUD over HDR video** (the user's question, 2026-11-11):
+  * **What decides it.** Flutter on Android draws an 8-bit SDR surface, so danmaku, subtitles and the HUD are an SDR layer over an HDR video layer. How bright SDR white comes out beside HDR highlights is set where the two layers are blended: Android's compositor and the TV's own hardware, and in Dolby Vision the TV's Dolby engine. The app doesn't set it. PR 2145's "danmaku too dark" was seen on a phone, where Android dims SDR layers while HDR is on screen; a TV may place SDR graphics differently, and it can also go the other way (UI too bright).
+  * **What the app can change**, in the order to try:
+    1. Don't ask for more than needed. kkren and PR 2145 set `COLOR_MODE_HDR` on the window and make headroom calls, which are written for phones. A `SurfaceView` fed by the decoder may put the panel in HDR without them, and the UI may look better without them. `M17.5` runs both ways.
+    2. Measure it. `Display.getHdrSdrRatio()` (API 34, which this TV has) reports how far HDR goes above SDR white where the device supports it, and `dumpsys SurfaceFlinger` shows how each layer is composed. A number, beside the user's eyes.
+    3. Compare with the TV's own app. If danmaku over 杜比视界 is readable in 云视听小电视, the same hardware path should give the same here; if it's dim there too, no app can fix it on this panel.
+    4. Style, only while the player reports an HDR type: full-opacity danmaku, a heavier weight and stroke, a darker scrim behind the HUD. Upstream's 弹幕设置 already has opacity, stroke and weight, so this is a preset over existing settings, not new drawing code.
+    5. If it's still unreadable: say so in the quality list and leave the choice to the user. Tone-mapping the video down would give up what M17 is for.
+  * **Not possible**: drawing danmaku in HDR. It would need an HDR surface that Flutter on Android doesn't offer, or a native danmaku renderer.
+* **Performance** (the user's concern, 2026-11-11):
+  * **Where the variant's loss comes from.** `TvVideoPlane` shows its `SurfaceView` through `initExpensiveAndroidView`, which is Hybrid Composition. With a platform view on screen, Flutter can't draw to its own surface: it draws what's under and over the view into separate buffers that Android's view system then composites, in step with Android's main thread. Every UI frame costs more, and danmaku most: 42.3 UI fps with heavy danmaku against 56.1 on the texture, frame p50 24.0 ms against 10.4 ([`PLAYBACK_PARAMETERS.md`](./PLAYBACK_PARAMETERS.md)). The video wasn't held back (0.16–0.3 % dropped at 4K60).
+  * **ExoPlayer doesn't change that by itself.** The cost belongs to the view, not the player, so ExoPlayer on the same platform view would lose the same frames.
+  * **The transparent-view route should.** With no platform view, Flutter draws to its own surface as on the texture path, minus sampling the video texture, and the TV's hardware blends that surface over the video plane, which is how a TV's own on-screen menus work. Expected, not measured: UI frame times at or better than the texture path's. What it costs and risks: an override in `MainActivity` (an upstream file) that makes Flutter's surface translucent on TV; the player view painting a hole, with nothing opaque painted under it by the page, which may need a hook in `lib/pages/video/view.dart`; whether translucency can be switched without restarting the app; and whether the video layer stays `DEVICE` with a second layer over it, which the guard checks before any 4K60 run.
+  * **The thread ripper (BTR) runs on the UI thread.** `RipperRangeProxy` is a loopback `HttpServer` plus an `HttpClient` with up to 64 connections, all in the main isolate. Socket and TLS work happen on Dart's I/O threads, but every chunk received and forwarded is handled on the thread that builds danmaku frames, and that thread is Android's main thread too. HDR and 4K streams have the highest bitrates, so they load it most. Every M16 number was taken with the ripper on, so its cost is inside them and was never separated.
+  * **With ExoPlayer the ripper stays as it is**: Media3 reads the loopback URLs as mpv does. Two things to check: the ripper's "caught up" signal reads mpv's `demuxer-cache-idle`, which the adapter has to answer from Media3's buffer state; and Media3 buffers by its own rule (up to about 50 s by default, against mpv's 16 s and 4 MB), so the ripper may work longer at the start of each video unless the buffer settings are matched.
+  * **If the ripper costs frames**, in the order to try: match Media3's buffer to what the ripper expects; then move the proxy into its own isolate, which keeps its 1,500 lines of tuned logic and takes the chunk handling off the UI thread (it's this fork's upstream's code in `lib/services/`, so it's a change to offer there or to carry). Rewriting it in Kotlin as a Media3 data source isn't proposed.
+  * **M18 asks the same two questions for mpv on the variant.** If `M18.3` has run, `M17.4` takes the view that won there and its numbers, and only measures what ExoPlayer changes.
+  * **The bar** (proposed; `M17.6` confirms): the route that goes into the build holds 1080p with heavy danmaku at a frame p50 under 16.7 ms with the ripper on, and 4K60 keeps the video's dropped frames at M16's level or better. If neither route does, that's a no-go or a known cost for the user to accept at the gate, not something to find out after the build.
+* **Rules for this milestone**, from M12 and M16:
+  * **Fail closed.** With ExoPlayer chosen, a failure stops playback and says so. It never retries on mpv above 1080P60, because that's the GPU path that freezes and can shut `<physical-tv>` down.
+  * **Dolby Vision only through a Dolby Vision decoder.** No decoder, or a display that doesn't report it: the quality is refused with a message, never decoded as plain HEVC.
+  * **1080p first on every device run.** The video layer must be composed as `DEVICE` and the decoder must log `hwRender:1, gdec:0` before any 4K60 run, and the first 4K60 run of a session waits for the user's go-ahead. Runs go under a guard that stops the dev app when the decoder leaves the video plane (`tool/tv_m16/run.sh` on the variant is the model).
+  * **Tunneled playback stays off.** It's a different hardware path that nothing here has tested against the panic. Trying it needs its own go-ahead.
+  * **Live rooms stay on mpv**, as in the first plan.
+  * **`-Pdev` release builds only**, `无痕模式` on while signed in, and the Phase 5 device-testing rules above.
+* **Not on this path** (first list; `M17.6` fixes it): mpv's shaders (`超分辨率`), audio normalization and volume above 100 % (`af`), `video-rotate`, flip and zoom, screenshots and the WebP capture, picture-in-picture. Parity on phones would be another 1–2 weeks and is not proposed.
+* **Costs**: hooks in upstream files that every upstream sync has to carry; a couple of MB of APK (Media3 is Java, so no new native library for the 32-bit TV); two players to maintain. The forks all show the `SurfaceView` through Hybrid Composition, so danmaku and the HUD drawn over it go through Flutter's overlay layers.
+* **Relation to option A and to M16**: independent of A. If it passes, ExoPlayer plays 4K whenever it plays the video, in the normal app. Whether `variant/4k-passthrough` then retires is decided in `M17.12`, after a soak.
+* **Branches and releases** (Execution Rule 5):
+  * `M17.1`–`M17.3` and `M17.6` change Markdown only, so each lands on `main` by its own pull request and publishes nothing.
+  * The spike (`M17.4`, `M17.5`) is an uncommitted `-Pdev` build; only its write-up lands.
+  * The build (`M17.7`–`M17.12`) is one branch, `feat/tv-m17-exoplayer`. Proposed: it lands on `main` once, after `M17.12`'s device pass, with the setting off by default. Unlike M16, the path doesn't rest on media_kit's internals, so an upstream change can't quietly move 4K back to the GPU; `M17.6` confirms or changes this.
+* **Open input** (owner: user):
+  * The five-minute check from 2026-10-29: does another app on the TV that uses the system's video path (for example 云视听小电视) play 4K60 and 杜比视界 for 10 minutes with the panel's HDR or Dolby Vision badge and no shutdown? And with danmaku on there: is it readable over HDR and 杜比视界, or dim?
+  * Before `M17.5`: videos that offer HDR 真彩 (125), 杜比视界 (126) and HDR Vivid (129) to the account signed in on `PiliPlus TV dev`. These need 大会员, and a quality the account can't have never appears in the list.
+  * During `M17.5`: reading the panel's own HDR or Dolby Vision badge and judging how danmaku and the HUD look over HDR video. adb can't see either.
+* **Tasks**. The order is on purpose: reading first, so each device run answers a question that reading can't; the seam before the spike, so the spike tries the design the build would use; 4K before HDR, so a panic ends the option before time goes into HDR; a gate before any code is committed. F1 of the first plan is `M17.4`–`M17.5`, and F2 is `M17.7`–`M17.12`.
+  * **Epic M17.1: study** (no device, Markdown only; one file, `docs/tv/M17_MEDIA3_STUDY.md`, a section per task)
+    * **Task M17.1 (`⏳ Planned`) — The PiliPlus Media3 Forks as They Are Now**: read `kkren`, `AvalonUltra` (with PR 2145), `yifgu` and `loneshu7` at a recorded commit each. For each, answer the same questions in one table:
+      * How the video and audio streams become a source (two sources merged, or a built DASH manifest), and why kkren keeps both.
+      * Headers, and whether the thread ripper's loopback URLs go in unchanged.
+      * The order of calls on open, seek, a quality switch, next-video and 重载视频, and what state survives each.
+      * The view type and the surface's life: Home and back, sleep, the view moving between split view and fullscreen.
+      * HDR signalling: `COLOR_MODE_HDR`, the headroom calls, and what each does when the video isn't HDR.
+      * The Dolby Vision rule, and what happens with HDR Vivid.
+      * Audio: which of Bilibili's tracks (AAC, 杜比全景声 E-AC-3, Hi-Res FLAC) each one plays, and how.
+      * Subtitles, error mapping and retries, and how often position events cross the channel.
+      * What each one's author found broken (issues, commit messages, loneshu7's device log).
+      * **Out**: a list of pieces to adapt, with file, commit and credit line; a list of what not to copy and why; loneshu7's compatibility gates cut down to a TV checklist for `M17.12`.
+      * **Done when**: the table has no empty cell that reading could fill, and each "adapt" entry names its source lines.
+    * **Task M17.2 (`⏳ Planned`) — Media3 Outside PiliPlus**: the six projects in the table above, each for the question beside it. Then decide, with the source for each decision:
+      * The Media3 version to pin (1.11.1 is what ran on `<physical-tv>` in Just Player), and what newer release notes say about Dolby Vision and MediaTek.
+      * The renderer setup: decoder fallback on or off, the Dolby Vision `MediaCodecSelector`, and the exact cases where Media3 would otherwise pick an HEVC or AVC decoder for a Dolby Vision stream.
+      * The surface pattern: a plain `SurfaceView` as in M16, or the reparented surface of `demos/surface`, by what each does on Home and sleep.
+      * Audio: what decides between decoding and passthrough for E-AC-3 on a TV, and what the app must do about audio focus when Dart already holds it (`audio_session`).
+      * The buffer settings that match the app's own (`Pref.initBuffer`).
+      * Whether Flutter has a platform-view mode cheaper than Hybrid Composition for a `SurfaceView` with Impeller off. Verify against Flutter's docs for the SDK version in `pubspec.yaml`.
+      * The transparent-view route in Flutter's embedding: how the activity makes its surface translucent (`MainActivity` extends `AudioServiceActivity`), whether that can change while the app runs, how a widget paints a hole that survives the raster cache and `saveLayer` ancestors, and which projects ship it on TVs.
+      * SDR layers over HDR video on Android TV: what the platform documents about dimming and SDR white, what `COLOR_MODE_HDR` changes for a `SurfaceView`, and what Just Player and `bv` do about their own controls and danmaku over HDR.
+      * How Media3 reads a progressive source over HTTP (one open-ended request per track, a new one on a seek outside the buffer) and how its load control sizes the buffer, against what the thread ripper expects from mpv.
+      * **Done when**: each decision is written with its source, and anything only a TV can answer is on `M17.4`'s or `M17.5`'s list instead.
+    * **Task M17.3 (`⏳ Planned`) — This App's Player Seam and the Containment Design**:
+      * The complete inventory of what `lib/` asks of `Player` and `VideoController`: every member, where it's called, and what the adapter does with it (implement, map, no-op, or hide in the HUD). The first pass above is the start.
+      * How one `PlPlayerController` is shared: a player made for one video serves the next, a live room and a video opened from it share one (M16.2's finding), and a quality switch reuses the player. From that, the rule for which videos ExoPlayer plays. Proposed: every video, not live, while the setting is on, because a player can't change kind in the middle of a page.
+      * A compile-only prototype, not committed: a `TvExoPlayer implements NativePlayer` skeleton that passes `flutter analyze`, to find what the interface really demands (`@protected` members, the `late final` stream) before the spike depends on it.
+      * The hook list with line counts, against the same list for the two fallbacks.
+      * A first table of HUD entries (`TvHudActionId`) against what ExoPlayer supports.
+      * **Done when**: the skeleton analyzes clean, and the inventory has no "unknown".
+  * **Epic M17.2: spike** (F1; uncommitted `-Pdev` build from `main`; go/no-go)
+    * **Task M17.4 (`⏳ Planned`) — Spike A: SDR and 4K on the Video Plane**: the smallest thing that plays inside the app: a Kotlin Media3 player on M16's `SurfaceView`, the adapter skeleton from `M17.3`, real Bilibili streams through the thread ripper, danmaku on. Its bar, in this order:
+      1. At 1080p: the layer is `DEVICE`, the decoder logs `hwRender:1, gdec:0`, video and audio are in sync.
+      2. Made to fail on purpose (a bad URL, a thrown error in the bridge): playback stops and mpv never opens.
+      3. Seek, a quality switch, next-video, 重载视频, Home and back, TV sleep and back, split view to fullscreen.
+      4. D-pad focus stays in Flutter, and the HUD's keys work as on mpv.
+      5. UI frame times with moderate and heavy danmaku, measured as in [`PLAYBACK_PARAMETERS.md`](./PLAYBACK_PARAMETERS.md), so they compare with M16's numbers. Four runs each: the platform view and the transparent view, with the thread ripper on and off, plus CPU per thread (`top -H`) to see what the UI thread spends on the ripper. On the transparent view, the video layer must still be `DEVICE` before anything above 1080p.
+      6. With the user's go-ahead: 4K60 AVC and AV1 for 10+ minutes each on a warm TV, with dropped frames from Media3's counters and the layer's timing from SurfaceFlinger.
+      7. Whether `<vm-tv>` can play through Media3 at all (its H.264 decoder never outputs a frame), since that decides what `M17.12` can check there.
+      * **Ends the option**: a shutdown on the video plane, or a freeze that Media3's settings can't remove. **Done when**: each item is pass, fail or a number, written up in `PROGRESS.md`.
+    * **Task M17.5 (`⏳ Planned`) — Spike B: HDR, Dolby Vision and Audio**: only if `M17.4` passes. On the same build:
+      1. HDR 真彩 (125): the panel switches to HDR (the user reads the badge; `dumpsys` for the layer's dataspace and the display's mode), with and without `COLOR_MODE_HDR`, to learn whether a TV needs it.
+      2. 杜比视界 (126): the stream's codec string (is it Profile 5?), the decoder Media3 picks among the TV's five, the panel's Dolby Vision badge, and the refusal when the rule finds no decoder (forced, to see the message).
+      3. HDR Vivid (129), and 4K HEVC.
+      4. Audio: 杜比全景声 and Hi-Res tracks play, decoded or passed through, and what happens when neither works.
+      5. Danmaku, subtitles and the HUD over HDR and Dolby Vision video: readable, too dark or too bright. The user's eyes decide (a screenshot can't show it), with `Display.getHdrSdrRatio()` and the layers' composition from `dumpsys` as the numbers, and 云视听小电视 on the same video as the comparison. Then the steps under "Danmaku and the HUD over HDR video", stopping at the first that's enough.
+      6. UI frame times and dropped frames at 4K HDR with heavy danmaku and the ripper on, the highest load this path has.
+      7. Each of these for 10 minutes on a warm TV.
+      * **Done when**: each quality is one of "plays in its real mode", "plays, but as SDR or HDR10" or "refused", with the evidence. A quality that shuts the TV down is refused for good.
+    * **Task M17.6 (`⏳ Planned`) — Decision Gate (discussion with the user)**: go or no-go, and for a go:
+      * The containment design (the adapter, or a fallback).
+      * Where it lands: `main` with the setting off by default (proposed), or a variant.
+      * Which videos ExoPlayer plays, the setting's name and place, and what a failure shows.
+      * The final "not on this path" list and what each HUD entry does there.
+      * Hybrid Composition or the transparent view, by `M17.4`'s numbers against the performance bar.
+      * What is done about the thread ripper on the UI thread, if the numbers show it costs frames.
+      * Which HDR qualities are offered, by `M17.5`'s results, and which of the brightness steps is taken.
+      * The revised estimate. A no-go closes M17 with the write-up and leaves M16's variant as the 4K route.
+  * **Epic M17.3: build** (F2; branch `feat/tv-m17-exoplayer`; only after a go)
+    * **Task M17.7 (`⏳ Planned`) — Kotlin Media3 Bridge**: `TvExoPlayer.kt`, registered from `TvBridge.kt`; the Media3 dependencies in `android/app/build.gradle.kts`.
+      * The player: the renderer setup and Dolby Vision rule from `M17.2`, video and audio merged, the headers, the loopback URLs as they are, start position, play, pause, seek, speed, volume.
+      * Events to Dart: playing, buffering, completed, position and buffered position at a fixed rate, duration, video size, the decoder's name and the HDR type, dropped frames, and errors as a small set of kinds.
+      * The surface: attach, lose and re-attach as in M16, with the player kept across a lost surface.
+      * Audio focus and the wake lock stay in Dart, where upstream already handles them.
+      * **Done when**: a test page in the dev build plays, seeks and survives Home and back with no Dart player code behind it.
+    * **Task M17.8 (`⏳ Planned`) — Dart Player and View**: `lib/tv/tv_exo_player.dart`.
+      * `TvExoPlayer implements NativePlayer`: `state`, the streams, `open` (the `edl://` string, `start`, the options it can honor), `current`, `seek`, `setRate`, `setVolume`, `dispose`, and the mpv properties from `M17.3`'s inventory.
+      * Errors re-worded into the text upstream's retry logic matches, so its retries and toasts work unchanged.
+      * Subtitles in Dart: parse the VTT the app hands over, emit cues on the `subtitle` stream by position; upstream's `SubtitleView` and its settings then work as they are. loneshu7's cue tests are the reference for edge cases.
+      * The view: the platform view at the fitted rect for each supported `VideoFitType`, as `TvVideoPlane.view` does.
+      * **Done when**: with the adapter swapped in by hand, a video plays through `PlPlayerController` with danmaku, subtitles, seeking and the progress bar right.
+    * **Task M17.9 (`⏳ Planned`) — Hooks, Setting and Fail-Closed Rules**:
+      * The hooks from `M17.3`'s list, each inert off TV and with the setting off.
+      * The setting, TV only and off by default, in 音视频设置 beside `开启硬解`.
+      * The rule for which player a page gets, including a video opened from a live room.
+      * Fail closed: the failure screen, Select to retry on ExoPlayer, and no path to mpv above 1080P60.
+      * Turning the setting off puts a stored quality above 1080P60, or an HDR one, back to 1080P60, as M16 does.
+      * The quality list: HDR and Dolby Vision rows are offered only where `M17.5` found them to work and the display and decoder checks pass at run time.
+      * **Done when**: with the setting off, nothing differs from today (a test proves each hook inert); with it on, every failure ends on the failure screen.
+    * **Task M17.10 (`⏳ Planned`) — HUD Capabilities and 播放信息**: `resolveAction` asks the current player what it supports, so the entries from the "not on this path" list hide on ExoPlayer and nothing else changes on mpv. 画面比例 offers only the supported fits. 播放信息 shows Media3's facts on this path: decoder, resolution and frame rate, HDR type, dropped frames. **Done when**: no HUD entry on ExoPlayer does nothing when pressed.
+    * **Task M17.11 (`⏳ Planned`) — Tests and CI**: `test/tv_exo_player_test.dart` over a fake channel: the adapter's states and streams, the `edl://` split, error wording, subtitle cues, the fail-closed paths, the stored-quality reset, the player rule, and each hook's inert case; HUD capability tests in `test/tv_player_hud_test.dart`, plus a recorded D-pad path with ExoPlayer's entries. Add the new files and the newly hooked upstream files to both lists in `.github/workflows/tv-checks.yml`. Kotlin stays thin; its pure parts (the Dolby Vision rule, error kinds) get JVM tests run locally. **Done when**: the TV checks are green with the new files in them.
+    * **Task M17.12 (`⏳ Planned`) — Device Pass, Soak and Docs**: `tool/tv_m17/` (the guard and the measuring scripts, adapted from `tool/tv_m16/`).
+      * `<physical-tv>`, warm, setting on: the milestone's bar below, then a soak of the user's normal viewing for some days on the dev build, watching for the media service hang M16 saw.
+      * `<vm-tv>`: what `M17.4` found possible there, and the setting-off case.
+      * Docs: `ARCHITECTURE.md` (the second player, the new hooks), `REVIEW.md`, both READMEs (the setting, what isn't on this path, the 4K warning reworded), `PLAYBACK_PARAMETERS.md` (Media3's numbers beside mpv's), credits for adapted code, and this plan's tables.
+      * Then, with the user: land it, and decide whether `variant/4k-passthrough` retires, stays as the mpv route to 4K, or takes this branch too.
+* **Done when** (the milestone): on `<physical-tv>`, warm, with the setting on:
+  * 4K60 AVC and AV1 each play for 10+ minutes with no freeze, ANR or shutdown, on the video plane.
+  * Each HDR quality `M17.6` kept plays with the panel in that mode, and each one it dropped is refused with a message.
+  * Seek, a quality switch, next-video, Home and sleep recover, and the D-pad stays responsive.
+  * Every HUD entry either works or is hidden.
+  * A forced failure never reaches mpv above 1080P60.
+  * With the setting off, the app behaves as it does today, and tests prove it.
+* **Size**: about 14–19 working days if it goes all the way. Study 2.5–3 days (`M17.1` and `M17.2` a day each, `M17.3` half a day to a day). Spike 3–3.5 days with two device sessions, a day of it for trying the transparent view beside the platform view. Build about 8–12 days: bridge 1.5–2.5, Dart player and view 2–3, hooks and rules 1–1.5, HUD 0.5–1, tests 1–1.5, device sessions and docs 2–3. The first plan had 1–2 days for F1 and 9–13 for F2 from scratch (3–4 fewer if adapted); the study is the new part, and it's there so the build adapts tested pieces instead of writing them. `M17.6` revises the number.
+
+### Milestone M18: Video Plane Performance (PiliPlus TVP)
+* **Goal**: on `variant/4k-passthrough`, the UI, danmaku and the D-pad run as well over the video plane as they do on the texture path, with the plane's safety unchanged.
+* **Status** (2026-11-11): planned at the user's request, not started. It may run before M17 or beside it (see "With M17" below).
+* **Why it's its own milestone**: M16 closed on its bar, which was 4K playing safely. What it left is a known cost, and M17 can't remove it by changing the player. It also pays off even if M17 ends in a no-go, because the variant then stays the 4K route.
+* **What is known** (from M16's device sessions, [`PLAYBACK_PARAMETERS.md`](./PLAYBACK_PARAMETERS.md) and the M16 entries in `PROGRESS.md`):
+
+  | Measure, on `<physical-tv>` | Plane | Texture |
+  | :--- | :--- | :--- |
+  | UI fps, 1080P60, moderate danmaku | 54.7 | 59.3 |
+  | UI fps, 1080p, heavy danmaku | 42.3 | 56.1 |
+  | Frame total p50 / p90, heavy danmaku | 24.0 / 41.6 ms | 10.4 / 25.6 ms |
+  | Frames over 16.7 ms, heavy danmaku | 85.7 % | 26.8 % |
+  | UI fps, 4K60 real stream, 10 minutes | 48.2 (AVC), 54.7 (AV1) | Can't run |
+  | Video frames dropped, 4K60, 10 minutes | 0.3 % (AVC), 0.16 % (AV1) | Can't run |
+
+  * The video is fine. The loss is in the UI: danmaku, the HUD and D-pad steps.
+  * Raster itself is only 1–2 ms slower on the plane. The other 5–14 ms "looks like frames waiting their turn", and that was never traced.
+  * The plane is shown through `initExpensiveAndroidView`, which is Hybrid Composition. No other platform-view mode can be used: anything else draws a `SurfaceView` through a virtual display, which puts the GPU back in the path.
+  * AVC at 4K costs the UI more than AV1 (48 fps against 55), and nobody knows why.
+* **What isn't known**, and `M18.1`–`M18.2` find out:
+  * What the user notices most: danmaku stutter, a slow HUD, slow D-pad steps, slow starts or seeks, or uneven video.
+  * Where the waiting is: Android's main thread, the copy of Flutter's frame into Android's view system, the overlay buffer for what's drawn over the video, or the GPU.
+  * What the thread ripper costs. It runs in the main isolate with up to 64 connections (128 if set by hand), on the thread that builds danmaku frames, and it was on in every number above.
+  * How many frames Flutter draws while a video plays with danmaku off and the HUD hidden. On the plane the video needs none.
+  * Time to the first frame, to seek and to switch quality. None was measured.
+* **Candidates**, by expected gain. Each is measured before and after, and kept only if it pays:
+  1. **The transparent view.** Take the `SurfaceView` out of Flutter's platform views: a native view behind Flutter's own surface, which is made translucent, with a hole painted where the video goes. Flutter then draws as on the texture path, minus sampling the video texture, and the TV's hardware blends the UI over the video plane, as it does for the TV's own menus. Expected: the texture path's UI numbers or better. This is the one candidate that removes Hybrid Composition, so it comes first.
+  2. **The thread ripper off the UI thread.** In steps: measure it on and off; a TV default for its concurrency if 64 connections cost more than they bring on four cores; its own isolate if it still costs frames.
+  3. **Fewer UI frames while a video plays.** Whatever schedules frames with danmaku off and the HUD hidden, and what danmaku's settings (stroke, weight, area, density) cost per frame on this GPU.
+  4. **mpv's remaining options and start-up**: `vd-queue-max-bytes`, `vd-queue-max-secs`, `hwdec-extra-frames`, why AVC costs more than AV1, and the start, seek and quality-switch times. Only for what `M18.1` shows slow.
+* **Not proposed**:
+  * Turning Impeller on. Upstream ships it off (`EnableImpeller=false`), and it changes every screen of the app, not just the player.
+  * Changing `canvas_danmaku`, an upstream package. Its settings can be tuned; its code isn't forked.
+  * `vo`, `hwdec` and `androidAttachSurfaceAfterVideoParameters`. They stay fixed, as `PLAYBACK_PARAMETERS.md` says.
+* **The transparent view, in detail** (a design to prove in `M18.3`, not built or tried):
+  * **Kotlin**: `TvVideoPlane.kt` adds its `SurfaceView` to the activity's content view, under Flutter's view, instead of registering a platform-view factory. The surface callbacks, the global reference for mpv's `wid` and the 5 s release stay as they are.
+  * **Flutter's surface**: an override in `MainActivity` makes it translucent on the variant. Flutter's embedding offers two ways, a `TextureView` inside the window or a `SurfaceView` on top of it, and which one the TV's hardware composes without the GPU touching the video layer is the spike's first question.
+  * **Dart**: `TvVideoPlane.view` keeps computing the fitted rect, sends it to Kotlin when it changes, and paints a hole there instead of a platform view. Nothing opaque may be painted under the hole by the page, which may need a hook in `lib/pages/video/view.dart` and `lib/pages/live_room/view.dart`.
+  * **What gets easier**: a dialog's dim barrier, the HUD and danmaku over the video are blended by the TV's hardware, with no overlay buffers.
+  * **What gets harder**: the native rect follows Flutter's by a frame, so moving between split view and fullscreen needs the video hidden or pinned during the move; a page pushed over the player must cover the hole (it does, if it's opaque); the raster cache and `saveLayer` ancestors can undo a painted hole; and the app has to restart when translucency changes, if it can't change while running.
+  * **Safety**: the checks don't change. `hwRender:1, gdec:0` and a `DEVICE` video layer at 1080p before any 4K60 run, under the `plane` guard. A second layer over the video is new, so the first run after any change to the view is at 1080p.
+  * **Old view**: Hybrid Composition stays behind a hidden switch for one build, as the old focus rules did in M13.5, and goes in `M18.8`.
+* **The bar** (proposed; the user confirms it in `M18.2`, with the numbers from `M18.1` beside it):
+  * 1080p, heavy danmaku, thread ripper on: frame total p50 under 16.7 ms and UI fps within 2 of the texture path's on the same video.
+  * 4K60 AVC and AV1, 10 minutes each: video frames dropped at 0.3 % or under, and UI fps at 55 or over.
+  * D-pad steps in the player while a video plays: no slower than the same steps on the texture path at 1080p, by M13's probe.
+  * Nothing the user listed in `M18.1` is still there.
+  * The device check in [`4K_VARIANT.md`](./4K_VARIANT.md) passes on the final build.
+* **With M17**:
+  * The two share work: M17's view question (`M17.4`) is this milestone's first candidate, and the thread ripper's cost is the same question in both. The `SurfaceView` doesn't care which player draws into it: mpv takes it as `wid`, Media3 as its video surface.
+  * **M18 first, or beside M17's study** (proposed): `M17.1`–`M17.3` are reading and Markdown, so they can run beside any of this. `M17.4` then starts after `M18.3`, takes the view that won and its numbers, and doesn't repeat the comparison.
+  * **M17 first**: `M18.3` takes `M17.4`'s result for the view and goes straight to building it for mpv.
+  * Either way one device session decides the view once, and `tool/tv_m16/` stays the one set of measuring scripts.
+* **Branches** ([`4K_VARIANT.md`](./4K_VARIANT.md)):
+  * Docs change on `main` first, Markdown only, then reach the variant by merging `main`.
+  * Code that only makes sense on the plane goes on a branch from `variant/4k-passthrough` and merges there after the device check. It's never merged into `main`, and the variant publishes no release.
+  * A Tier 1 change that also helps the texture path (a TV default, a frame saved in `lib/tv/`) lands on `main` by pull request, which publishes a release, and reaches the variant by merge.
+  * A change to the thread ripper is a change to upstream's code. Where it lands, and whether it's offered upstream, is decided in `M18.5` with the user.
+* **Device rules**: as for M16. `-Pdev` release builds, `无痕模式` on while signed in, 1080p first, the `plane` guard, the user's go-ahead before the first 4K60 run of a session, and `dumpsys -t 6 media.player` checked after each batch for the hang M16 saw.
 * **Tasks**:
-  * **Task M17.1 (`⏳ Planned`, later) — F1 Spike**: as above. The panic half is answered for local AVC and AV1 files; HDR, Dolby Vision, network headers and frame times remain.
-  * **Task M17.2 (`⏳ Planned`, later) — F2 TV-Only Player**: as above, only if F1 passes. Decide at the start how to contain the hooks in upstream files.
+  * **Epic M18.1: measure**
+    * **Task M18.1 (`⏳ Planned`) — Baseline and What Feels Slow**: first the user's list of what they notice on PiliPlus TVP, each turned into steps that reproduce it. Then one device session on the current variant build with `tool/tv_m16/logging.patch`:
+      * UI frame times at 1080p and at 4K60, for danmaku off, moderate and heavy, with the HUD hidden and shown, and the thread ripper on and off.
+      * D-pad step times in the player while a video plays, with M13's probe (`tool/tv_m13/`), on the plane and on the texture at 1080p.
+      * The video layer's cadence and mpv's dropped frames, as in `PLAYBACK_PARAMETERS.md`.
+      * Time from Select on a card to the first frame, to resume after a seek, and to switch quality.
+      * CPU per thread (`top -H`) in each run.
+      * How many frames Flutter draws per second with danmaku off and the HUD hidden.
+      * **Done when**: every item on the user's list has a number or a recording beside it, and the table above is filled in for the ripper and the HUD.
+    * **Task M18.2 (`⏳ Planned`) — Where a Frame's Time Goes, and the Bar (discussion gate)**: a system trace (`perfetto`) of the heavy-danmaku run on the plane and on the texture, read for what the extra 5–14 ms is: waiting for Android's main thread, copying Flutter's frame, the overlay buffer, or the GPU. The same for the AVC run at 4K. Then, with the user: the ranked list of costs, which candidates go ahead and in what order, and the bar. **Done when**: the extra time is attributed, the bar is agreed, and each candidate is "go", "only if" or "dropped".
+  * **Epic M18.2: the view**
+    * **Task M18.3 (`⏳ Planned`) — Transparent View: Spike (go/no-go)**: an uncommitted `-Pdev` build from the variant. Its bar, in this order:
+      1. At 1080p the video layer is `DEVICE` and the decoder logs `hwRender:1, gdec:0`, with Flutter's translucent surface over it. Tried with both of the embedding's translucent modes if the first fails.
+      2. The hole shows the video in fullscreen and split view, a dialog's barrier dims it, and a page pushed over the player covers it.
+      3. The frame times of `M18.1`'s heavy-danmaku run, against the bar.
+      4. Home and back, TV sleep and back, next-video and a quality switch, as in M16's spike.
+      5. With the user's go-ahead: 4K60 AVC and AV1 for 10 minutes each, layer `DEVICE` throughout.
+      * **Ends the candidate**: the video layer composed by the GPU in every mode, or frame times no better than Hybrid Composition's. **Done when**: each item is pass, fail or a number.
+    * **Task M18.4 (`⏳ Planned`) — Transparent View: Build and Tests**: only after a go. `TvVideoPlane.kt` as a native view with rect updates over the channel; the `MainActivity` override; the hole and the rect in `lib/tv/tv_video_plane.dart`; the moves between split view and fullscreen; the failure screen and every fail-closed path as they are now; Hybrid Composition behind a hidden switch. Tests in `test/tv_video_plane_test.dart` for the rect sent on each layout change, the hole, the switch, and the unchanged fail-closed cases. **Done when**: the TV checks are green on the variant and `M18.3`'s list passes on the committed build.
+  * **Epic M18.3: the rest**
+    * **Task M18.5 (`⏳ Planned`) — The Thread Ripper's Load**: only if `M18.1` shows it costs frames. In steps, stopping when the bar holds:
+      1. Buffering speed and frame times at 8, 16, 32 and 64 connections on this TV, to see what the last doublings bring and cost.
+      2. If a lower number serves as well: a TV default in `TvPlatform.defaultTvSettings`, seeded only when the user hasn't set one (Tier 1, lands on `main`).
+      3. If it still costs frames: the proxy in its own isolate, with its settings and candidates passed in and its signals for automatic concurrency passed back. Decide with the user where that lands and whether to offer it upstream first.
+      * **Done when**: the ripper-on run meets the bar, or the remaining cost is written down with the user's decision.
+    * **Task M18.6 (`⏳ Planned`) — Fewer UI Frames While a Video Plays**: only what `M18.1` found. Remove what schedules frames in TV code while nothing on screen changes; measure each danmaku setting's cost per frame, and propose TV defaults for the costly ones, which the user agrees to before they change how danmaku looks. **Done when**: with danmaku off and the HUD hidden, Flutter draws no frames it doesn't need, and the danmaku-on runs meet the bar.
+    * **Task M18.7 (`⏳ Planned`) — mpv Start-Up, Seeking and Remaining Options**: only for what `M18.1` showed slow or the user listed. The untested options from `PLAYBACK_PARAMETERS.md`, one at a time under the guard, with only tested values ever offered as settings; why AVC costs the UI more than AV1; the start, seek and quality-switch times. **Done when**: each item is fixed, or measured and left with its reason.
+  * **Epic M18.4: close**
+    * **Task M18.8 (`⏳ Planned`) — Device Pass, Soak and Docs**: the full device check from `4K_VARIANT.md` on the final build, then the user's normal viewing for some days. Remove the hidden switch and the Hybrid Composition path. Docs: `PLAYBACK_PARAMETERS.md` with the numbers before and after; `4K_VARIANT.md` (the new conflict points when merging `main`, the device check with the transparent view); the variant's `ARCHITECTURE.md` and `REVIEW.md`; this plan's tables; and a note for `M17.4` on what it can take from here. Then a build through **Build PiliPlus TVP**.
+* **Done when** (the milestone): the bar holds on the final build, or each part that doesn't is written down as a cost the user accepted; and the device check passes.
+* **Size**: about 7–9 working days for the measuring, the view and the close (`M18.1`–`M18.4` and `M18.8`: 1, 1, 1.5–2, 2–3 and 1.5–2 days, with three device sessions). `M18.5`–`M18.7` add 2–6 days if the numbers call for them, most of it the isolate. `M18.2` revises this.
