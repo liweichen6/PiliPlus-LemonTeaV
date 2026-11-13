@@ -27,6 +27,7 @@
 | [**4K_VARIANT.md**](./4K_VARIANT.md) | 视频直通版本（`variant/4k-passthrough` 分支）：与 `main` 的区别、如何从 `main` 更新、设备检查和构建方法。 |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | 视频直通路径上测试过的全部 mpv 参数、结果，以及哪些做成了设置。 |
 | [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0：测量 D-pad 每一步耗时的方法、测试清单、时间预算和焦点问题清单。 |
+| [**M17_MEDIA3_STUDY.md**](./M17_MEDIA3_STUDY.md) | M17 在上机试验之前的调研：四个 PiliPlus 分支如何使用 Media3、哪些实现可以借鉴、哪些不采用，以及一份 TV 检查清单。 |
 | [**REVIEW.md**](./REVIEW.md) | **TV 控制层全面代码与架构审查报告**：模块逐文件深度评估、边界条件与代码卫生审查结论（`R1`–`R20`）及上游合并风险矩阵。 |
 | [**PLAN.md**](./PLAN.md) | 按 **阶段（Phase 1–3）→ 里程碑（Milestone）→ 史诗（Epic）→ 任务（Task）** 组织的完整实施、优化与回归修复路线图。 |
 | [**PROGRESS.md**](./PROGRESS.md) | 任务级执行日志、提交哈希、优化前后性能基准对比与真机/模拟器双端验证记录。 |

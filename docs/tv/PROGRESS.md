@@ -139,7 +139,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.2` | Close a SuperChat | ✅ Done (the user's try on `<physical-tv>` 2026-11-08; merged) | `lib/tv/tv_player_hud.dart`, `LiveRoomController.fsSC`, `test/tv_player_hud_test.dart` |
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.3` | Live Entries & Groups | ✅ Done (merged) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
 | **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ✅ Done (M15 closed 2026-11-08; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | Study: the PiliPlus Media3 Forks as They Are Now | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | Study: the PiliPlus Media3 Forks as They Are Now | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | Study: Media3 Outside PiliPlus | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ⏳ Planned | Uncommitted `-Pdev` build, `<physical-tv>` |
@@ -2335,3 +2335,25 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * **Size**: about 7–9 working days for the measuring, the view and the close, and 2–6 more if the ripper, frame and mpv tasks are needed.
 * **Open input** (owner: user): what feels slow on PiliPlus TVP today (the start of `M18.1`); whether M18 goes before M17's spike, as proposed; agree or change the bar.
 * **Next**: `M18.1`, or `M17.1` beside it.
+
+### [2026-11-12] Milestone M17 (Task `M17.1`): The PiliPlus Media3 Forks as They Are Now
+* **Status**: ✅ Done. Markdown only. M17 is in progress; `M17.2` is next.
+* **Files Changed**: `[NEW] docs/tv/M17_MEDIA3_STUDY.md` (the `M17.1` section), `[MODIFY] docs/tv/PLAN.md` (M17: status, the corrections, one hook, the Dolby Vision rule, `M17.2`, `M17.4`, `M17.5`), `docs/tv/README.md`, `docs/tv/README.en.md` (the documentation index), `docs/tv/PROGRESS.md`.
+* **Method**: cloned the four forks and read each at one commit: `kkren/PiliPlus` `b8d0945f4`, `AvalonUltra/PiliPlus` `e3ef0a646`, `yifgu/PiliPlus` `b4d3c7e69`, and `loneshu7/PiliPlusPlus` `5bdf4bfd6` on its sync branch. Read each one's Kotlin player, its Dart side, its difference from the upstream commit it last merged, its own commit messages, and loneshu7's 1,920-line log. Compared AvalonUltra's Kotlin with upstream PR 2145's head (`d37d0a766`): the same file, byte for byte. Checked this app's manifest and thread ripper for what the findings touch. Nothing was built, installed or run, and no device was used.
+* **Done when** (from the plan): the table has no empty cell that reading could fill, and each "adapt" entry names its source lines. Both hold. Where a fork has nothing (yifgu has no subtitles, loneshu7 no HDR output), the cell says so.
+* **Found** (the study has the table, with file and line for each answer):
+  * **Source**: all four join two progressive sources with `MergingMediaSource`. kkren's DASH manifest is only for a `自动` quality it added, so Media3 can switch quality by bandwidth. This fork has no such quality, so the merged form is the one that matters.
+  * **The ripper's URLs are plain HTTP, and Media3 can't open them as the app stands.** kkren carries this fork's thread ripper and had to allow cleartext to `127.0.0.1` in a network security config. This app has no such config and targets SDK 37. mpv was never subject to it.
+  * **kkren's proxy doesn't cancel a track's earlier request under Media3**; this fork's proxy always does. With two progressive sources it may not matter, and `M17.4` checks.
+  * **The Dolby Vision rule exists in one fork, yifgu's**: the display reports Dolby Vision, a `video/dolby-vision` decoder exists, a codec selector that offers video nothing else, and a check that the selected track is Profile 5. AvalonUltra lets 杜比视界 through on any HDR display, and kkren checks nothing.
+  * **杜比视界 isn't one profile.** yifgu sends only Profile 5 to Media3 and leaves Profile 8.4 on mpv. Its README says Profile 5 through mpv's hardware decoding comes out green or purple.
+  * **HDR window calls**: kkren sets `COLOR_MODE_HDR` and the headroom; PR 2145 and yifgu set the color mode only; loneshu7 none. The plan had kkren and PR 2145 both making headroom calls.
+  * **Views**: kkren and AvalonUltra use `initSurfaceAndroidView`; yifgu moved from its own activity to a platform view on 2026-11-04 and uses `initExpensiveAndroidView`; loneshu7 draws into a texture on purpose.
+  * **Failures**: AvalonUltra falls back to mpv, loneshu7 to a software decoder, kkren shows nothing, and yifgu stops with a message. Only yifgu's matches M17's fail-closed rule.
+  * **What broke for them**: upstream code that assumes a media_kit player (a crash and a lost speed in AvalonUltra); one native view shared by two platform views (a black picture); an audio decoder error ending HDR playback on a phone that can't decode 杜比全景声; a black picture on one Samsung phone after a custom codec selection and load control, cause not confirmed; a 403 from a doubled slash in a CDN URL; a byte budget that stopped loading early.
+  * **None was tested on a TV.** The devices named are phones.
+* **Out** (in the study): 18 pieces to adapt, each with its file, lines and target task, and a credit line for each fork; 14 things not to copy, each with the reason; loneshu7's compatibility gates cut to a TV checklist for `M17.12`; and the questions left for `M17.2`, `M17.4` and `M17.5`.
+* **Changed in the plan**: the corrections above, recorded under the re-check without rewriting it; `AndroidManifest.xml` added to the hook list; a note on the Dolby Vision rule that Profile 8.4 needs its own wording, for `M17.2` to decide; `M17.5` compares three window cases instead of two; `M17.4` runs with Media3's default codec selector and the Dolby Vision selector waits for `M17.5`.
+* **Not known until the TV says**: which Dolby Vision profiles Bilibili serves to the account; whether 杜比全景声 and Hi-Res play on this TV; whether the proxy's cancelling hurts Media3; what the `SurfaceView` does during a route change.
+* **Open input** (owner: user): as before. Nothing new is needed for `M17.2` or `M17.3`.
+* **Next**: `M17.2`, in the same file.

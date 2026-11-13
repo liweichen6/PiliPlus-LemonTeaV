@@ -27,6 +27,7 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant, on `variant/4k-passthrough`: what differs from `main`, how to update it from `main`, its device check, and how to build it. |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | Every mpv option tried on the video plane, with results, and which ones became settings. |
 | [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0: how to time a D-pad step, the run list, the time budget, and the focus bug inventory. |
+| [**M17_MEDIA3_STUDY.md**](./M17_MEDIA3_STUDY.md) | M17's study before its spike: what four PiliPlus forks do with Media3, which pieces to adapt and which to leave, and a TV checklist. |
 | [**REVIEW.md**](./REVIEW.md) | **Comprehensive Android TV Layer Code & Architecture Review**: file-by-file engineering audit, technical observations (`R1`–`R20`), and upstream sync risk matrix. |
 | [**PLAN.md**](./PLAN.md) | Complete implementation, optimization, and remediation roadmap across **Phase 1–3 → Milestone → Epic → Task**, with verification criteria and privacy rules. |
 | [**PROGRESS.md**](./PROGRESS.md) | Task-by-task execution log, commit hashes, before/after performance benchmarks, and dual-device verification results. |
