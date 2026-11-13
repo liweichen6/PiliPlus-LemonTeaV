@@ -1,6 +1,6 @@
 # M17 Study: Media3 for the TV Player
 
-**Status**: 🔄 In progress. `M17.1` and `M17.2` are done (2026-11-12). `M17.3` hasn't started.
+**Status**: ✅ Done. `M17.1` and `M17.2` were finished on 2026-11-12 and `M17.3` on 2026-11-13, which closes Epic M17.1. The spike, `M17.4`, is next.
 
 This file is Epic M17.1 of [`PLAN.md`](./PLAN.md): what to learn from other people's code before M17's spike touches the TV. It has one section per task. Everything here comes from reading. Nothing was built, installed or run, and no device was used.
 
@@ -349,3 +349,157 @@ Credit lines for these: `Adapted from Hunter-Clipper/OpenIPTV (GPL-3.0), commit 
   * The TV's `video/dolby-vision` decoders and the profiles each declares, and which one Media3 picks for each `codecs` string met.
   * `isHdrSdrRatioAvailable()` and the ratio while HDR and Dolby Vision play, before any window call is tried.
   * What `getDirectProfilesForAttributes` reports on the TV's speakers and on any ARC device the user has, and whether 杜比全景声 is passed through, decoded, or left silent.
+
+## M17.3: This App's Player Seam and the Containment Design
+
+**Status**: ✅ Done (2026-11-13). The skeleton analyzes clean, and the inventory has no "unknown". Nothing was run on a device.
+
+Line numbers are on `main` at `0d63f200e`. `Ctl` is `lib/plugin/pl_player/controller.dart`, and `View` is `lib/plugin/pl_player/view/view.dart`. The media_kit sources are the fork this app pins, `My-Responsitories/media-kit` at `73771ec38`.
+
+### What the Interface Is
+
+* `Player` is a `typedef` for `NativePlayer` (`media_kit/lib/src/player/player.dart` 3).
+* `NativePlayer` isn't a plain class, as the plan had it. It **extends `PlatformPlayer`** (`.../native/player/real.dart` 48), an abstract class with a public constructor that already holds `state`, `stream` and one `@protected` controller for each stream (`.../player/platform_player.dart` 32–255). `PlatformPlayer` is exported.
+* So the adapter is `class TvExoPlayer extends PlatformPlayer implements NativePlayer`. It inherits the state, the streams and their controllers, and `PlayerState`'s fields are plain mutable fields, so it can fill them from Media3's events.
+* `VideoController` is a `typedef` for `PlatformVideoController` (`media_kit_video/lib/src/video_controller/video_controller.dart` 3), an abstract class with a public constructor and one abstract method, `setSize`. **The adapter can have a `VideoController` of its own.** That matters more than it looks: upstream's `SubtitleView` only reads `controller.player.state.subtitle` and `controller.player.stream.subtitle` (`media_kit_video/lib/src/subtitle/subtitle_view.dart` 43, 57), so with a `TvExoVideoController` in `PlPlayerController`'s field, subtitles keep upstream's own view, style and drag, and `videoController!` is never null.
+
+### The Skeleton
+
+A compile-only `lib/tv/tv_exo_player.dart` of 232 lines, with the hooks below applied to a working copy, passed `flutter analyze` on the three files with no issues. It isn't committed, and the hooks were reverted. What the analyzer demanded:
+
+* **22 inherited methods overridden**, because `NativePlayer` adds a named `synchronized` parameter to each (`open`, `play`, `pause`, `seek`, `setRate`, `setVolume`, `setSubtitleTrack`, `stop`, `screenshot` and the playlist and track methods).
+* **22 more members**: `getProperty`, `setProperty`, `setOption`, `command`, `setMediaHeader`, `replaceSingle`, `getAudioDevices`, `throwIfDisposed`, `current`, `disposed`, `onLoadHooks`, `onUnloadHooks`, three state flags (each a getter and a setter), `lock`, and `ctx`.
+* **Two of them carry mpv's own types.** `ctx` is a `Pointer<mpv_handle>`, so the file imports `dart:ffi` and media_kit's generated bindings and holds `nullptr`. `lock` is a `Lock` from `synchronized`, which is already this app's dependency.
+* `completer` has to be completed in the constructor, or `waitForPlayerInitialization` never returns.
+* **No `noSuchMethod`**, as the plan asked. A member that upstream's media_kit adds to `NativePlayer` fails analysis in the TV checks.
+* **What analysis can't show**: Dart lets a class implement another library's class without its private members. If media_kit's own code were handed the adapter and called one, it would throw at run time. The only place that hands a player to media_kit is `VideoController.create`, and the hook keeps the adapter away from it. Nothing in `lib/` reads `ctx` from a player.
+
+### The Inventory
+
+Everything `lib/` asks of the player that `PlPlayerController` owns. "Implement" means over the method channel in `M17.8`.
+
+**Methods**
+
+| Member | Called from | With ExoPlayer |
+| :--- | :--- | :--- |
+| `Player.create(configuration)` | `Ctl` 866 | Hook 2 below |
+| `open(Media, play: false)` | `Ctl` 1003; again from `refreshPlayer`, `Ctl` 1021 | Implement. The `Media` holds one string: `edl://!no_chapters;%<length>%<video>;!new_stream;!no_chapters;%<length>%<audio>` (`Ctl` 990–998), or a single URL for 听视频 and for a video with no audio. The lengths make the split exact. `start` is the resume position. Of `extras`, the buffer values are already read at creation (the load control belongs to the player), and `video-rotate` and the normalization filter are ignored |
+| `current` | `Ctl` 1017–1018 (重载视频 takes `current.last`) | Implement: keep the last `Media` |
+| `play`, `pause` | `Ctl` 1298, 1307, 1448 | Implement |
+| `seek` | `Ctl` 1260, 1447; `lib/pages/video/introduction/local/controller.dart` 128 | Implement |
+| `setRate` | `Ctl` 1273 | Implement, and keep `state.rate` right (`Ctl` 1032 and 1271 compare with it) |
+| `setVolume` | `lib/models/common/audio_normalization.dart` 112, 119, through `setVolumeCapped` | Implement. The value is 0–100 on mpv's cubic curve, so ExoPlayer's linear volume is `(v / 100)³` |
+| `setMediaHeader` | `Ctl` 895 | Implement: kept for the HTTP factory |
+| `setSubtitleTrack` | `lib/pages/video/controller.dart` 1115 (`no`), 1151 (a URL, or `memory://` and the VTT text) | Implement in Dart: parse the VTT into cues and feed `state.subtitle` and the `subtitle` stream by position. A URL is fetched first |
+| `screenshot` | `Ctl` 1843; `lib/pages/video/reply_new/view.dart` 343 | Returns null, which both callers accept. Hidden in the HUD |
+| `command` | `Ctl` 831–850 (`setShader`, also run at open for 番剧 when 超分辨率 is on) | No-op. 超分辨率 hidden |
+| `dispose` | `Ctl` 767, 922, 1772 | Implement |
+
+**mpv properties**
+
+| Property | Where | With ExoPlayer |
+| :--- | :--- | :--- |
+| `getProperty('demuxer-cache-idle')` | `Ctl` 1136, the thread ripper's "caught up" signal | `'yes'` when `Player.isLoading` is false (`M17.2`, decision 9) |
+| `getProperty('hwdec-current')` | `lib/pages/video/widgets/header_control.dart` 777 (播放信息) | The decoder's name |
+| `getProperty('volume')` | the same, 778 | The volume, as mpv would print it |
+| `setProperty('force-window', 'no')` | `Ctl` 892 | Ignored |
+| `setProperty('file-local-options/vid', …)` | `header_control.dart` 588 (听视频 switched during a video) | Map: turn the video track off or on |
+| `setProperty('af', …)` | `audio_normalization.dart` 109, 117 (volume above 100 %) | Ignored. The dialog is capped at 100 % in the HUD |
+| `setProperty('video-rotate', …)` | `lib/pages/video/controller.dart` 163 | Ignored. Hidden |
+
+**State and streams**
+
+| Member | Read from | With ExoPlayer |
+| :--- | :--- | :--- |
+| `state.playing`, `position`, `duration`, `completed`, `rate`, `buffer` | `Ctl` (20 places), `View` 342 and 961, `lib/tv/tv_player_hud.dart` 575, `play_pause_btn.dart` 31, `post_panel/view.dart` 527 | Implement. `playing` is "play was asked for", as in mpv, with `buffering` beside it; after an error it goes false |
+| `state.width`, `height` | `Ctl` 308, 362; 播放信息 | Implement, from the video size |
+| `state.playlist` | `Ctl` 1180, 1236 (error reports); 播放信息 | Implement: one entry, the current `Media` |
+| `state.videoParams`, `audioParams`, `track`, `tracks` | 播放信息; `header_control.dart` 585 (`tracks.video.length`) | Map from Media3's formats: codec, size, frame rate, color transfer; sample rate and channels |
+| `state.subtitle`, `stream.subtitle` | upstream's `SubtitleView` | Implement, from the cues above |
+| `stream.playing`, `completed`, `position`, `duration`, `buffer`, `buffering` | `Ctl` 1086–1161; `play_pause_btn.dart` 34; `post_panel/view.dart`; `lib/pages/sponsor_block/block_mixin.dart` 84, 86 | Implement. Position at most four times a second, and nothing else on a timer (`M17.1`, "what not to copy" 9) |
+| `stream.error` | `Ctl` 1187–1240 | Implement, with chosen text (below) |
+| `stream.log` | `Ctl` 1177 (debug builds) | Empty |
+| `stream.size` | `lib/pages/live_room/controller.dart` 198 | Live only, so mpv's |
+
+**The video controller**
+
+| Member | Where | With ExoPlayer |
+| :--- | :--- | :--- |
+| `VideoController.create(player, …)` | `Ctl` 881 | Hook 3 |
+| `videoController!` for `SubtitleView` | `View` 267, 1352 | Works unchanged with `TvExoVideoController` |
+| `SimpleVideo(controller: videoController!)` | `View` 2035–2036 | Hook 4 |
+| `videoController == null` | `lib/pages/video/view.dart` 1219 | Non-null, so the page builds its player |
+| `videoController?.id.value` | `Ctl` 364 (iOS picture-in-picture) | Null |
+
+**Errors.** Upstream's handler matches mpv's text. The adapter chooses what it says, so no hook is needed:
+
+* A source or network error that Media3 calls recoverable is reported as `Failed to open http://127.0.0.1:…` or `Failed to open https://…`. Upstream then waits 3 s and, if nothing is buffered, shows `视频链接打开失败，重试中` and calls `refreshPlayer`, which opens the same media on the same player. The retry stays on ExoPlayer.
+* A decoder error is never reported as `Could not open codec`, because upstream's toast for that promises a switch to software decoding. The adapter stops, shows its own message, and reports text that matches no pattern.
+
+**Not this player.** `lib/pages/audio/controller.dart` (the audio page), `lib/common/widgets/image_viewer/gallery_viewer.dart` (live photos) and `lib/plugin/pl_player/widgets/mpv_convert_webp.dart` each make an mpv player of their own. `lib/main.dart` 187 reads a static. None of them is touched.
+
+### How the Controller Is Shared, and the Rule
+
+* **One controller, one player.** `PlPlayerController.getInstance` returns one instance and counts the pages that use it (`Ctl` 691–696). The player is made on the first data source and reused by every later one (`Ctl` 916–919), until the count reaches zero (`Ctl` 1720–1777). A related video, a quality switch, the next part and 重载视频 all reuse it.
+* **So a player's kind is fixed when it's made**, by the page that made it. A live room opened over a video page, and a video opened over a live room, get the player that's already there.
+* **The rule**:
+  1. No player yet: ExoPlayer when the setting is on and the source isn't live; mpv otherwise. Local files count as videos.
+  2. An mpv player already there, asked for a video (it was made by a live room, or before the setting was turned on): it plays what `main` lets mpv play today, up to 1080P60 in SDR, and refuses anything above with a message. This is M16's rule on the variant.
+  3. An ExoPlayer already there, asked for a live room: refused with a message.
+* **Why refuse, and not swap the player.** A swap looks possible, because a video page removes its player widget when another page covers it (`lib/pages/video/view.dart` 387, 1215–1221), so it would build a new one on return. Two things make it unsafe to promise from reading:
+  * `_initPlayer` asserts that both fields are null (`Ctl` 856, 879), so a swap leaves `videoController` null across several awaits, and `View` 2036 dereferences it with `!` on any rebuild.
+  * The live room page keeps its player widget while it's covered (`lib/pages/live_room/view.dart` 282 gates on a field that isn't observable), so that rebuild can happen.
+* **For the gate**: rule 3 means a live room reached from a video page doesn't play while the setting is on, until the user goes back. If that route matters, the swap is a task of its own in the build, with a device check, and `M17.6` decides.
+
+### The Hooks
+
+Measured on a working copy that analyzed clean, then reverted.
+
+| # | File | Hook | Lines |
+| :--- | :--- | :--- | :--- |
+| 1 | `Ctl` | The import | +1 |
+| 2 | `Ctl` 866 | `await TvExoPlayer.createIfWanted(isLive) ?? await Player.create(…)` | +2 −1 |
+| 3 | `Ctl` 881 | `TvExoPlayer.videoControllerOf(player) ?? await VideoController.create(…)` | +2 −1 |
+| 4 | `Ctl` 916 | `if (TvExoPlayer.refuses(player, isLive, width, height))`: an error state and a return | +4 |
+| 5 | `View` | The import, and before `Transform.flip` at 2029: `if (TvExoPlayer.viewOf(…) case final view?) return view;` | +9 |
+| 6 | `lib/pages/setting/models/video_settings.dart` | Two imports and the setting's row, as M16 has | +3 |
+| 7 | `TvBridge.kt` | Registering the Kotlin player | +1 |
+| 8 | `AndroidManifest.xml`, and a new `res/xml/network_security_config.xml` | Cleartext to `127.0.0.1` | +1, and 7 new |
+| 9 | `android/app/build.gradle.kts` | Media3 1.11.1 | +3 |
+| 10 | `MainActivity.kt` | Only on the transparent-view route: two overrides | about +6 |
+
+* **In upstream's Dart files: 20 lines added and 2 changed**, counted without whitespace. Hooks 2 and 3 wrap an existing call, so the formatter also re-indents the 12 lines of arguments under them, and a sync would conflict if upstream edits those. The other shape is one inserted block that builds the ExoPlayer and returns before upstream's lines: about 8 lines added, none changed and none re-indented, but its four set-up calls repeat upstream's and wouldn't follow a change to them. `M17.9` picks; the block is the safer one for sync.
+* M16's hooks on the variant, for comparison: 27 lines in `Ctl`, 3 in `View`, 3 in the settings file.
+* **The two fallbacks**, from `M17.1`'s measurements against upstream:
+  * A `PlaybackBackend` interface, as PR 2145: +529 −34 in `Ctl` when it was written and +635 −32 as AvalonUltra carries it now, in 20 files or more.
+  * A separate native player with its own controls, as yifgu: +271 −19 in `Ctl` and 129 changed lines in the video page, and it gives up danmaku and the HUD.
+* Nothing is needed in `header_control.dart`, in the video page's controller or in the error handler: the adapter answers what they ask.
+
+### HUD Entries on ExoPlayer
+
+A first table for `M17.10`. "Same" means the entry needs nothing from the player that the adapter doesn't give. Live-only entries (切换路线, 发弹幕, 屏蔽词, 醒目留言) never see ExoPlayer.
+
+| Entry (`TvHudActionId`) | On ExoPlayer |
+| :--- | :--- |
+| 画质 (`quality`) | Same. The list is where HDR 真彩, 杜比视界 and HDR Vivid appear or are refused (`M17.9`) |
+| 倍速 (`speed`) | Same |
+| 画面比例 (`videoFit`) | Only the fits a `SurfaceView` can show. It can't be clipped, so the crop modes go, as on the variant |
+| 字幕 (`subtitle`), 翻译 (`aiTranslate`) | Same, through upstream's `SubtitleView` |
+| 选集, 分段信息, 片段信息, 播放顺序 | Same. They use position and seek |
+| 弹幕开关, 弹幕设置, 高能进度条, 弹幕列表 | Same. Danmaku is Flutter's |
+| 点赞, 投币, 收藏, 稍后再看 | Same |
+| 音质 (`audioQuality`) | Same list. A track the TV can't play has to be reported, not left silent (`M17.2`, decision 4) |
+| 解码格式 (`decodeFormat`) | Same: it picks which stream is asked for. Media3 picks the decoder |
+| 超分辨率 (`superResolution`) | Hidden |
+| 播放器音量 (`playerVolume`) | Capped at 100 % |
+| 定时关闭 (`shutdownTimer`) | Same |
+| 重载视频 (`reload`) | Same, through `current` |
+| 播放信息 (`playerInfo`) | Upstream's dialog works with what the adapter fills. `M17.10` adds Media3's own facts: decoder, HDR type, dropped frames |
+| 完整设置 (`fullSettings`) | Upstream's panel. Its 听视频 is mapped; its flip, rotate and screenshot entries do nothing on this path, so `M17.10` hides them or the panel |
+| 编辑按钮 (`editButtons`) | Same |
+
+### For `M17.4`
+
+* The skeleton is the start of the spike's adapter. It has to be written again from the lists above, since it wasn't committed; that's under an hour.
+* The first things to see on the device: `state` and the streams driving upstream's controller with no change to it; the `edl://` split; upstream's retry running on `refreshPlayer`; `SubtitleView` showing cues from the adapter.
+* Rule 2 and rule 3 with a live room and a video stacked both ways, to see the refusals and that going back leaves a working player.
