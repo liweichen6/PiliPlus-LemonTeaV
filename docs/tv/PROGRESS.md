@@ -140,7 +140,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M15: Player HUD, Live** | Epic M15.2 | `M15.3` | Live Entries & Groups | ✅ Done (merged) | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_hud_groups.dart`, `lib/tv/tv_hud_menu.dart`, `lib/tv/tv_player_hud.dart`, `test/tv_player_hud_test.dart` |
 | **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ✅ Done (M15 closed 2026-11-08; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | Study: the PiliPlus Media3 Forks as They Are Now | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | Study: Media3 Outside PiliPlus | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | Study: Media3 Outside PiliPlus | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ⏳ Planned | Uncommitted `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ⏳ Planned (only if `M17.4` passes) | Uncommitted `-Pdev` build, `<physical-tv>` |
@@ -2357,3 +2357,33 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Not known until the TV says**: which Dolby Vision profiles Bilibili serves to the account; whether 杜比全景声 and Hi-Res play on this TV; whether the proxy's cancelling hurts Media3; what the `SurfaceView` does during a route change.
 * **Open input** (owner: user): as before. Nothing new is needed for `M17.2` or `M17.3`.
 * **Next**: `M17.2`, in the same file.
+
+### [2026-11-12] Milestone M17 (Task `M17.2`): Media3 Outside PiliPlus
+* **Status**: ✅ Done. Markdown only. `M17.3` is next.
+* **Files Changed**: `[MODIFY] docs/tv/M17_MEDIA3_STUDY.md` (the `M17.2` section), `docs/tv/PLAN.md` (M17: status, the decisions, the Dolby Vision rule, the brightness steps, `M17.4`, `M17.5`; a pointer in `M18.3`), `docs/tv/PROGRESS.md`.
+* **Method**: read Media3 at tag `1.11.1` and its release notes up to `1.12.0-beta01`; Flutter 3.47.9's engine and framework sources in the local SDK; `video_player_android`, Just Player, `bv` with three of its issues, `jellyfin-androidtv` (for ideas only, as its license is GPL-2.0) and SmartTube, each at a recorded commit; the HDR window calls in Android's SDK sources; and Android's two platform documents on HDR. A code search for a transparent Flutter surface turned up `Hunter-Clipper/OpenIPTV`, which was read too. Nothing was built or run, and no device was used.
+* **Done when** (from the plan): each decision is written with its source, and what only a TV can answer is on `M17.4`'s or `M17.5`'s list. Both hold: eleven decisions, and a "For the TV" list at the end of the section.
+* **Decided**:
+  * **Version**: Media3 1.11.1. 1.12.0 is a beta, and its Dolby Vision fixes are covered by M17's own track check until it's stable.
+  * **Dolby Vision**: Media3 itself never offers an HEVC decoder for Profile 5, so no custom codec selector is needed, which removes the one piece `M17.1` tied to a black picture. The rule keeps three checks: the display, a decoder exists, and the selected track is typed Dolby Vision with the promised profile. Profile 8.4 may play as HLG through HEVC where there is no Dolby Vision, labelled as HLG; `M17.6` confirms.
+  * **Decoder fallback**: off.
+  * **Surface**: a plain `SurfaceView` and a renderer that releases the decoder when the surface is lost.
+  * **Audio**: media attributes on the player, focus left with Dart.
+  * **Buffer**: the app's two settings, bytes before time, no back buffer.
+  * **Window HDR calls**: none to start with.
+  * **Frame-rate request and tunneling**: both off for the spike.
+* **Found**:
+  * **Media3's default on this TV would move a running decoder to a GPU surface** whenever the surface is lost (Home, sleep), because the TV is below API 35. M17's rules forbid that, hence the renderer above. M16 already does the same for mpv.
+  * **Media3's default buffer is about 138 MiB on the Java heap**, in a 32-bit app.
+  * **An audio track the TV can neither pass through nor decode plays silent, with no error.** The adapter has to report it.
+  * **`COLOR_MODE_HDR` on the window doesn't affect a `SurfaceView`**, by Android's own documentation of the call. The three TV players read make no such call.
+  * **With Impeller off, no platform-view mode is cheaper than Hybrid Composition** for a `SurfaceView`. The newer mode needs Impeller on Vulkan.
+  * **The transparent view is already shipped by one app**, OpenIPTV (GPL-3.0), on Android TV with Media3 1.11.1 and the same activity base class as this app. That gives `M17.4` and `M18.3` an example to adapt.
+  * **Media3 loads a progressive source the way mpv does**: one open-ended request for a track, a new one on a seek outside the buffer, and a stalled reader when full. `Player.isLoading` stands in for mpv's `demuxer-cache-idle`.
+  * **From `bv`'s issues**: a green screen for every 杜比视界 video on a box with no Dolby Vision decoder, and a TV with a 1080p UI that showed 4K HDR scaled down and without HDR.
+  * **From SmartTube**: two overrides to try if frames drop on the `SurfaceView`, one of them written for Sony's MediaTek TVs.
+* **`M17.1`'s five questions**: all answered (the section lists them).
+* **Out**: five more pieces to adapt (19–23), with their credit lines.
+* **Not known until the TV says**: how long the decoder takes to come back after Home; the profiles the TV's Dolby Vision decoders declare; whether the TV reports an HDR to SDR ratio; what its audio route takes directly; whether the transparent surface can be switched without a restart.
+* **Open input** (owner: user): as before. Nothing new is needed for `M17.3`.
+* **Next**: `M17.3`.
