@@ -141,7 +141,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M15: Player HUD, Live** | Epic M15.3 | `M15.4` | Tests, Device Pass & Docs | ✅ Done (M15 closed 2026-11-08; merging the pull request publishes a release) | `test/tv_player_hud_test.dart`, `<vm-tv>`, `<physical-tv>`, `docs/tv/*` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | Study: the PiliPlus Media3 Forks as They Are Now | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | Study: Media3 Outside PiliPlus | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ⏳ Planned | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ✅ Done (2026-11-13) | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ⏳ Planned | Uncommitted `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ⏳ Planned (only if `M17.4` passes) | Uncommitted `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned | `docs/tv/PLAN.md` |
@@ -2387,3 +2387,22 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Not known until the TV says**: how long the decoder takes to come back after Home; the profiles the TV's Dolby Vision decoders declare; whether the TV reports an HDR to SDR ratio; what its audio route takes directly; whether the transparent surface can be switched without a restart.
 * **Open input** (owner: user): as before. Nothing new is needed for `M17.3`.
 * **Next**: `M17.3`.
+
+### [2026-11-13] Milestone M17 (Task `M17.3`): This App's Player Seam and the Containment Design; Epic M17.1 Closed
+* **Status**: ✅ Done. Markdown only. Epic M17.1 (the study) is closed. `M17.4`, the spike on `<physical-tv>`, is next.
+* **Files Changed**: `[MODIFY] docs/tv/M17_MEDIA3_STUDY.md` (the `M17.3` section), `docs/tv/PLAN.md` (M17: status, what `M17.3` found), `docs/tv/PROGRESS.md`. No code is committed.
+* **Method**: listed every member `lib/` reads or calls on the player and its video controller, by search and then by reading each place; read `NativePlayer`, `PlatformPlayer`, `PlatformVideoController` and `SubtitleView` in the media_kit fork the app pins (`73771ec38`); read how `PlPlayerController` is shared and how the video and live pages drop and rebuild their player widgets; wrote a compile-only `lib/tv/tv_exo_player.dart` and applied the hooks to a working copy.
+* **Verification**: `flutter analyze` on the skeleton and the two hooked upstream files: no issues. The hooks were then reverted and the skeleton removed, as the plan asks. No tests were run, since nothing committed changes code. No device was used.
+* **Done when** (from the plan): the skeleton analyzes clean, and the inventory has no "unknown". Both hold.
+* **Found**:
+  * **The interface is friendlier than the plan assumed.** `NativePlayer` extends an exported abstract class, `PlatformPlayer`, which gives the adapter the state, the streams and their controllers. What's left to write is 22 overrides and 22 further members, two of which carry mpv's own types (an FFI pointer and a lock).
+  * **The adapter can own a `VideoController`.** It's an abstract class with one abstract method. Upstream's `SubtitleView` reads only the player's subtitle state and stream through it, so subtitles need no hook and no second drawing path.
+  * **The app asks little of the player**: open, play, pause, seek, rate, volume, a subtitle track, the header, `current`, seven mpv properties, and the state and streams. Each has an answer in the inventory: implement, map, ignore, or hide in the HUD.
+  * **mpv's volume is a cubic curve**, so the adapter cubes it for ExoPlayer.
+  * **Errors need no hook.** The adapter reports a recoverable source error in the text upstream already retries on, and the retry reopens the same media on the same player. It never reports a decoder error in the text that makes upstream promise software decoding.
+  * **A player's kind is fixed when it's made**, because one controller and one player serve every page on the stack.
+* **Decided, for the spike**: the rule for which player plays what, in three parts (the study has them): a new player is ExoPlayer for videos with the setting on; an mpv player already there plays videos up to 1080P60 and refuses above; an ExoPlayer already there refuses a live room.
+* **Hooks, measured**: 20 lines added and 2 changed in upstream's Dart files (`controller.dart` and `view.dart`), plus 3 in the settings file, 1 in `TvBridge.kt`, 1 in the manifest and 3 in the Gradle file. PR 2145's interface costs 529 lines or more in `controller.dart` alone.
+* **Open for the gate** (`M17.6`): whether a live room opened from a video page matters enough to build a player swap, which reading alone can't show to be safe; and which shape hooks 2 and 3 take, a wrapped call or an inserted block.
+* **Open input** (owner: user): for `M17.4`, a session on `<physical-tv>` with network adb, and the go-ahead for the first 4K60 run of that session. The five-minute check with another app at 4K60 and 杜比视界 is still open, and `M17.5` needs videos that offer HDR 真彩, 杜比视界 and HDR Vivid to the account on `PiliPlus TV dev`.
+* **Next**: `M17.4`, or `M18.1` if M18 goes first.
