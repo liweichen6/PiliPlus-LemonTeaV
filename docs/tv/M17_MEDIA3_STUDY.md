@@ -1,6 +1,6 @@
 # M17 Study: Media3 for the TV Player
 
-**Status**: 🔄 In progress. `M17.1` is done (2026-11-12). `M17.2` and `M17.3` haven't started.
+**Status**: 🔄 In progress. `M17.1` and `M17.2` are done (2026-11-12). `M17.3` hasn't started.
 
 This file is Epic M17.1 of [`PLAN.md`](./PLAN.md): what to learn from other people's code before M17's spike touches the TV. It has one section per task. Everything here comes from reading. Nothing was built, installed or run, and no device was used.
 
@@ -189,3 +189,163 @@ loneshu7's compatibility gates (`Doc` 41–77), cut down to what a TV with a rem
   * The `codecs` string of every 杜比视界 stream met, and which decoder Media3 picked for it.
   * Whether 杜比全景声 and Hi-Res play on this TV at all. On a phone without the decoder, the audio error ended playback (PR 2145).
   * The three window cases of point 3, and whether the TV sends a `colorMode` configuration change when the panel enters HDR. Without `colorMode` in `configChanges`, that change restarts the activity.
+
+## M17.2: Media3 Outside PiliPlus
+
+**Status**: ✅ Done (2026-11-12). Each decision below has its source. What only a TV can answer is listed at the end for `M17.4` and `M17.5`.
+
+### What Was Read
+
+| Project | At | License | Read for |
+| :--- | :--- | :--- | :--- |
+| `androidx/media` (Media3) | tag `1.11.1` (`8c6678b65`), and the release notes up to `1.12.0-beta01` | Apache-2.0 | Decoder choice, surface loss, audio, buffering, HTTP loading |
+| Flutter's engine and framework | 3.47.9, the sources in the local SDK (`c197ca5199e`) | BSD-3-Clause | Platform view modes; the transparent surface |
+| `flutter/packages`, `video_player_android` | `11da3bab8` (2026-11-12) | BSD-3-Clause | ExoPlayer on a `SurfaceView` platform view |
+| `moneytoo/Player` (Just Player) | `6df39ae74` (2026-11-12) | Unlicense | The settings of the one Media3 app that played 4K60 on `<physical-tv>` |
+| `aaa1115910/bv` | `0e454c06e` (2025-12-08), and three of its issues | MIT | A Bilibili TV client on Media3 |
+| `jellyfin/jellyfin-androidtv` | `e14b0884e` (2026-11-12) | GPL-2.0 | Ideas only. Nothing is copied from it |
+| `yuliskov/SmartTube` | `ab04c75fa` (2026-11-12) | MIT | Its list of TV workarounds |
+| `Hunter-Clipper/OpenIPTV` | `73ee38a` (2026-11-12) | GPL-3.0 | Found by a code search: a Flutter app that ships the transparent view on TVs |
+| Android's SDK sources | API 37 (`Window`, `SurfaceView`, `Display`) | Apache-2.0 | The HDR window calls; changing a surface's Z order |
+| Android's platform documents | "Mixed SDR/HDR composition" and "HDR video playback" on source.android.com | | SDR over HDR |
+
+Media3 paths below are under `libraries/exoplayer/src/main/java/androidx/media3/exoplayer/` unless they say otherwise. Flutter engine paths are under `engine/src/flutter/shell/platform/android/`.
+
+### Decisions
+
+**1. Media3 version: pin 1.11.1.**
+
+* It's the latest stable release (2026-09-11), the one Just Player had when it played 4K60 on `<physical-tv>`, and the one yifgu and OpenIPTV use.
+* 1.12.0 is at beta01 (2026-11-11). Its notes have three changes that touch Dolby Vision, and M17's own checks cover the gaps until it's stable:
+  * A profile Media3 doesn't know (it knows 4, 5, 7, 8, 9 and 10) is rejected in 1.12, where 1.11.1 plays it "as standard HEVC with incorrect colors". The track check in decision 2 catches it.
+  * 1.12 stops picking a Dolby Vision decoder that doesn't support the stream's profile when no decoder fully supports the format. `M17.5` records the decoder's declared profiles.
+  * 1.12 lets Profile 7 fall back to HEVC. Bilibili isn't known to serve it.
+* From 1.10 to 1.11.1 the notes have nothing about MediaTek. What matters here: 1.11.0 fixed frame drops when a new surface is set on a device with no placeholder surface, which is the path decision 3 chooses; 1.11.0 removed the E-AC-3 JOC fallback on Pixel phones, the failure PR 2145 met; 1.10.1 fixed artifacts with AV1-based Dolby Vision.
+* `M17.6` looks again if 1.12.0 is stable by then.
+
+**2. Renderers: Media3's default codec selector, decoder fallback off, and a Dolby Vision rule by profile.**
+
+* **What Media3 does by itself** (1.11.1):
+  * `mediacodec/MediaCodecUtil.java` 379–414: a `video/dolby-vision` track has an "alternative" decoder type by profile. HEVC for profiles 4 and 8, AVC for 9, AV1 for 10, and **none for 5 and 7**. So Media3 never offers an HEVC decoder for Profile 5.
+  * `video/MediaCodecVideoRenderer.java` 901–923: a display that doesn't report Dolby Vision gets the alternative decoders alone, when there are any. Otherwise the list is the Dolby Vision decoders, then the alternatives.
+  * `mediacodec/MediaCodecRenderer.java` 1305–1309: with decoder fallback off, the default, only the first decoder in the list is tried.
+  * `libraries/extractor/src/main/java/androidx/media3/extractor/mp4/BoxParser.java` 1669–1672 and 1842–1845: a track is typed Dolby Vision when its sample entry has a `dvcC`, `dvvC` or `dvwC` box. Without one, the stream is plain HEVC to Media3.
+* **So the exact cases where a Dolby Vision stream reaches an HEVC or AVC decoder** are these: Profile 8 or 4 (HEVC) and 9 (AVC) on a display without Dolby Vision; the same profiles when the Dolby Vision decoder is listed second or, with fallback on, fails to start; and any stream whose container doesn't mark it, or marks a profile 1.11.1 doesn't know. Profile 5 only through the last one.
+* **The rule**:
+  * Before opening quality 126: the display reports Dolby Vision and a `video/dolby-vision` decoder exists, or the quality is refused with a message. This is yifgu's first two checks.
+  * After tracks are selected: the video track is typed `video/dolby-vision` and its profile is the one the API's `codecs` string promised. If not, stop with a message. This is yifgu's fourth check, and it covers what 1.11.1 lacks.
+  * **Profile 5**: nothing more is needed, because Media3 has no other decoder to give it.
+  * **Profile 8.4**: on a TV with a Dolby Vision display and decoder it plays through that decoder. Where either is missing, an HEVC decoder shows its HLG base layer, which is a correct picture. The proposal is to allow that and label it HLG in 播放信息, not 杜比视界. `M17.6` confirms.
+  * **No custom `MediaCodecSelector`.** yifgu's third check isn't needed, and it's the one piece `M17.1` tied to a black picture.
+* **Decoder fallback stays off.** jellyfin turns it on, to play any file a server holds; Just Player and `bv` leave it off. Off is also the fail-closed choice: a decoder that won't start is an error, not a quiet switch to another one.
+* **A way to ask before opening**, from jellyfin's idea (`playback/media3/exoplayer/src/main/kotlin/support/ExoPlayerPlaySupportReport.kt`): build a `Format` from the API's codec string, size and frame rate, and ask the player's own video renderer whether it supports it. The answer says handled or not, hardware or not, and whether it would use a decoder for a fallback type. `M17.9` can gate the quality list on Media3's own answer instead of a second copy of its rules.
+* `bv` has no rule at all, and its issue 18 shows the result: on a box with no Dolby Vision decoder, every 杜比视界 video was a green screen, with the TV in HDR mode.
+
+**3. The surface: a plain `SurfaceView`, and the decoder is released when the surface is lost.**
+
+* `ExoPlayerImpl.java` 3571–3576 clears the video output when the surface is destroyed (Home, sleep). `video/MediaCodecVideoRenderer.java` 1318–1343 and 2481–2522 then keep the decoder running on a "placeholder surface", an EGL surface, on every device below API 35. `<physical-tv>` is API 34. That moves a live decoder from the video plane to a GPU surface, which M17's rules don't allow.
+* **Decision**: a video renderer whose `shouldUsePlaceholderSurface` returns false. The decoder is then released with the surface and made again when one returns. M16 does the same for mpv: `TvVideoPlane` sets `vid=no` when the surface is lost. The cost is a decoder start on coming back from Home.
+* **The view binds and unbinds its own surface**, as Flutter's `video_player_android` does (`android/src/main/java/io/flutter/plugins/videoplayer/platformview/PlatformVideoView.java`): `setVideoSurface` in `surfaceCreated`, and `clearVideoSurface(surface)` in `surfaceDestroyed`, which only unbinds if that surface is still the player's. Two views exist for a moment when a route changes, and this keeps the old one from taking the picture with it.
+* **Not chosen for the spike**: Media3's `demos/surface` (`MainActivity.java` 230–235, 267–280), which gives the decoder one `SurfaceControl` for good and reparents it under whichever `SurfaceView` is showing. It avoids the decoder restart. Nothing has shown how this TV composes such a layer, so it's an option for later, and it would need its own video-plane check.
+
+**4. Audio: media attributes on the player, audio focus left with Dart, and the TV decides between passthrough and decoding.**
+
+* `audio/MediaCodecAudioRenderer.java`, `supportsFormat`: when the audio sink takes the encoded format, it's passed through and no decoder is used. Otherwise a decoder is needed, and for 杜比全景声 (E-AC-3 JOC) an E-AC-3 decoder counts, in 2-D (`mediacodec/MediaCodecUtil.java` 380–385).
+* `audio/AudioCapabilities.java` 188–190: on a TV at API 33 or later, what the sink takes comes from `AudioManager.getDirectProfilesForAttributes`. It depends on where the sound is going (the TV's speakers, ARC, a soundbar) and on the attributes the player was given. The app doesn't choose, and passthrough wins when both exist.
+* A track with neither route isn't an error. Its format is unsupported, so it isn't selected, and the video plays silent. The adapter has to see an audio track that wasn't selected and say so, or 杜比全景声 on the wrong output looks like a muted video.
+* `ExoPlayer.java` 811: the player handles audio focus only when asked. The app already holds focus in Dart for any player (`lib/services/audio_session.dart`). **Decision**: `USAGE_MEDIA` and `CONTENT_TYPE_MOVIE` with focus handling off, so the capability query uses the right attributes and one owner holds focus. yifgu's way, ExoPlayer holding focus with Dart's session released, is right for a player with no Flutter UI and isn't needed here. Just Player and jellyfin let ExoPlayer hold focus because they have no other owner.
+* Hi-Res is FLAC, which Android decodes in software. Whether more than 16 bits reach the output isn't decided here.
+
+**5. Buffer: the app's own two settings, mapped as loneshu7 mapped them.**
+
+* Media3's defaults (`DefaultLoadControl.java` 64–130): 50 s minimum and maximum, 1 s to start, 2 s after a rebuffer, no back buffer, and a byte target worked out from the tracks, about 138 MiB for video with audio. That memory is on the Java heap of a 32-bit app, so the default can't stay. 1.11.0's notes mention the same risk.
+* The app's settings for mpv (`lib/utils/storage_pref.dart` 891–901): `cache-secs` of 16 s times the speed, and 4 MiB forward plus 4 MiB back, whichever limit comes first.
+* **Decision**: minimum and maximum both at the app's seconds times the speed at open; start thresholds left at 1 s and 2 s; the byte target at the app's forward size; bytes before time; no back buffer. `DefaultLoadControl.java` 775–809 confirms loneshu7's reasons: the byte count covers everything allocated, and with bytes first a full budget also lets playback start. At 4 MiB a 4K stream holds about a second in the player, as it does in mpv today; the ripper's proxy holds the rest.
+
+**6. No platform-view mode is cheaper than Hybrid Composition for a `SurfaceView` while Impeller is off.**
+
+* `io/flutter/plugin/platform/PlatformViewsController.java` 68 and 229–241: a view tree with a `SurfaceView` can't use the texture mode. `initSurfaceAndroidView` falls back to Hybrid Composition, so kkren, AvalonUltra and `video_player_android` are on the same mode as `initExpensiveAndroidView`. `initAndroidView` would fall back to a virtual display, which is a texture again.
+* `platform_view_android.cc` 557–563: the newer mode (`initHybridAndroidView`, "Hybrid Composition++") only exists on Impeller with Vulkan, on API 34 and later. This app's manifest turns Impeller off (`android/app/src/main/AndroidManifest.xml` 51–53), which is upstream's choice.
+* So the two routes in the plan are the only two: Hybrid Composition, or no platform view at all. Turning Impeller on for the whole app to get the newer mode isn't proposed.
+* `video_player_android`'s README advises against its own platform view on Android, for an open Flutter issue (164899): the video shows over the UI when the player is scrolled out of view. On the TV the player doesn't scroll in fullscreen; in split view it's one more thing for `M17.4` to look at.
+
+**7. The transparent view can be built in Flutter's embedding, and one app already ships it on TVs.**
+
+* `io/flutter/embedding/android/FlutterActivity.java` 1248–1263: the render mode and the transparency mode are two methods an activity can override. By default a transparent background also means a `TextureView`; an override can ask for a surface that is transparent. `MainActivity` extends `AudioServiceActivity`, which overrides neither.
+* `io/flutter/embedding/android/FlutterSurfaceView.java` 116–119: a transparent one sets a transparent pixel format and `setZOrderOnTop(true)`. The video `SurfaceView` goes under Flutter's view in the same window, with the default Z order, so the stack is video, then the window, then Flutter. No translucent window theme is needed.
+* **Switching while the app runs**: Flutter decides when it makes the view. Android itself allows a Z order change after the surface exists for apps that target above API 29 (`SurfaceView.java` 1003–1008 in the SDK sources), and this app targets 37, so a switch without a restart may be possible through `onFlutterSurfaceViewCreated`. OpenIPTV doesn't try: its setting applies after a restart. Only the TV can say.
+* **The hole**: a region shows the video only where Flutter's final frame has no color. `BlendMode.clear` in a painter makes that hole, but only in the layer it paints into: under an ancestor that draws through an offscreen layer (`Opacity`, a `ShaderMask`, a clip with `saveLayer`) or a cached picture, the clear stays in that layer and the page's background shows again. The sure way is that nothing opaque is painted under the video on that route, with the clear as the tool for what must be painted around it.
+* **`Hunter-Clipper/OpenIPTV` ships this on Android TV**, with Media3 1.11.1, and its activity has the same base class as this app's:
+  * `android/app/src/main/kotlin/com/openiptv/app/MainActivity.kt` 50–62: `getRenderMode` returns `surface`, and `getTransparencyMode` returns `transparent` on TVs only.
+  * `.../VideoLayer.kt` (132 lines): one `SurfaceView` added under Flutter's view, 1 pixel in size until Dart sends a rectangle, with a 500 ms delay before it's let go, so a route change doesn't restart the stream.
+  * `lib/shared/widgets/video_surface.dart` 256–270 and 372–391: the rectangle from `localToGlobal` times the pixel ratio, and a painter that fills black and clears the hole.
+  * Its own comments give the reason, which is M18's: on the texture, frames and screen refreshes drift apart. It isn't known on which TVs it was tried, and nothing here ran it.
+* For M17 and for `M18.3` this turns the transparent view from an idea into something with a working example to adapt, under the same license.
+
+**8. SDR graphics over HDR video: no window calls to start with, because the window's color mode doesn't reach a `SurfaceView`.**
+
+* `Window.java` 1401–1407 in the SDK sources, on `setColorMode`: it "does not impact SurfaceViews or SurfaceControls, as those have their own independent color mode and HDR parameters", and the request "is not guaranteed to be honored". `setDesiredHdrHeadroom` only applies when the color mode is HDR, takes 1.0 to 10,000.0, and has the same note. `SurfaceView` has a headroom call of its own that works independently of the window's.
+* So `COLOR_MODE_HDR` on the window is about the window's own content, which here is Flutter's SDR surface. It can't be what puts the video in HDR. That comes from the decoder's output on the `SurfaceView`.
+* Just Player, `bv` and OpenIPTV make no HDR call on the window at all. `bv`'s issue 18 has a TV entering HDR mode from `bv` (with the wrong decoder, hence the green).
+* **What the platform does with SDR layers** (Android's "Mixed SDR/HDR composition" document): since Android 13, when HDR content is on screen the SDR layers are dimmed by a per-layer ratio the display service sends to the hardware composer. It needs support from the device's composer, the document speaks only of built-in displays, and it calls validation device dependent. It says nothing about TVs or Dolby Vision. `Display.getHdrSdrRatio()` (API 34) reports the ratio, and returns 1.0 when `isHdrSdrRatioAvailable()` is false.
+* **Decision**: the spike starts with no window calls. `M17.5` reads `isHdrSdrRatioAvailable()` and the ratio while HDR plays: if the TV reports no ratio, Android isn't dimming the UI and what's seen is the panel's own mapping. The color mode and the headroom calls are tried only if the UI looks wrong without them. This keeps the plan's order and gives it a reason.
+* No project read does anything for its controls or danmaku over HDR. `bv` draws its danmaku over the same `PlayerView` with no special case.
+
+**9. Loading: Media3 treats the ripper's proxy as mpv does.**
+
+* `source/ProgressiveMediaPeriod.java` (the `load` loop), `source/ProgressiveMediaSource.java` 321, and `libraries/datasource/src/main/java/androidx/media3/datasource/HttpUtil.java` 57–69: one open-ended request for each track, with no `Range` header from byte 0 and `bytes=N-` after a seek outside the buffer. A seek inside the buffer makes no request. When the buffer is full, the loader stops reading and keeps the connection open, checking again every 1 MiB.
+* That's what the proxy expects from mpv: one connection for a track, a new one for a seek, and a reader that stalls when it's full. A resume from the middle makes two requests for each track (the head, then the offset), as mpv's does.
+* Media3 sends one header mpv doesn't, `Icy-MetaData: 1`, and may send `If-Range` when a response has an `ETag`. The proxy sends no `ETag`.
+* **The ripper's "caught up" signal**: the adapter answers `demuxer-cache-idle` from `Player.isLoading`.
+* `libraries/datasource/.../HttpDataSource.java` 232–238 and 378–389: Media3 turns the platform's refusal of plain HTTP into `CleartextNotPermittedException`. So `M17.1`'s first piece stands: the manifest has to allow `127.0.0.1`.
+
+**10. Frame rate: Media3's request to the display is turned off for the spike.**
+
+* `ExoPlayer.java` 513 and `video/VideoFrameReleaseHelper.java` 114: by default Media3 calls `Surface.setFrameRate` with the video's rate, in the "only if seamless" mode. mpv on the variant asks for nothing.
+* **Decision**: `VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF` in `M17.4`, so its numbers compare with M16's. Whether 24 and 25 fps video should ask the panel to follow is a question for `M17.6`. Just Player keeps its own frame-rate matching behind a setting that is off.
+
+**11. Tunneled playback stays off**, as the plan's rule says. Just Player has it behind a setting that is off by default (`Prefs.java` 74). OpenIPTV offers it for live streams and carries several recoveries for when it fails ("no picture", "clock stuck"), which shows how it behaves across TVs.
+
+### The Five Questions From `M17.1`
+
+1. **The mode `initSurfaceAndroidView` ends up in**: Hybrid Composition (decision 6).
+2. **Cleartext**: confirmed from Media3's source (decision 9).
+3. **The Dolby Vision rule by profile**: decision 2.
+4. **Audio focus**: Dart keeps it (decision 4).
+5. **loneshu7's byte budget**: confirmed in 1.11.1 (decision 5).
+
+### What Else the Projects Showed
+
+* **`bv` issue 145**: on a TCL TV with Android 11 and a 1080p UI, `bv` played 4K and HDR scaled down to 1080p and the TV didn't see HDR, while other players on the same TV played 4K HDR at the panel's resolution. Its author's TV, with a 4K UI, was fine. So a `SurfaceView` in a 1080p UI doesn't promise the panel's resolution on every TV. M16 already saw 4K on the plane on `<physical-tv>`; `M17.4` checks the layer's buffer size again under Media3.
+* **SmartTube's levers for dropped frames on a `SurfaceView`** (`common/src/main/java/com/liskovsoft/smartyoutubetv2/common/exoplayer/versions/renderer/TweaksMediaCodecVideoRenderer.java` 44–52, 83–106; the switches are in `common/.../prefs/PlayerTweaksData.java` 130–272). They are user switches, not per-model rules, and two are worth knowing before 4K60 is measured:
+  * Release each output buffer with no timestamp, for frame drops on a `SurfaceView` (ExoPlayer issue 6348).
+  * Count a buffer as late only after a second, "for Sony Bravia". Those TVs have MediaTek chips, as `<physical-tv>` does.
+  * The rest: a larger maximum decoder size for Amlogic, no snapping to vsync, skipping the profile and level check, a software decoder, a `TextureView`, an audio delay. Tunneling is a switch there too, off by default.
+* **Just Player's whole setup** is Media3's defaults: default renderers and selector, no decoder fallback, default load control, `PlayerView`'s `SurfaceView`, and audio attributes (`app/src/main/java/com/brouken/player/PlayerActivity.java` 1227–1229, 1250–1254). Its `master` is now on 1.12.0-beta01.
+* **`bv`'s player** (`player/core/src/main/kotlin/dev/aaa1115910/bv/player/impl/exo/ExoMediaPlayer.kt` 31–35, 72–88): two `ProgressiveMediaSource`s merged, with `User-Agent` and `referer`, the same shape as the forks. It takes the codecs for a quality from the API and doesn't check the device.
+
+### Pieces to Adapt, Added to `M17.1`'s List
+
+| # | Piece | Source | For |
+| :--- | :--- | :--- | :--- |
+| 19 | A see-through Flutter surface on TVs only | OpenIPTV `android/app/src/main/kotlin/com/openiptv/app/MainActivity.kt` 50–62 | `M17.4`, `M18.3` |
+| 20 | A `SurfaceView` under Flutter's view, sized from Dart | OpenIPTV `.../VideoLayer.kt` (whole file) | `M17.4`, `M18.3` |
+| 21 | The rectangle sent to the layer, and the hole painter | OpenIPTV `lib/shared/widgets/video_surface.dart` 256–270, 372–391 | `M17.4`, `M18.3` |
+| 22 | A view that binds and unbinds only its own surface | `video_player_android` `.../platformview/PlatformVideoView.java` (the surface callback) | `M17.7` |
+| 23 | Two overrides for dropped frames, if `M17.4` finds any | SmartTube `TweaksMediaCodecVideoRenderer.java` 44–52, 83–106 | `M17.4` |
+
+Credit lines for these: `Adapted from Hunter-Clipper/OpenIPTV (GPL-3.0), commit 73ee38a.`; `Adapted from flutter/packages video_player_android (BSD-3-Clause), commit 11da3bab8.`; `Adapted from yuliskov/SmartTube (MIT), commit ab04c75fa.` Nothing comes from jellyfin's code: its license is GPL-2.0, and only the idea in decision 2 is used.
+
+### For the TV
+
+* **`M17.4`**:
+  * With decision 3's renderer, Home and back and sleep and back: the decoder is released and comes back on the video plane, and how long the return takes.
+  * The video layer's buffer size at 4K (`bv` issue 145), with the layer still `DEVICE`.
+  * The transparent view as OpenIPTV builds it, beside the platform view. Whether the Z order can change while the app runs.
+  * The proxy's log during open and seek: one request for a track at a time, and no trouble from the `Icy-MetaData` header.
+  * The buffer mapping at 4 MiB with a 4K stream: stalls, and how the ripper's automatic concurrency reads `isLoading`.
+  * If frames drop at 4K60: SmartTube's two overrides, one at a time.
+* **`M17.5`**:
+  * The TV's `video/dolby-vision` decoders and the profiles each declares, and which one Media3 picks for each `codecs` string met.
+  * `isHdrSdrRatioAvailable()` and the ratio while HDR and Dolby Vision play, before any window call is tried.
+  * What `getDirectProfilesForAttributes` reports on the TV's speakers and on any ARC device the user has, and whether 杜比全景声 is passed through, decoded, or left silent.
