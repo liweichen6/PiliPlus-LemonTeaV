@@ -142,8 +142,9 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.1` | Study: the PiliPlus Media3 Forks as They Are Now | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.2` | Study: Media3 Outside PiliPlus | ✅ Done (2026-11-12) | `docs/tv/M17_MEDIA3_STUDY.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ✅ Done (2026-11-13) | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ⏳ Planned | Uncommitted `-Pdev` build, `<physical-tv>` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ⏳ Planned (only if `M17.4` passes) | Uncommitted `-Pdev` build, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ✅ Done (2026-11-14; go) | Uncommitted `-Pdev` build, `<vm-tv>`, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ✅ Done (2026-11-14) | The same uncommitted `-Pdev` build, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5a` | The Thread Ripper on the TV's CPU (Device Session) | ⏳ Planned (next) | The same uncommitted `-Pdev` build, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.7` | Kotlin Media3 Bridge | ⏳ Planned (only after a go) | `TvExoPlayer.kt`, `TvBridge.kt`, `android/app/build.gradle.kts` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.8` | Dart Player and View | ⏳ Planned (only after a go) | `lib/tv/tv_exo_player.dart` |
@@ -2406,3 +2407,155 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Open for the gate** (`M17.6`): whether a live room opened from a video page matters enough to build a player swap, which reading alone can't show to be safe; and which shape hooks 2 and 3 take, a wrapped call or an inserted block.
 * **Open input** (owner: user): for `M17.4`, a session on `<physical-tv>` with network adb, and the go-ahead for the first 4K60 run of that session. The five-minute check with another app at 4K60 and 杜比视界 is still open, and `M17.5` needs videos that offer HDR 真彩, 杜比视界 and HDR Vivid to the account on `PiliPlus TV dev`.
 * **Next**: `M17.4`, or `M18.1` if M18 goes first.
+
+### [2026-11-14] Milestone M17 (Task `M17.4`): Spike A, SDR and 4K on the Video Plane — Go
+* **Status**: ✅ Done, and the spike passes: Media3 plays 1080p and 4K60 on the video plane inside the app, behind the adapter from `M17.3`, with the thread ripper and danmaku on. Three items were not judged and are listed under "Not checked". `M17.5` is next.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (M17: status, what `M17.4` found, the task; M18: what `M18.3` takes), `docs/tv/M17_MEDIA3_STUDY.md` (the status line), `docs/tv/PROGRESS.md`. No code is committed.
+* **The build**: an uncommitted `-Pdev` build from `main`, as the plan asks. It is kept as a git stash on the development machine ("M17.4 spike"), with its run scripts, because `M17.5` runs on the same build.
+  * `TvExoPlayer.kt` (617 lines): a Media3 1.11.1 player with `M17.2`'s settings, a platform view, and a `SurfaceView` under Flutter's view for the transparent route.
+  * `lib/tv/tv_exo_player.dart` (848 lines, with the spike's logging): `TvExoPlayer extends PlatformPlayer implements NativePlayer`, its own `VideoController`, both views, and subtitle cues.
+  * Hooks in upstream's Dart files: 21 lines added and 2 changed (`controller.dart` +12 −2, `view.dart` +9), against 20 and 2 estimated in `M17.3`. Elsewhere: `TvBridge.kt` +1, `AndroidManifest.xml` +1 and an 8-line `network_security_config.xml`, `build.gradle.kts` +4, `MainActivity.kt` +13 for the transparent view.
+  * A config file in the dev app's external files folder picks the player, the view and a forced failure for each run. With no file the build behaves as `main` does.
+* **Method**: `<vm-tv>` first (signed out), then one session on `<physical-tv>` (warm, up 10 to 13 hours, thermal status 0 throughout). Runs on the TV went under M16's guard, 1080p first; the 4K60 runs had the user's go-ahead. Frame times as in `PLAYBACK_PARAMETERS.md`: 90 s measured after 30 s of settling, danmaku on. `无痕模式` was on for every run on the TV, set from the config file for the process, because the app's own dialog can't be confirmed with the D-pad (below).
+* **The bar**:
+
+  | # | Item | Result |
+  | :--- | :--- | :--- |
+  | 1 | 1080p: layer `DEVICE`, `hwRender:1, gdec:0` | ✅ Both views, every run. `c2.mtk.avc.decoder`, 0 frames dropped in four 130 s runs. Sync was not judged by eye |
+  | 2 | Forced failures never reach mpv | ✅ A bad URL and a thrown error in the bridge, on both devices. No mpv player was made and no decoder started |
+  | 3 | Seek, quality switch, next-video, 重载视频, Home and back, split view and fullscreen | ✅ On `<physical-tv>`. TV sleep and back only on `<vm-tv>`: adb can't wake the TV |
+  | 4 | D-pad focus stays in Flutter, HUD keys work | ✅ Both views: the HUD, its menu, the quality sheet, 播放信息, Select to pause, Left to seek, Back |
+  | 5 | UI frame times, both views | ✅ Numbers below. The ripper-off half could not be measured (below) |
+  | 6 | 4K60 AVC and AV1, 10+ minutes each | ✅ 11.6 and 11.9 minutes, no freeze, no shutdown, the 4K layer `DEVICE` in all 71 checks |
+  | 7 | Whether `<vm-tv>` can play through Media3 | ✅ It can, with its hardware H.264 decoder, which never gives mpv a frame |
+  | 8 | Cleartext to `127.0.0.1`; default codec selector; the proxy's cancelling | ✅ The ripper's URLs open. Of 155 requests Media3 made to the proxy, none cut off one it still needed |
+  | 9 | Decoder released with the surface; 4K buffer size; the transparent view and switching it; the buffer at 4K | ✅ Back from Home in 0.4 s; the 4K layer's buffer is 3840 × 2160; the view can be switched while the app runs; no stall at 4K |
+
+* **UI frame times at 1080p** (ripper on; `BV1fiHN6zEfx` is 1080P60 with moderate danmaku, `BV1NGZtBwELa` is 1080P at 30 fps with heavy danmaku):
+
+  | Video | Player and view | UI fps | Frames over 16.7 ms | Frame total, p50 | Frame total, p90 | Media3 dropped |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | Moderate danmaku | ExoPlayer, platform view | 44.0 | 47.4 % | 16.5 ms | 29.0 ms | 0 of 7,464 |
+  | Moderate danmaku | ExoPlayer, transparent view | 53.1 | 19.4 % | 10.1 ms | 21.0 ms | 0 of 7,521 |
+  | Moderate danmaku | mpv, texture | 59.0 | 11.2 % | 8.7 ms | 15.2 ms | |
+  | Heavy danmaku | ExoPlayer, platform view | 46.9 | 59.9 % | 18.7 ms | 31.7 ms | 0 of 3,734 |
+  | Heavy danmaku | ExoPlayer, transparent view | 55.8 | 16.4 % | 10.3 ms | 24.4 ms | 0 of 4,023 |
+  | Heavy danmaku | mpv, texture | 56.5 | 26.7 % | 11.4 ms | 27.0 ms | |
+
+  * **The transparent view meets the proposed bar**: 10.3 ms at p50 with heavy danmaku and the ripper on, against 16.7 ms, and within 1 fps of the texture path. The platform view doesn't: 18.7 ms.
+  * On the texture every video frame makes Flutter draw, so 59 fps there is the video's rate. On the transparent view Flutter draws only when danmaku or the HUD changes.
+  * The video layer itself was steady on both views: 58.3 to 59.1 fps for the 60 fps stream, with 1.5 to 2.8 % of intervals over 25 ms.
+* **CPU by thread** (share of one core, averaged over 6 or 7 samples of `top -H` in the same runs):
+
+  | Run | Main (UI) thread | Raster | Java GC | Android's render thread | Dart workers | Player | Process |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | ExoPlayer, platform view, moderate | 39 % | | 33 % | 16 % | | 14 % | 145 % |
+  | ExoPlayer, platform view, heavy | 54 % | | 34 % | 15 % | 6 % | 8 % | 138 % |
+  | ExoPlayer, transparent view, moderate | 22 % | 14 % | | | 23 % | 14 % | 116 % |
+  | ExoPlayer, transparent view, heavy | 31 % | 21 % | | | 20 % | 8 % | 103 % |
+  | mpv, texture, moderate | 16 % | 17 % | | | 10 % | 27 % | 97 % |
+  | mpv, texture, heavy | 33 % | 32 % | | | 7 % | 13 % | 106 % |
+
+  * **What Hybrid Composition costs is visible here**: a third of a core in Java garbage collection and another sixth in Android's render thread, neither of which appears on the other two paths, and no separate raster thread in the list while the main thread carries more.
+  * **The ripper's share couldn't be separated**, because the ripper-off runs didn't play. With it on, the main thread is at 22 to 31 % on the transparent view and 16 to 33 % for mpv, and the frame times above are inside the bar. So the ripper on the UI thread isn't what decides the view. Dart's worker threads do twice the work under Media3 (20 to 23 % against 7 to 10 %); the reason wasn't looked for.
+* **4K60 on ExoPlayer** (transparent view, ripper and danmaku on, `BV1kMxM6FECM`):
+
+  | Stream | Decoder | Played at 4K | Media3 dropped | Layer fps | Long intervals | UI fps | Frame total, p50 | M16 (mpv on the plane, 4-frame queue) |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | AVC (`avc1.640034`) | `c2.mtk.avc.decoder` | 699 s | 76 of 41,983 (0.18 %) | 56.9 | 5.2 % | 49.9 | 11.9 ms | 0.3 %, UI 48.2 fps |
+  | AV1 (`av01.0.13M.08`) | `c2.mtk.av1.decoder` | 717 s | 27 of 42,913 (0.06 %) | 58.0 | 3.2 % | 58.0 | 11.0 ms | 0.16 %, UI 54.7 fps |
+
+  * `hwRender:1, gdec:0` on both. The layer's source is 3840 × 2160 and it fills the 3840 × 2160 display, so the 1080p UI doesn't scale the video down (`bv` issue 145 doesn't apply to this TV).
+  * At most 9 frames were dropped in a row. No rebuffering after the start. `dumpsys media.player` answered in 0.13 to 0.35 s after each run, and the CPU sensor read 56 °C.
+  * SmartTube's two overrides are in the build and weren't needed.
+* **The transparent view**:
+  * Built as OpenIPTV builds it: `MainActivity` returns the surface render mode and the transparent transparency mode, a `SurfaceView` sits under Flutter's view, and a painter clears a hole where the video goes. The hole worked in fullscreen and in split view; the HUD, its menu, the quality sheet and a dialog's barrier draw and dim over the video.
+  * **It can be switched while the app runs**: setting Flutter's surface format and Z order when the first player view mounts, and back when the last one goes, worked on both devices with no restart.
+  * **Composition on `<physical-tv>`**: the video layer is `DEVICE`. The window and Flutter's surface are both `CLIENT`. That isn't new: in a normal launch of this app, with no video, the same two layers are `CLIENT` too. On the platform view the window is `DEVICE`, since Flutter draws into the window there.
+  * Split view to fullscreen only resizes the surface. The decoder isn't restarted.
+* **The adapter**:
+  * Upstream's controller ran on the adapter's state and streams with no change beyond the hooks: resume position, play and pause, seek, speed state, the progress bar, danmaku timing, the HUD, 播放信息.
+  * The `edl://` string splits back into the two URLs. At a resume position Media3 asks for the head of each track and then the offset, two requests a track, as mpv does.
+  * **The proxy's cancel never cut a request Media3 needed.** Media3 closes its own connection before it asks again: of its 155 requests, one arrived while the track's earlier one was still open, and that was the head request it had just abandoned. mpv's offset requests met a live one 4 times in 14, which is what the cancel is for. kkren's switch isn't needed.
+  * **Upstream's retry only runs from the start of a video.** It needs a buffered position of 0, so at a resume position a source error leaves the loading spinner on screen with nothing playing. On `<vm-tv>`, from position 0, the retry reopened the media on ExoPlayer 3 s after the error, as designed; the second failure fell inside upstream's 10 s throttle and nothing followed. The adapter needs its own bounded retry and failure screen (`M17.8`, `M17.9`).
+  * Seen on the way, for the build: upstream's loading spinner draws over the adapter's failure text; a live room refused on an ExoPlayer shows the earlier video's paused frame, not a message; after Back the video page reopens its media and plays.
+  * A track typed `audio/eac3-joc` was selected with no audio decoder started, which is the passthrough route. Whether sound came out wasn't judged; it's `M17.5`'s question.
+* **Times on `<physical-tv>`**: first frame 4.4 to 5.7 s after an open at a resume position (nine opens), 1.5 s from the start of a video, 2.9 s after a quality switch at 1080p and 5.2 s into 4K, 4.2 s after 重载视频, about 6 s after a seek outside the buffer, and 0.4 s after the surface returns from Home (decoder start 150 ms). mpv's times weren't measured beside them.
+* **The thread ripper off: not measurable here, and a hazard**:
+  * With 多线程加速 off, Media3 fetches the CDN's URLs itself. `upos-sz-mirrorcosov.bilivideo.com` answered every request with HTTP 567, so nothing played. `upos-hz-mirrorakam.akamaized.net` served the other video, which rebuffered every few seconds.
+  * **Why 567** (found after the session, from the user's earlier report [the1812/Bilibili-Evolved#5857](https://github.com/the1812/Bilibili-Evolved/issues/5857)): that host answers a request with no `Range` header with HTTP 567 and an HTML error page, and the same request with `Range` with 206. The other host answers 200 without `Range`. Media3 sends no `Range` when it reads a whole resource from byte 0 (`HttpUtil.buildRangeRequestHeader` returns null), and a progressive source's first request is exactly that. The session's own log shows it: Media3's first request for each track reached the proxy with `range=null`, mpv's with `bytes=0-`. The ripper puts `Range` on every request it sends upstream, which is why 567 never showed with it on.
+  * The second host's rebuffering fits the same report's numbers: one connection to one host gets about 0.3 to 0.55 MB/s on this network, under a 1080p60 stream's rate.
+  * After these runs the first host stopped serving the ripper too. From 00:30 to at least 00:46 neither player got video data on the dev app, mpv included, and at 01:31 it played again. The `Range` rule doesn't explain this part, since the ripper's requests all carry `Range`. Three of the four ripper-off runs met this host, with 23 refused requests in all (one open each, 7 or 8 requests within 4 s). That's few for a block, so the host may as well have been down for its own reasons; the logs can't tell.
+  * So every number here is with the ripper on, and the ripper's cost on the UI thread is only bounded, not measured.
+  * **For the gate**: the adapter must put `Range: bytes=0-` on Media3's request from byte 0 and expect 206, wherever Media3 fetches a CDN URL itself (the ripper off, or fallen back to the direct source). Not tried yet; `M17.5` item 10 tries it on `<vm-tv>`. Until it's shown to work, refusing is still the fail-closed choice, and one connection may be too slow for 1080p60 here even when it does.
+* **Not checked**:
+  * Sync and smoothness by eye, at 1080p and at 4K60. The numbers show frames arriving on time; nobody watched the panel.
+  * TV sleep and back on `<physical-tv>`. On `<vm-tv>` the decoder was released on sleep and the picture returned 1.6 s after wake.
+  * `SubtitleView` with real cues: no test video had subtitles. The adapter's parser ran only on empty tracks.
+  * The platform view while the video page pops, and an mpv player asked for a video above 1080p (rule 2). Rule 3 was checked on `<vm-tv>`.
+* **Found beside the task**:
+  * **`无痕模式`'s dialog can't be confirmed with the D-pad.** Its sheet lets keys through to the page behind, so Select on 保存为永久 presses the icon again and turns the mode off. Only the temporary form can be had on a TV, and it ends with the process.
+  * M16's guard counts a decoder log line that adds up over several decoder starts, so a session with a quality switch, a next video and a return from Home was stopped though nothing was wrong. The spike's copy counts per 5 s. `tool/tv_m17/` should too (`M17.12`).
+  * A quality picked in the HUD is stored. After the 4K runs the stored quality was 4K 超高清, which the same app would hand to mpv once ExoPlayer is off. The session put it back to 1080P 60帧 and checked it; `M17.9`'s reset on turning the setting off is what covers users.
+* **Left as found**: on `<physical-tv>`, `默认画质` is 1080P 60帧 again (read back from the app's log), 多线程加速 is on, 首选解码格式 is AVC then AV1 (its default, now stored), `无痕模式` is off, the config file and the sampler script are removed, and the TV is asleep. `PiliPlus TV dev` on both devices is now the spike build, which behaves as `main` without its config file; any dev build from `main` replaces it.
+* **Open input** (owner: user): a look at the panel with ExoPlayer at 1080p and 4K60 for sync and smoothness, and a sleep and wake with the remote, both possible at the start of `M17.5`'s session. For `M17.5` as before: videos that offer HDR 真彩, 杜比视界 and HDR Vivid to the account, one with 杜比全景声 or Hi-Res audio, one with subtitles, and the go-ahead for its runs.
+* **Decided after the session** (user, 2026-11-14): the `Range` fix isn't tried now. It's `M17.5`'s item 10, on `<vm-tv>` first.
+* **Next**: `M17.5` on the same build. What its session needs at the start (the additions to the spike, the order of runs, the user's inputs) is under the task in `PLAN.md`. `M18.3`, if it runs, starts from this result.
+
+### [2026-11-14] Milestone M17 (Task `M17.5`): Spike B, HDR, Dolby Vision and Audio — Done
+* **Status**: ✅ Done. Every quality the account gets on `<physical-tv>` has a result: HDR 真彩 and 杜比视界 (Profile 5 and 8) play in their real mode on the video plane, Profile 8.4 without a Dolby Vision decoder plays its HLG base layer, and HDR Vivid isn't offered to this TV at all. Nothing shut the TV down. Two rules need changing for the build (below). `M17.5a`, the thread ripper's load, is next, then the gate, `M17.6`.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M17: status, what `M17.5` found, the task), `docs/tv/PROGRESS.md`. No code is committed.
+* **The build**: the same uncommitted `-Pdev` build, one APK for both devices (`android-arm` and `android-arm64`), kept as a git stash on the development machine ("M17.5 spike"). Added to `M17.4`'s spike:
+  1. A direct request (not to the ripper on loopback) from byte 0 gets `Range: bytes=0-`; each direct request's host, offset and HTTP status are logged; an HTTP error on one is fatal and isn't retried, by Media3 or by upstream's retry.
+  2. `hdrwin=1`: `COLOR_MODE_HDR` on the window while a player exists.
+  3. The display's HDR types, `isHdrSdrRatioAvailable()`, `getHdrSdrRatio()`, `isHdr` and the window's colour mode, before any window call and in each stats line.
+  4. At start, each Dolby Vision decoder with its profiles; at player creation, each audio output with its encodings.
+  5. The Dolby Vision rule (`M17.2`) with `nodv=1|all` to hide the Dolby Vision decoders, and `dvrule=declared` (added during the session, below).
+  6. A log line on `onCreate` (recreated or not) and on every configuration change with its `colorMode`.
+  7. `aqa=` for `默认音质`; `loop=1` to repeat a video for the 10-minute runs; one log line with the qualities the server offered and the one picked; and, at the user's request, `banner=1`: a line at the video's top left, refreshed each second, with the HDR/SDR ratio, the window's colour mode, the colour transfer and primaries, codec, size, decoders and dropped frames.
+* **Method**: `<vm-tv>` first (signed out) for item 10, then one session on `<physical-tv>` (signed in, `无痕模式` from the config file for every run, up 32 hours, thermal status 0 throughout). The user was at the panel for the eye checks and gave the go-ahead for runs above 1080p and the one ripper-off open. Runs above 1080p went under M16's guard, widened during the session to 3996- and 4096-wide layers. Frame times as in `M17.4`: 90 s and more after 30 s of settling, danmaku on.
+* **What the TV reports**: API 34. The display declares Dolby Vision, HDR10, HLG and HDR10+ (`isHdr=true`), one colour mode (`NATIVE`), and **no HDR/SDR ratio** (`hdrSdrRatio not_available`), so the banner shows "n/a" there. Five Dolby Vision decoders are offered to apps, one per profile: P4 `c2.mtk.dvhe.dtr`, P5 `c2.mtk.dvhe.stn`, P8 `c2.mtk.dvhe.st`, P9 `c2.mtk.dvav.se`, P10 `c2.mtk.dvav1.10`; the vendor's codec list names more, which apps don't see. Two audio outputs: the speaker (PCM, AC-3, E-AC-3, E-AC-3 JOC) and HDMI eARC, the active one (also TrueHD, AC-4, DTS). The panel shows no HDR or Dolby Vision badge, so the user judged the mode by the picture.
+* **Results by quality**:
+
+  | Quality | Video (`<physical-tv>`) | Result |
+  | :--- | :--- | :--- |
+  | HDR 真彩 (125), `BV1uV4y1d7K2` | 4K HEVC Main10, `hvc1.2.4.L153`, PQ | ✅ **Plays in its real mode**: the layer is `BT2020_ITU_PQ` with HDR10 metadata on `DEVICE`, and the user saw HDR. No window call was needed |
+  | 杜比视界 Profile 8 (126), `BV1NGZtBwELa` | `dvhe.08.07`, HLG base | ✅ **Plays in its real mode** on `c2.mtk.dvhe.st`; the user judged it Dolby Vision by eye |
+  | 杜比视界 Profile 8.4, `BV1kX4y197P4` p2 | `dvhe.08.06`, HLG base | ✅ Real mode on `c2.mtk.dvhe.st`. With the Dolby Vision decoders hidden, its HLG base layer plays on `c2.mtk.hevc.decoder` (`BT2020_ITU_HLG`), and the user found it fine as HDR |
+  | 杜比视界 Profile 5, `BV1kX4y197P4` p1 | `dvhe.05.07`, **3996 × 2160** | ✅ **Plays in its real mode** on `c2.mtk.dvhe.stn` (user: looks right) — but only past Media3's size check. Under the rule as planned it was refused |
+  | HDR Vivid (129), `BV1KqfzBqEhT`, `BV1beNcz2ECq` p1 | — | **Not offered**: the server's list tops out at 125 for this TV, and the "HDR Vivid" uploads arrive as 125. Every client labels them HDR 真彩 |
+  | 4K HEVC SDR, `BV1kMxM6FECM` | `hvc1.1.6.L153` | ✅ Plays |
+  | HDR 真彩 at HEVC level 5.2, `BV1beNcz2ECq` p1 | `hvc1.2.4.L156`, 21 Mbps | ❌ **Refuse**: the TV's decoder declares less; Media3 played it past its check and the decoder failed after 0.4 s (`ERROR_CODE_DECODING_FAILED`). The failure screen caught it; the TV was fine |
+
+* **Item 1, the window call**: the panel enters HDR with no window call. With `COLOR_MODE_HDR` set, every layer kept the same dataspace (video `BT2020_ITU_PQ`, Flutter's surface `V0_SRGB`), the display stayed `NATIVE`, and nothing restarted. This TV doesn't need it.
+* **Item 2, the Dolby Vision rule**:
+  * Bilibili's Profile 5 stream is 3996 wide. The P5 decoder declares the profile and the vendor's list allows 4096 × 2176, but Android's capabilities say the size isn't covered (`NoSupport [sizeAndRate.cover, 3996x2160]`), so Media3 calls the format "exceeds". The rule as planned ("a Dolby Vision decoder that takes the format") refused it, with `此设备没有可播放该杜比视界视频（Profile 5）的解码器，已停止播放`.
+  * With `dvrule=declared` (accept a Dolby Vision decoder that declares the stream's profile), it plays: first frame 2.2 s after the open, 0 dropped, layer on `DEVICE`.
+  * The refusal page, forced with `nodv=all`, shows the message on black and stops playback. The decoder still started a moment after the refusal, because `stop()` races the renderer; the build should refuse during track selection.
+  * The video layer of every Dolby Vision run carries the vendor's dataspace `0x10860000` (BT.2020, sRGB transfer, limited range) and no HDR metadata, unlike HDR10's `BT2020_ITU_PQ`.
+* **Item 4, audio**: 杜比全景声 arrives as `audio/eac3-joc` on `BV1NGZtBwELa` and goes to the eARC output as a direct, offloaded stream with no decoder in the app; it makes sound (user). That closes `M17.4`'s question. `BV1kX4y197P4`'s tracks are typed plain `audio/eac3` and pass through the same way; sound OK. Hi-Res is FLAC, decoded in software (`c2.android.flac.decoder`); its container gives a sample rate of 0, so Media3 marks it unsupported and plays it anyway. **A seek into the last 2 s of the FLAC track stopped playback** (`ERROR_CODE_FAILED_RUNTIME_CHECK`, an `IllegalArgumentException` in Media3's audio renderer); a seek mid-video didn't. Not tried: a track that neither decodes nor passes through.
+* **Item 5, the UI over HDR**: danmaku, subtitles and the HUD are readable over HDR 真彩 and Dolby Vision (user), so step 1 of "Danmaku and the HUD over HDR video" (no window calls) is enough on this TV. No HDR/SDR ratio exists to report. 云视听小电视 wasn't compared.
+* **Item 6, the load run** (`BV1NGZtBwELa`, 4K Dolby Vision, heavy danmaku, ripper on, 140 s): video 0 dropped of 3,295 at its own 30 fps, one 1.7 s stall. UI frame time p50 18.0 ms, p90 51 ms, 31 UI frames a second. Over the 16.7 ms bar, which was set at 1080p.
+* **Item 7, 10 minutes each on the warm TV** (ripper on, looping, guard quiet, no error):
+
+  | Run | Rendered | Dropped | Buffering events | UI p50 / p90 |
+  | :--- | :--- | :--- | :--- | :--- |
+  | HDR 真彩, 4K60 HEVC | 30,327 | 13 (0.04 %) | 85 | 14.6 / 48.5 ms |
+  | 杜比视界 P8, 4K30, heavy danmaku | 15,827 | 0 | 74 | 18.5 / 46.9 ms |
+  | 杜比视界 P5, 3996 × 2160 at 24 fps | 14,263 | 0 | 41 | 9.4 / 25.5 ms |
+
+  * **Every run rebuffered often**, a few times for 1–6 s. The likely cause is the spike's buffer, not the network: Media3's buffer is capped at the app's 4 MB (`bufferBytes=4194304`, from `缓冲大小`), which is about 1.6 s at these streams' 20 Mbps, and the logged buffer sat at 0.5–2.4 s. Not confirmed by a run with a larger cap.
+* **Items 8 and 9**: no custom codec selector was needed for any profile. No `colorMode` configuration change and no recreate on any HDR or Dolby Vision start. The user's look at 1080p found sync and smoothness fine. **Sleep and wake with the remote** released the decoder and brought the picture back 0.45 s after the surface returned, about 1 s after the button. **Subtitles**: the uploaded and the AI track (1,597 and 1,504 cues) both drew through `SubtitleView` (user).
+* **Item 10, the ripper off** (one open each):
+  * `<vm-tv>`, signed out, `BV1fiHN6zEfx`: `upos-sz-mirrorcosov` (audio) and the akamai host (video) both answered `206` with `Range: bytes=0-`; two direct requests in 45 s; 1080p played with the buffer 11–26 s ahead.
+  * `<physical-tv>`, `BV1NGZtBwELa` at 1080p with heavy danmaku: every request went to `upos-sz-mirrorcosov` and got `206` — four in all, the head and the resume position of each track. No 567. 0 dropped of 4,127, first frame 2.1 s after the open.
+  * **UI frame time with the ripper off: p50 9.7 ms, p90 17.8 ms**, against `M17.4`'s 10.3 ms with it on (same video, view and danmaku). So at 1080p the ripper costs about 0.6 ms a frame. Its share of the 18 ms at 4K wasn't measured; that needs a 4K open with the ripper off.
+* **For `M17.6`**:
+  * The Dolby Vision rule as planned refuses Bilibili's Profile 5 on this TV. Proposed: accept a Dolby Vision decoder that declares the stream's exact profile even when Android says the size isn't covered; refuse when none declares it.
+  * Media3 plays a format past the decoder's declared capabilities by default, and one such stream (HEVC level 5.2) failed. Proposed: no other stream goes past the check, and the app's quality choice falls back to a stream the decoder supports.
+  * The byte cap on Media3's buffer should follow the stream's bitrate, or 4K HDR rebuffers (`M17.7`).
+  * The FLAC crash near the end of a track needs a fix or a guard in `M17.8`.
+  * HDR Vivid can't be offered on this TV, since the server doesn't send it.
+  * The `Range` fix works on both devices, so ExoPlayer with the ripper off is no longer a case to refuse.
+* **Left as found**: on `<physical-tv>`, `默认画质` is 1080P 60帧 again, 首选解码格式 AVC then AV1, 多线程加速 on, `默认音质` never changed (all read back from the app's log with no config file), the config file is removed, no loggers are left running, and the TV is asleep, with adb disconnected. On `<vm-tv>`, the same. `PiliPlus TV dev` on both devices is the M17.5 spike build, which behaves as `main` without its config file.
+* **Next**: `M17.5a`, added 2026-11-15 at the user's request: the thread ripper's automatic thread count measured on the TV's CPU. Then `M17.6`, the gate. Its questions and a proposal for each are under "Prepared for the start" in `M17.6` of [`PLAN.md`](./PLAN.md).

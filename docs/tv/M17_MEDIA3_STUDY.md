@@ -1,6 +1,6 @@
 # M17 Study: Media3 for the TV Player
 
-**Status**: ✅ Done. `M17.1` and `M17.2` were finished on 2026-11-12 and `M17.3` on 2026-11-13, which closes Epic M17.1. The spike, `M17.4`, is next.
+**Status**: ✅ Done. `M17.1` and `M17.2` were finished on 2026-11-12 and `M17.3` on 2026-11-13, which closes Epic M17.1. The spike, `M17.4` and `M17.5`, ran on 2026-11-14 and passed; its results are in [`PROGRESS.md`](./PROGRESS.md). Next is `M17.5a` on the thread ripper's load, then the decision gate, `M17.6`.
 
 This file is Epic M17.1 of [`PLAN.md`](./PLAN.md): what to learn from other people's code before M17's spike touches the TV. It has one section per task. Everything here comes from reading. Nothing was built, installed or run, and no device was used.
 
