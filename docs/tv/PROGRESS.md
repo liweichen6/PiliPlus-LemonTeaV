@@ -144,7 +144,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ✅ Done (2026-11-13) | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ✅ Done (2026-11-14; go) | Uncommitted `-Pdev` build, `<vm-tv>`, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ✅ Done (2026-11-14) | The same uncommitted `-Pdev` build, `<physical-tv>` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned (next) | `docs/tv/PLAN.md` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5a` | The Thread Ripper on the TV's CPU (Device Session) | ⏳ Planned (next) | The same uncommitted `-Pdev` build, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned | `docs/tv/PLAN.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.7` | Kotlin Media3 Bridge | ⏳ Planned (only after a go) | `TvExoPlayer.kt`, `TvBridge.kt`, `android/app/build.gradle.kts` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.8` | Dart Player and View | ⏳ Planned (only after a go) | `lib/tv/tv_exo_player.dart` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.9` | Hooks, Setting and Fail-Closed Rules | ⏳ Planned (only after a go) | `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/setting/models/video_settings.dart`, `lib/tv/*` |
@@ -2502,7 +2503,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Next**: `M17.5` on the same build. What its session needs at the start (the additions to the spike, the order of runs, the user's inputs) is under the task in `PLAN.md`. `M18.3`, if it runs, starts from this result.
 
 ### [2026-11-14] Milestone M17 (Task `M17.5`): Spike B, HDR, Dolby Vision and Audio — Done
-* **Status**: ✅ Done. Every quality the account gets on `<physical-tv>` has a result: HDR 真彩 and 杜比视界 (Profile 5 and 8) play in their real mode on the video plane, Profile 8.4 without a Dolby Vision decoder plays its HLG base layer, and HDR Vivid isn't offered to this TV at all. Nothing shut the TV down. Two rules need changing for the build (below). `M17.6` is next.
+* **Status**: ✅ Done. Every quality the account gets on `<physical-tv>` has a result: HDR 真彩 and 杜比视界 (Profile 5 and 8) play in their real mode on the video plane, Profile 8.4 without a Dolby Vision decoder plays its HLG base layer, and HDR Vivid isn't offered to this TV at all. Nothing shut the TV down. Two rules need changing for the build (below). `M17.5a`, the thread ripper's load, is next, then the gate, `M17.6`.
 * **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M17: status, what `M17.5` found, the task), `docs/tv/PROGRESS.md`. No code is committed.
 * **The build**: the same uncommitted `-Pdev` build, one APK for both devices (`android-arm` and `android-arm64`), kept as a git stash on the development machine ("M17.5 spike"). Added to `M17.4`'s spike:
   1. A direct request (not to the ripper on loopback) from byte 0 gets `Range: bytes=0-`; each direct request's host, offset and HTTP status are logged; an HTTP error on one is fatal and isn't retried, by Media3 or by upstream's retry.
@@ -2557,4 +2558,4 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * HDR Vivid can't be offered on this TV, since the server doesn't send it.
   * The `Range` fix works on both devices, so ExoPlayer with the ripper off is no longer a case to refuse.
 * **Left as found**: on `<physical-tv>`, `默认画质` is 1080P 60帧 again, 首选解码格式 AVC then AV1, 多线程加速 on, `默认音质` never changed (all read back from the app's log with no config file), the config file is removed, no loggers are left running, and the TV is asleep, with adb disconnected. On `<vm-tv>`, the same. `PiliPlus TV dev` on both devices is the M17.5 spike build, which behaves as `main` without its config file.
-* **Next**: `M17.6`, the gate. Its questions and a proposal for each are under "Prepared for the start" in `M17.6` of [`PLAN.md`](./PLAN.md).
+* **Next**: `M17.5a`, added 2026-11-15 at the user's request: the thread ripper's automatic thread count measured on the TV's CPU. Then `M17.6`, the gate. Its questions and a proposal for each are under "Prepared for the start" in `M17.6` of [`PLAN.md`](./PLAN.md).
