@@ -144,8 +144,8 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.1 | `M17.3` | Study: This App's Player Seam and the Containment Design | ✅ Done (2026-11-13) | `docs/tv/M17_MEDIA3_STUDY.md`; a compile-only skeleton, not committed |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.4` | Spike A: SDR and 4K on the Video Plane (Go/No-Go) | ✅ Done (2026-11-14; go) | Uncommitted `-Pdev` build, `<vm-tv>`, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5` | Spike B: HDR, Dolby Vision and Audio | ✅ Done (2026-11-14) | The same uncommitted `-Pdev` build, `<physical-tv>` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5a` | The Thread Ripper on the TV's CPU (Device Session) | ⏳ Planned (next) | The same uncommitted `-Pdev` build, `<physical-tv>` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned | `docs/tv/PLAN.md` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.5a` | The Thread Ripper on the TV's CPU (Device Session) | ✅ Done (2026-11-15) | The same uncommitted `-Pdev` build, `<physical-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.2 | `M17.6` | Decision Gate (Discussion) | ⏳ Planned (next) | `docs/tv/PLAN.md` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.7` | Kotlin Media3 Bridge | ⏳ Planned (only after a go) | `TvExoPlayer.kt`, `TvBridge.kt`, `android/app/build.gradle.kts` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.8` | Dart Player and View | ⏳ Planned (only after a go) | `lib/tv/tv_exo_player.dart` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.9` | Hooks, Setting and Fail-Closed Rules | ⏳ Planned (only after a go) | `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/setting/models/video_settings.dart`, `lib/tv/*` |
@@ -2559,3 +2559,68 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * The `Range` fix works on both devices, so ExoPlayer with the ripper off is no longer a case to refuse.
 * **Left as found**: on `<physical-tv>`, `默认画质` is 1080P 60帧 again, 首选解码格式 AVC then AV1, 多线程加速 on, `默认音质` never changed (all read back from the app's log with no config file), the config file is removed, no loggers are left running, and the TV is asleep, with adb disconnected. On `<vm-tv>`, the same. `PiliPlus TV dev` on both devices is the M17.5 spike build, which behaves as `main` without its config file.
 * **Next**: `M17.5a`, added 2026-11-15 at the user's request: the thread ripper's automatic thread count measured on the TV's CPU. Then `M17.6`, the gate. Its questions and a proposal for each are under "Prepared for the start" in `M17.6` of [`PLAN.md`](./PLAN.md).
+
+### [2026-11-15] Milestone M17 (Task `M17.5a`): The Thread Ripper on the TV's CPU — Done
+* **Status**: ✅ Done. Every run has its numbers, and the gate has a proposal (below). The automatic thread count climbs to 64 only because of Media3's 4 MB byte cap. With a cap that follows the bitrate it stays at 8 at 1080p, and at 4K Dolby Vision 64 is what keeps the stream fed, because the TV's CPU, not the network, limits the ripper. Nothing shut the TV down, and the guard never fired.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap, M17: status, `M17.5a`, the gate's ripper and buffer proposals, `M18.5`), `docs/tv/PROGRESS.md`. No code is committed.
+* **The build**: `M17.5`'s spike (the stash "M17.5 spike (final): …") with, uncommitted:
+  1. A log line at each change of the automatic level, with its reason (`startup`, `startup-down`, `pressure`, `stall`, `saturated`, `pushback`, `trial-failed`), the buffer ahead, throughput and how busy the connections were.
+  2. `threads=auto|N` in the config file, written through the two ripper settings (as `ripper=` does), with the values before and after in the log.
+  3. `bytes=` (MB) and `secs=` for Media3's byte cap and seconds.
+  4. A short line every 10 s with Media3's allocated bytes (`DefaultAllocator`), the Java heap and its limit, the bytes the ripper delivered, its current and active connections, and a log line at each seek. The stats line from `M17.5` is cut at 1,024 characters on Android, so these went into a line of their own (one rebuild).
+  5. Run scripts in the stash's `tool/tv_m17_spike/`: a guarded 4-minute run with CPU per thread and a seek back near its end, the ramp step, and a summary.
+* **Method**: one session on `<physical-tv>` (signed in, `无痕模式` from the config file, up two days, thermal status 0 throughout, swap already 76 % used before the first run). `BV1NGZtBwELa` (heavy danmaku) for every run, as 1080p AVC (the server's 112 for this video) and as 杜比视界 Profile 8 4K30, transparent view, `loop=1`. Each run is 4 minutes: numbers from 60 s after the open to 15 s before the seek (about 146 s), UI frame times as the median of the 10 s windows, CPU as the mean of about 13 `top -H` samples from 40 s on. One run per setting. Every 4K open went under M16's guard, with the user's go-ahead for the 4K runs and the ramp.
+* **1. Automatic mode with the 4 MB cap** (the app's `缓冲大小`, as in `M17.5`):
+
+  | Run | Level | Delivered | Buffer p50 | Rebuffers | UI p50 / p90 |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | 1080p | 16 at the open, back to 8 by 9 s; then up one step at a time from 30 s, **64 by 95 s** | 5.0 Mbps | 6.3 s | 0 | 9.8 / 24.1 ms |
+  | 1080p, again | the same: **64 by 85 s** | 5.1 Mbps | 6.4 s | 0 | 9.4 / 18.7 ms |
+  | 4K 杜比视界 | 16 at the open; **64 by 30 s** | 15.3 Mbps | 1.6 s | 10, 8.3 s | 18.3 / 50.3 ms |
+
+  * Every step up was `pressure` (the buffer ahead under 6 s and not growing) or a `stall`, mostly with the connections idle (`sat=0.00`). The 4 MB cap holds about 6 s of 1080p and 2 s of 4K, so the 6 s rule fires all the time. **That's the climb the user suspected, and the cap causes it.** At 4K, the ripper's Dart worker threads used 144 % of a core and the TV had 74 % idle out of 400 %.
+* **2. The cap's ceiling** (4K 杜比视界, paused after the first frame, seconds cap 600 s, binary search from 128 MB):
+
+  | Byte cap | Media3 allocated | Java heap (limit 192 MB) | Result |
+  | :--- | :--- | :--- | :--- |
+  | 128 MB | 128.8 MB (72 s of video) | 147 MB | ✅ holds |
+  | 256 MB | `OutOfMemoryError` at 169.6 MB | 190 MB | ❌ fails |
+  | 192 MB | — | — | ❌ counted as failed: the 256 MB run ran out at 170 MB, below it |
+  | 160 MB | 160.9 MB | 181 MB | ✅ holds |
+  | 176 MB | `OutOfMemoryError` at 171.6 MB | 192 MB | ❌ fails |
+
+  * **The largest cap that held is 160 MB**, with 11 MB of heap left. Media3's loader caught each `OutOfMemoryError` and playback went on after the resume and the seek, but an OOM counts as a fail. No app was killed for memory (`lowmemorykiller` never logged; the one `am_kill` was a frozen cached app, not memory). The TV's available memory fell from about 1.55 GB to 0.78–0.88 GB at each full step; total PSS was 350–400 MB. After every step, playback and the UI held after the resume and a seek back (a fresh fetch, since Media3 keeps no back buffer).
+  * **While paused, the ripper delivered about 28 Mbps at 16 connections and 32 Mbps at 24**, twice the 4K stream's average of about 14.3 Mbps (128.8 MB for 72 s). The network has room; see 4.
+* **3 and 4. A raised cap** (`bytes=64`, `secs=30`, standing in for a cap that follows the bitrate), automatic and fixed connection counts:
+
+  | Run | Delivered | Buffer p50 | Rebuffers in 146 s | UI p50 / p90 | App CPU (% of a core) | TV idle (of 400 %) |
+  | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+  | 1080p automatic (stays at 8; 16 for a few seconds at each loop) | 5.1 Mbps | 31.0 s | 0 | 10.5 / 26.0 ms | 94 | 138 |
+  | 1080p fixed 8 | 5.0 Mbps | 30.5 s | 0 | 9.7 / 18.1 ms | 96 | 151 |
+  | 1080p fixed 16 | 4.9 Mbps | 31.4 s | 0 | 10.0 / 25.0 ms | 102 | 152 |
+  | 1080p fixed 32 | 4.7 Mbps | 31.5 s | 0 | 10.2 / 25.3 ms | 96 | 150 |
+  | 1080p fixed 64 | 4.3 Mbps | 30.8 s | 0 | 12.2 / 26.5 ms | 91 | 161 |
+  | 4K automatic (64 by 21 s) | 18.3 Mbps | 14.8 s | 0 | 22.9 / 55.5 ms | 200 | 74 |
+  | 4K fixed 8 | 11.6 Mbps | 1.5 s | 17, 47.5 s | 12.5 / 29.9 ms | 307 (an odd sample: binder and Media3's background thread high) | 95 |
+  | 4K fixed 16 | 12.8 Mbps | 1.6 s | 12, 33.5 s | 13.8 / 32.0 ms | 162 | 60 |
+  | 4K fixed 32 | 13.7 Mbps | 2.6 s | 10, 19.7 s | 15.2 / 37.0 ms | 140 | 67 |
+  | 4K fixed 64 | 17.5 Mbps | 14.6 s | 0 | 22.5 / 49.2 ms | 156 | 92 |
+
+  * **At 1080p the count barely matters**: 8 to 32 are within noise of each other, 64 costs about 2 ms at p50, and automatic mode stays at 8 once the buffer can hold 30 s. Media3's allocation was about 20 MB.
+  * **At 4K only 64 connections keep up**: under 64 the ripper delivers less than the stream's 14.3 Mbps while it plays, and it rebuffers. Paused, 16 connections delivered 28 Mbps (item 2), so the limit while playing is the CPU: the TV was 60–95 % idle out of 400 % in these runs. With 64 connections the buffer fills to 15 s, and the UI pays: p50 22.5–22.9 ms. The fixed 8–32 runs' lower UI numbers are partly because the video was stalled for a third of the window, with less to decode and draw.
+  * **Where the CPU goes**: the app's main thread, which runs both the UI and the ripper's proxy (the proxy runs on the root isolate, and this build has no separate UI thread), used 50–61 % of a core at 4K with the ripper on and 12 % with it off; Dart's worker threads, which do the sockets and TLS, used 38–76 %. With a 64 MB cap Media3's allocation was about 49 MB and the Java heap 66–72 MB.
+  * Time to the first frame: 3.8–5.4 s at 1080p and 7.2–10.1 s at 4K with the ripper; 2.1 s and 2.9 s direct. The seek back took 3–15 s to play again, with no pattern by connection count (one seek per run, too few to compare).
+* **5. The ripper off** (direct, `Range: bytes=0-`; `64`/`30` cap):
+  * Every direct request got `206`, with no 567, from `upos-sz-mirrorcosov` and, for the 1080p video, `upos-hz-mirrorakam`.
+  * **One connection per track is too slow on this network now**: the 4K video arrived at about 10.5 Mbps (290 MB in 220 s) against its 14.3 Mbps, and the 1080p video from the Akamai host at about 2.4 Mbps. So the 4K run was stalled for 61 s and the 1080p run for 95 s of 146 s. `M17.5`'s 1080p open with the ripper off came from `mirrorcosov` and played without a stall, so the host the app picks decides it.
+  * UI p50 9.8 ms at 4K and 8.7 ms at 1080p, and the app's CPU 63 % and 52 % of a core, with the video stalled much of the time.
+* **6. mpv** (optional) wasn't run: at 1080p the count made no difference on ExoPlayer, so there was no winning number to try.
+* **Proposal for `M17.6`**:
+  * **The thread count on TV: no change.** Automatic mode stays as upstream has it, with no fixed number and no lower start or ceiling. At 1080p it stays at 8 once Media3's buffer can hold 30 s; at 4K a lower ceiling or a fixed 32 rebuffers.
+  * **Media3's buffer** (`M17.7`): 30 s, with a byte cap of 1.2 × the stream's bitrate × 30 s, at least 16 MB and at most 64 MB. That's about 64 MB for 4K Dolby Vision and 23 MB for 1080p, with the Java heap at 66–72 MB in the 64 MB runs, against a ceiling of 160 MB and an `OutOfMemoryError` at about 170 MB allocated. This is the change that stops the climb.
+  * **The remaining cost is 4K's**: with 64 connections, the UI's p50 is about 22.5 ms with heavy danmaku, over the 16.7 ms bar, and 9.8 ms with the ripper off (which stalls). Most of it is the proxy's work on the UI's thread. `M18.5`'s step 3, the proxy in its own isolate, now has numbers behind it; whether it's done, and where it lands (it changes upstream's `range_proxy.dart`), is the gate's and the user's call. The other choice is to accept 4K's UI cost.
+  * **The ripper-off path stays open, but not as a default**: no 567, but direct is too slow for 4K, and for 1080p from some hosts.
+* **Correction to `M17.5`** (from the user during this session): the TV does show a Dolby Vision badge, "Dolby Vision Max 2", for about a second as the video starts, so it was missed before. `M17.5`'s note that the panel shows no HDR or Dolby Vision badge is wrong for Dolby Vision; whether HDR10 has a badge isn't known.
+* **Limits**: one video, one network, one afternoon (about 15:30–16:55), one run per setting. The 1080p stream is about 5 Mbps, so the 1080p runs say little about a 1080p60 stream at a higher bitrate. The direct speeds are this network's at that time.
+* **Left as found**: on `<physical-tv>`, `默认画质` 116, `默认音质` never set, 首选解码格式 AVC then AV1, 多线程加速 on, automatic thread count on with 8 as the fixed number (all read back from the app's log with no config file). The config file and the sampler script are removed, no loggers are left running, and the TV is asleep, with adb disconnected. `PiliPlus TV dev` on `<physical-tv>` is the M17.5a build, which behaves as `main` without its config file.
+* **Next**: `M17.6`, the gate, with the proposals above.
