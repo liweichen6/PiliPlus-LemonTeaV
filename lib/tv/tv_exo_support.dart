@@ -277,6 +277,9 @@ class TvExoRefusal {
 
   String? get _decoderLevel => TvExoCodec.androidLevel(stream.codecs, maxLevel);
 
+  /// Without the tier, for the short reason; the detail line keeps it.
+  String? get _decoderLevelShort => _decoderLevel?.replaceAll(' High', '');
+
   String get _profileName =>
       TvExoCodec.androidProfile(stream.codecs, profile) ??
       TvExoCodec.profile(stream.codecs);
@@ -291,7 +294,7 @@ class TvExoRefusal {
     'profile' => '解码器不支持 $_codec $_profileName'.trimRight(),
     'level' =>
       '$_codec ${_streamLevel.isEmpty ? '级别' : _streamLevel} '
-          '超出解码器 ${_decoderLevel ?? '上限'}',
+          '超出解码器 ${_decoderLevelShort ?? '上限'}',
     'size' when maxWidth != null && maxHeight != null =>
       '解码器最高 $maxWidth×$maxHeight',
     'size' => '超出解码器分辨率',

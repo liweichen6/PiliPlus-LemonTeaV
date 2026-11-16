@@ -149,7 +149,7 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.7` | Kotlin Media3 Bridge (Live Sources, Buffer from the App's Settings, Normalization Processors) | ✅ Done (2026-11-15; FLV with HEVC can't be read, so it plays as HLS fMP4) | `TvExoPlayer.kt`, `TvExoRules.kt`, `TvExoLoadControl.kt`, `TvExoAudio.kt`, `lib/tv/tv_exo_test_page.dart`, `<vm-tv>`, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.8` | Dart Player and View | ✅ Done (2026-11-16; hooks applied by hand for the runs, committed in `M17.9`) | `lib/tv/tv_exo_player.dart`, `tv_exo_view.dart`, `tv_exo_subtitles.dart`, `tv_exo_live_source.dart`, `TvExoPlayer.kt`, `<vm-tv>`, `<physical-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.9` | Hooks, Player Rule, TV Defaults and Fail-Closed Rules (No Setting) | ✅ Done (2026-11-16; `<vm-tv>` and `<physical-tv>`; 音量均衡 as 关闭 / 标准 / 高动态 / 动态压缩 / 自定义; 4K by the decoder's declared ranges) | `lib/plugin/pl_player/controller.dart`, `view/view.dart`, `lib/pages/video/controller.dart`, `lib/pages/live_room/controller.dart`, `lib/pages/setting/models/video_settings.dart`, `play_settings.dart`, `lib/tv/tv_exo_qualities.dart`, `tv_exo_settings.dart`, `tv_exo_player.dart`, `tv_platform.dart`, `TvExoPlayer.kt`, `test/tv_exo_hooks_test.dart`, `<vm-tv>` |
-| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.10` | HUD Capabilities and 播放信息; Why a Quality Can't Play | ✅ Done (2026-11-16; `<vm-tv>`; the `<physical-tv>` check and 仍要尝试's guarded run wait for the user) | `lib/tv/tv_hud_exo.dart`, `tv_exo_support.dart`, `tv_exo_hud_text.dart`, `tv_hud_actions.dart`, `tv_player_hud.dart`, `tv_exo_qualities.dart`, `tv_exo_player.dart`, `tv_exo_view.dart`, `TvExoPlayer.kt`, `TvExoRules.kt`, `header_control.dart`, `lib/http/video.dart`, `<vm-tv>` |
+| **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.10` | HUD Capabilities and 播放信息; Why a Quality Can't Play | ✅ Done (2026-11-16; `<vm-tv>` and `<physical-tv>`; 仍要尝试 on after its guarded run: 4K120 HEVC 5.2 and 8K AV1 and HEVC each failed cleanly) | `lib/tv/tv_hud_exo.dart`, `tv_exo_support.dart`, `tv_exo_hud_text.dart`, `tv_hud_actions.dart`, `tv_player_hud.dart`, `tv_exo_qualities.dart`, `tv_exo_player.dart`, `tv_exo_view.dart`, `TvExoPlayer.kt`, `TvExoRules.kt`, `header_control.dart`, `lib/http/video.dart`, `<vm-tv>` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.11` | Tests and CI | ⏳ Planned | `test/tv_exo_player_test.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.12` | Device Pass, Soak and Docs; the Variant's Future | ⏳ Planned | `<physical-tv>`, `<vm-tv>`, `tool/tv_m17/`, `docs/tv/*` |
 | **M18: Playback Performance on ExoPlayer** | Epic M18.1 | `M18.1` | Baseline and What Feels Slow (on the M17 Build) | ⏳ Planned (retargeted to `main` 2026-11-15; after M17 lands) | `<physical-tv>`, the M17 build, `tool/tv_m17/`, `tool/tv_m13/` |
@@ -2821,4 +2821,31 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   * At the end the dev app was stopped, the emulator synced and shut down. 音量均衡 and the live route are as they were; 默认画质 wasn't touched.
 * **Not checked on a device yet** (for the `<physical-tv>` run): the reason rows and detail lines on real refusals (`BV1beNcz2ECq` p1's HEVC 5.2, a 3996-wide 4K that plays, an 8K video), the fallback toast, the failure screen's 降低画质, 音质 with 杜比全景声 passing through and 音量均衡 greyed on it, and 仍要尝试 under a guard with the user's go-ahead.
 * **Next**: the `<physical-tv>` check when the user wants it, and `M17.11`.
+
+### [2026-11-16] Milestone M17 (Task `M17.10`): The `<physical-tv>` Check; 仍要尝试 Turned On
+* **Status**: ✅ Done. Every refusal path of `M17.10` showed on real streams, and 仍要尝试's guarded run found only clean failures, so it's on. Nothing shut the TV down, and the guard never fired.
+* **Method**: the user gave the address and allowed history to be written, playback above 1080p, and the 仍要尝试 tries (an 8K video, `BV1qM4y1w716`, which they named, and `BV1beNcz2ECq` p1). `-Pdev` release builds, both ABIs, with `TV_EXO_TRY_ANYWAY=true` for the run. A scratch guard streamed logcat to a file and would have force-stopped the dev app on `hwRender:0` with it on top, or on 200 `Detile` lines in 5 s. 1080p first: `BV1fiHN6zEfx` on `c2.mtk.avc.decoder`, `hwRender:1, gdec:0`, the video layer `DEVICE`.
+* **The reasons on real streams** (from the bridge's log and the 画质 list):
+
+  | Stream | Reason |
+  | :--- | :--- |
+  | `BV1beNcz2ECq` p1 HDR 真彩, `hvc1.2.4.L156.90` 3840 × 2160 @ 120 | HEVC 5.2 超出解码器 5.1 (`c2.mtk.hevc` 最高 5.1 High) |
+  | Same, 4K, `avc1.640034` | 解码器在此分辨率最高 64 帧 (`c2.mtk.avc`) |
+  | Same, 4K, `av01.0.00M.10…` | 此分辨率最高 66 帧 (`c2.mtk.av1`) |
+  | Same, 4K, `hev1.1.6.L156.90` | HEVC 5.2 超出解码器 5.1 |
+  | `BV1qM4y1w716` 8K, `av01.0.16M.08` 8192 × 4320 @ 25 | AV1 6 超出解码器 5.1 (`c2.mtk.av1` 最高 5.1) |
+  | Same, 8K, `hev1.1.6.L180.90` | HEVC 6 超出解码器 5.1 |
+
+  The level is checked before the size, so 8K reads as a level. 4K of `BV1qM4y1w716` (`hvc1.1.6.L153.90`, 4096 × 2160) is accepted by the declared ranges and played on `c2.mtk.hevc.decoder` on the video plane.
+* **仍要尝试** (each from its row, confirmed past 取消): HDR 真彩 HEVC 5.2 4K120 failed in the decoder 2.6 s after the open (`CodecException 0xfffffff4`); 8K AV1 after 4.5 s; 8K HEVC, tried from 解码格式, after 2.4 s. Each time the decoder was released and the failure screen showed with 降低画质; the media service answered in 0.09–0.14 s; the TV stayed awake with `hwRender:1` on every decoder start (11 in the run, no `hwRender:0`). A Select on the failure screen afterwards retried without the override and was refused in track selection, and the screen said "无法播放：AV1 6 超出解码器 5.1" with its detail line, the row's words. Down played 1080P 60帧 (after HEVC 5.2) and 4K 超高清 (after 8K).
+* **Also checked**: 音质 on `BV1NGZtBwELa` lists 杜比全景声 as "ec-3 · 直通电视音频输出，不解码，不做音量均衡" and the AAC tracks as decoded and balanced; with 杜比全景声 playing, 音量均衡 in the ⋮ menu is greyed, "音量均衡: 直通不调整".
+* **Fixed from the run** (`M17.10`'s code):
+  * The 画质 list cut the reasons off at Material's 560 dp dialog width, and showed one detail line for a quality refused in several codecs; rows with detail lines now widen the list to 720 and give each refused codec its own line.
+  * The row's reason didn't always come from the codec the detail lines put first; both follow the codec order now.
+  * The short reason dropped a decoder's tier ("超出解码器 5.1"; the detail line keeps "5.1 High").
+  * A focused greyed row's title was unreadable on the focus colour.
+  * A failed 仍要尝试 now says so: "仍要尝试失败：…".
+  * 仍要尝试 is on by default.
+* **Device state**: `PiliPlus TV dev` is the final build (仍要尝试 on). 默认画质, 默认音质 and 音量均衡 (动态压缩, the user's) were left as found: the tries and 降低画质 don't save a default, and no quality was picked to save. The dev app was stopped, the guard and its logcat stream stopped, and adb disconnected; the TV was left awake.
+* **Next**: `M17.11`.
 

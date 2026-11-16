@@ -91,7 +91,10 @@ extension _TvHudExo on _TvHudActionTable {
   }) {
     final List<TvExoStreamReport> refused =
         report?.refusedOf(q, ctr.preferCodecs) ?? const [];
-    final String? detail = refused.firstOrNull?.refusal?.detail;
+    // One detail line per codec that can't play.
+    final String? detail = refused.isEmpty
+        ? null
+        : refused.map((s) => s.refusal!.detail).join('\n');
     return _TvDialogOptionItem(
       title: f.newDesc ?? VideoQuality.fromCode(q).desc,
       subtitle: detail,

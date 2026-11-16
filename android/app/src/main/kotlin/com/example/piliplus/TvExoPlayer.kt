@@ -772,11 +772,9 @@ class TvExoPlayer private constructor(
             )
             val name = TvExoRules.supportName(support, dv, declared)
             if (name == "no") {
-                mapOf(
-                    "support" to name,
-                    "reason" to refusal(format, true) +
-                        ("tryable" to TvExoRules.tryable(media3, dv)),
-                )
+                val reason = refusal(format, true) + ("tryable" to TvExoRules.tryable(media3, dv))
+                Log.i(TAG, "supports $codecs ${format.width}x${format.height}@${format.frameRate}: no $reason")
+                mapOf("support" to name, "reason" to reason)
             } else {
                 mapOf("support" to name, "decoder" to decoderFor(format, name))
             }

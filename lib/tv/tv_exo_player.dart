@@ -387,6 +387,9 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   }
 
   void _fail(String text) {
+    // A 仍要尝试 that failed says so: the decoder was asked past what it
+    // declares.
+    if (_tryingAnyway) text = '仍要尝试失败：$text';
     _log('failed: $text');
     _cancelRetry();
     failed.value = text;

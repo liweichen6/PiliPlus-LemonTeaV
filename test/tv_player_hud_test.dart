@@ -5005,7 +5005,7 @@ void _exoTests() {
 
   testWidgets('画质 on ExoPlayer greys a quality with its reason and a detail '
       'line, says which codecs play, and Select on a greyed row only '
-      'explains', (tester) async {
+      'asks first', (tester) async {
     _mockExoBridge();
     final _ActionScene scene = _ActionScene();
     scene.vdc
@@ -5040,23 +5040,63 @@ void _exoTests() {
     expect(_rowTexts(tester, 2), ['1080P 60帧']);
     expect(_focusOn(TvPlayerHud.optionItemKey(2)), isTrue);
 
-    // Select on the greyed 8K row explains; nothing is played.
+    // Select on the greyed 8K row asks before 仍要尝试, 取消 first.
     await _press(tester, dpadUp);
     await _press(tester, dpadUp);
     expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
     await _press(tester, dpadSelect);
-    expect(_optionList, findsOneWidget);
+    expect(find.text('仍要尝试？解码器最高 4096×2304'), findsOneWidget);
+    expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsNothing);
     expect(scene.vdc.updatePlayerCount, 0);
     expect(TvExoPlayer.tryAnywayNext, isFalse);
 
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.quality).onPressed();
+    await tester.pumpAndSettle();
     // 4K plays as AVC: Select picks it.
-    await _press(tester, dpadDown);
+    await _press(tester, dpadUp);
     await _press(tester, dpadSelect);
     expect(_optionList, findsNothing);
     expect(scene.vdc.currentVideoQa.value, VideoQuality.super4K);
     expect(scene.vdc.updatePlayerCount, 1);
     // Two toasts, one after the other.
     for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(seconds: 3));
+    }
+    await exo.dispose();
+  });
+
+  testWidgets('仍要尝试 puts the stream back and asks the player for one '
+      'try past its decoder', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    scene.vdc
+      ..data = _exoData()
+      ..currentVideoQa.value = VideoQuality.high108060;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.quality).onPressed();
+    await tester.pumpAndSettle();
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    await _press(tester, dpadSelect);
+    await _press(tester, dpadDown);
+    _expectOption(1, '仍要尝试一次');
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsNothing);
+    expect(TvExoPlayer.tryAnywayNext, isTrue);
+    expect(scene.vdc.currentVideoQa.value, VideoQuality.super8k);
+    expect(scene.vdc.currentDecodeFormats, VideoDecodeFormatType.HEVC);
+    expect(scene.vdc.updatePlayerCount, 1);
+    expect(
+      scene.vdc.data.dash!.video!.map((v) => v.id),
+      contains(VideoQuality.super8k.code),
+    );
+    TvExoPlayer.tryAnywayNext = false;
+    for (int i = 0; i < 2; i++) {
       await tester.pump(const Duration(seconds: 3));
     }
     await exo.dispose();

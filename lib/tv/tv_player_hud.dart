@@ -1898,12 +1898,13 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
                                   compact: widget.compact,
                                   bold: _focused || widget.active,
                                   bounded: false,
-                                  dimmed: widget.dimmed,
+                                  dimmed: widget.dimmed && !_focused,
                                   maxLines: 1,
                                 ),
                                 Text(
                                   subtitle,
-                                  maxLines: 1,
+                                  maxLines:
+                                      '\n'.allMatches(subtitle).length + 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: _focused
@@ -1921,7 +1922,7 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
                             compact: widget.compact,
                             bold: _focused || widget.active,
                             bounded: widget.alignment != null,
-                            dimmed: widget.dimmed,
+                            dimmed: widget.dimmed && !_focused,
                           ),
                       ],
                     ),
@@ -2166,9 +2167,13 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
   late double _listHeight;
   ScrollController? _scrollController;
 
-  double _extentOf(int index) => widget.items[index].subtitle == null
-      ? _itemExtent
-      : _itemExtent + _subtitleExtent;
+  double _extentOf(int index) {
+    final String? subtitle = widget.items[index].subtitle;
+    if (subtitle == null) return _itemExtent;
+    return _itemExtent + _subtitleExtent * _lines(subtitle);
+  }
+
+  static int _lines(String text) => '\n'.allMatches(text).length + 1;
 
   double _offsetOf(int index) {
     var offset = 0.0;
@@ -2260,8 +2265,11 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
     final items = widget.items;
     final int autofocusIndex = _autofocusIndex;
 
+    final bool wide = items.any((e) => e.subtitle != null);
     return AlertDialog(
       key: TvPlayerHud.optionListKey,
+      // Past Material's 560 for rows with a detail line (M17.10).
+      constraints: wide ? const BoxConstraints(maxWidth: 800) : null,
       backgroundColor: const Color(0xF21A1C1E),
       title: Text(
         widget.title,
@@ -2275,7 +2283,8 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
         builder: (BuildContext contentContext) {
           final ScrollController controller = _ensureLayout(contentContext);
           return SizedBox(
-            width: 480,
+            // Rows with a detail line (M17.10) get the room to show it.
+            width: wide ? 720 : 480,
             height: _listHeight,
             child: ListView.builder(
               controller: controller,

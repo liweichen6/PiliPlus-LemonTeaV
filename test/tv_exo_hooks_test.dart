@@ -847,7 +847,7 @@ void main() {
               ),
               (_) {},
             );
-        expect(player.failed.value, isNotNull);
+        expect(player.failed.value, startsWith('仍要尝试失败：'));
         // The next open is a normal one.
         await player.open(const Media('https://cdn/1080.m4s'), play: false);
         expect(

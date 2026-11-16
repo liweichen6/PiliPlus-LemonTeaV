@@ -47,12 +47,13 @@ abstract final class TvExoQualities {
   /// with no Dolby Vision decoder for it).
   static const String hlgSuffix = '（HLG）';
 
-  /// 仍要尝试 on a greyed row (M17.10, item 5). Off until a guarded run on
-  /// `<physical-tv>` has shown that a stream past what the decoder declares
-  /// only ever fails cleanly; a build for that run turns it on with
-  /// `--dart-define=TV_EXO_TRY_ANYWAY=true`.
+  /// 仍要尝试 on a greyed row (M17.10, item 5). On since the guarded run on
+  /// `<physical-tv>` (2026-11-16): HEVC 5.2 at 4K120, AV1 and HEVC at 8K
+  /// each failed cleanly in the decoder within 5 s, with nothing worse. A
+  /// build can turn it off with `--dart-define=TV_EXO_TRY_ANYWAY=false`.
   static const bool tryAnywayEnabled = bool.fromEnvironment(
     'TV_EXO_TRY_ANYWAY',
+    defaultValue: true,
   );
 
   static Set<int>? _displayHdr;
@@ -98,7 +99,12 @@ abstract final class TvExoQualities {
       final served = preferQuality == null
           ? null
           : _pick(data, preferQuality, preferCodecs);
-      final removed = apply(data, support, _displayHdr!);
+      final removed = apply(
+        data,
+        support,
+        _displayHdr!,
+        preferCodecs: preferCodecs,
+      );
       if (removed.isNotEmpty) {
         debugPrint('[TvExoQualities] not offered: ${removed.join(', ')}');
         if (served != null) {
@@ -208,8 +214,9 @@ abstract final class TvExoQualities {
   static List<String> apply(
     PlayUrlModel data,
     List<Object?> support,
-    Set<int> displayHdr,
-  ) {
+    Set<int> displayHdr, {
+    List<VideoDecodeFormatType> preferCodecs = const [],
+  }) {
     final videos = data.dash?.video;
     if (videos == null || videos.length != support.length) return const [];
     final names = <int, String>{};
@@ -245,7 +252,7 @@ abstract final class TvExoQualities {
       for (final s in streams)
         if (!s.playable) s.video,
     ];
-    final report = TvExoQualityReport._(streams, names);
+    final report = TvExoQualityReport._(streams, names, preferCodecs);
     _reports[data] = report;
     if (drop.isEmpty || keep.isEmpty) return const [];
     videos
@@ -309,10 +316,11 @@ class TvExoStreamReport {
 /// Every stream of a video as served, with what the bridge and the display
 /// said about it (M17.10).
 class TvExoQualityReport {
-  TvExoQualityReport._(this.streams, this._names);
+  TvExoQualityReport._(this.streams, this._names, this._preferCodecs);
 
   final List<TvExoStreamReport> streams;
   final Map<int, String> _names;
+  final List<VideoDecodeFormatType> _preferCodecs;
 
   /// The quality's name as served, without this file's suffixes.
   String nameOf(int quality) =>
@@ -365,7 +373,8 @@ class TvExoQualityReport {
         if (s.playable) s,
     ];
     if (playing.isEmpty) {
-      final r = refusedOf(quality).first.refusal;
+      // The codec the 画质 list's detail lines put first.
+      final r = refusedOf(quality, _preferCodecs).first.refusal;
       return r == null || r.kind == 'unknown' && r.decoder == null
           ? TvExoQualities.unsupportedSuffix
           : '（${r.short}）';
