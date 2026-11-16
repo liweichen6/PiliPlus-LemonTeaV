@@ -53,6 +53,7 @@ import io.flutter.embedding.android.FlutterSurfaceView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import kotlin.math.floor
 
 /**
  * The TV's player (docs/tv/PLAN.md, M17.7): Media3 1.11.1 drawing into a
@@ -656,6 +657,49 @@ class TvExoPlayer private constructor(
         return dolbyVisionDecoders().any { d -> d.profileLevels.any { it.profile == profile } }
     }
 
+    /**
+     * Whether a hardware decoder declares [format]: the stream's profile with
+     * a level at least the stream's, then the size and frame-rate ranges Android's capabilities
+     * declare, without performance points (M17.9). The size is aligned up as
+     * Media3 aligns it, so a 3996-wide stream isn't refused for alignment.
+     */
+    private fun withinDeclared(format: Format): Boolean {
+        val mime = format.sampleMimeType ?: return false
+        val w = format.width
+        val h = format.height
+        if (w <= 0 || h <= 0) return false
+        val infos = try {
+            MediaCodecUtil.getDecoderInfos(mime, false, false)
+        } catch (_: MediaCodecUtil.DecoderQueryException) {
+            return false
+        }
+        val pl = MediaCodecUtil.getCodecProfileAndLevel(format) ?: return false
+        val profile = pl.first
+        val level = pl.second
+        val fps = format.frameRate
+        val found = infos.firstOrNull { d ->
+            val video = d.capabilities?.videoCapabilities
+            val takes = d.profileLevels.any { it.profile == profile && it.level >= level }
+            if (!d.hardwareAccelerated || video == null || !takes) {
+                false
+            } else {
+                val wa = video.widthAlignment
+                val ha = video.heightAlignment
+                val aw = (w + wa - 1) / wa * wa
+                val ah = (h + ha - 1) / ha * ha
+                if (fps > 0) {
+                    video.areSizeAndRateSupported(aw, ah, floor(fps.toDouble()))
+                } else {
+                    video.isSizeSupported(aw, ah)
+                }
+            }
+        }
+        if (found != null) {
+            Log.i(TAG, "declared ${format.codecs} ${w}x$h@$fps by ${found.name}")
+        }
+        return found != null
+    }
+
     /** The video decoders and what each declares, for Dart and 播放信息. */
     private fun decoders(): List<Map<String, Any?>> =
         VIDEO_MIMES.flatMap { mime ->
@@ -707,6 +751,8 @@ class TvExoPlayer private constructor(
                 dv,
                 TvExoRules.dolbyVisionProfile(codecs),
                 declared,
+                withinDeclared = media3 == C.FORMAT_EXCEEDS_CAPABILITIES && !dv &&
+                    withinDeclared(format),
             )
             TvExoRules.supportName(support, dv, declared)
         }
@@ -753,6 +799,8 @@ class TvExoPlayer private constructor(
                 TvExoRules.dolbyVisionProfile(format.codecs),
                 declared,
                 fits,
+                withinDeclared = media3 == C.FORMAT_EXCEEDS_CAPABILITIES && !dv &&
+                    withinDeclared(format),
             )
             if (decided != media3) {
                 Log.i(TAG, "track ${format.codecs} ${format.width}x${format.height}: media3=$media3 decided=$decided")

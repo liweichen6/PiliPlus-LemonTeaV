@@ -28,7 +28,12 @@ object TvExoRules {
      *    HEVC decoder takes it; any other profile is refused;
      *  - no other stream plays past what its decoder declares, so Media3's
      *    "exceeds capabilities" becomes "unsupported", and the track selector
-     *    never picks it;
+     *    never picks it, unless [withinDeclared]: a hardware decoder takes
+     *    the stream's profile and level and its declared size and frame-rate
+     *    ranges cover it. Media3 on API 29+ asks the decoder's performance
+     *    points instead, and a TV whose only point is 3840 × 2160 @ 60 then
+     *    refuses Bilibili's 3996 × 2160 @ 24 4K, which its decoders declare
+     *    and play (M17.9, the user, 2026-11-16);
      *  - a stream larger than [fits] allows is refused (the dev test page's
      *    1080p cap).
      * Refusing here means no decoder ever starts for the stream.
@@ -39,6 +44,7 @@ object TvExoRules {
         profile: Int?,
         declared: Boolean,
         fits: Boolean = true,
+        withinDeclared: Boolean = false,
     ): Int {
         if (!fits) return C.FORMAT_UNSUPPORTED_SUBTYPE
         if (dolbyVision && declared &&
@@ -52,7 +58,8 @@ object TvExoRules {
             } else {
                 C.FORMAT_UNSUPPORTED_SUBTYPE
             }
-            C.FORMAT_EXCEEDS_CAPABILITIES -> C.FORMAT_UNSUPPORTED_SUBTYPE
+            C.FORMAT_EXCEEDS_CAPABILITIES ->
+                if (!dolbyVision && withinDeclared) C.FORMAT_HANDLED else C.FORMAT_UNSUPPORTED_SUBTYPE
             else -> media3
         }
     }
