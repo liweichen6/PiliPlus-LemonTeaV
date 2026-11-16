@@ -52,6 +52,7 @@ import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
 import 'package:PiliPlus/plugin/pl_player/models/heart_beat_type.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
+import 'package:PiliPlus/tv/tv_exo_qualities.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
 import 'package:PiliPlus/utils/extension/context_ext.dart';
@@ -921,6 +922,9 @@ class VideoDetailController extends GetxController
     if (result case Success(:final response)) {
       data = response;
       if (data.dash != null) await _supplementVideoQualities();
+      // TV: only the streams ExoPlayer's decoders and the display can play
+      // (docs/tv/PLAN.md, M17.9). Nothing off TV.
+      await TvExoQualities.onTv(data);
 
       languages.value = data.language?.items;
       currLang.value = data.curLanguage;

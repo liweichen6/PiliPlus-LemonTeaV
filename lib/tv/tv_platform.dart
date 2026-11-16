@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:PiliPlus/tv/tv_exo_settings.dart';
 import 'package:PiliPlus/tv/tv_exo_test_page.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -67,6 +68,14 @@ abstract final class TvPlatform {
     // Loads the danmaku trend for the HUD's 高能进度条 (one small request per
     // video); upstream's default is off.
     SettingBoxKey.showDmChart: true,
+    // ExoPlayer's buffer (docs/tv/PLAN.md, M17.6 decision 10): Media3 keeps
+    // it on the Java heap, 192 MB on the TV this was measured on, where about
+    // 170 MB ran out (M17.5a). Doubles, as `Pref` reads them. 直播缓冲时长
+    // stays upstream's 0, no limit; upstream's 直播缓冲大小 of 0 would mean
+    // twice 缓冲大小, 200 MB.
+    SettingBoxKey.bufferSize: 100.0,
+    SettingBoxKey.bufferSec: 180.0,
+    SettingBoxKey.liveBufferSize: 64.0,
   };
 
   /// Returns `true` when running on an Android TV / Leanback device or when
@@ -121,6 +130,8 @@ abstract final class TvPlatform {
       _installSoftKeyboardGate();
       // The dev build's Media3 test page (M17.7), when launched for it.
       TvExoTestPage.openIfAsked();
+      // The Java heap limit for the buffer settings' descriptions (M17.9).
+      unawaited(TvExoSettings.load());
     }
   }
 

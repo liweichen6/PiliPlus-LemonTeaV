@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.PixelFormat
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -164,6 +165,7 @@ class TvExoPlayer private constructor(
                 "heapLimit" -> result.success(Runtime.getRuntime().maxMemory())
                 "decoders" -> result.success(decoders())
                 "supports" -> result.success(supports(call.arguments as List<*>))
+                "displayHdr" -> result.success(displayHdrTypes())
                 "layerRect" -> {
                     layerRect(call.arguments as? Map<*, *>)
                     result.success(null)
@@ -707,6 +709,23 @@ class TvExoPlayer private constructor(
             )
             TvExoRules.supportName(support, dv, declared)
         }
+    }
+
+    /**
+     * The HDR types the display reports, as `Display.HdrCapabilities`
+     * numbers (1 Dolby Vision, 2 HDR10, 3 HLG, 4 HDR10+), for the quality
+     * list (M17.9). Empty when it reports none or can't be read.
+     */
+    @Suppress("DEPRECATION")
+    private fun displayHdrTypes(): List<Int> = try {
+        val display = activity.windowManager.defaultDisplay
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            display.mode.supportedHdrTypes.toList()
+        } else {
+            display.hdrCapabilities?.supportedHdrTypes?.toList() ?: emptyList()
+        }
+    } catch (_: Throwable) {
+        emptyList()
     }
 
     /**

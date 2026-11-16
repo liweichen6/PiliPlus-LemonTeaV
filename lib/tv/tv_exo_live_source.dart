@@ -4,9 +4,10 @@
 // HLS fMP4 with HEVC at the same quality instead (the user, 2026-11-15).
 //
 // Pure, so `M17.11` tests it; `M17.9`'s hook in the live room's
-// `initLiveUrl` calls it before the URL is built.
+// `initLiveUrl` calls [TvExoLiveSource.onTv] before the URL is built.
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 
 /// Indices into a live room's `stream` list: protocol, format and codec, as
 /// upstream's `initLiveUrl` takes them.
@@ -17,6 +18,13 @@ abstract final class TvExoLiveSource {
   static const String fmp4 = 'fmp4';
   static const String hls = 'http_hls';
   static const String hevc = 'hevc';
+
+  /// The hook in `initLiveUrl`: [resolve] on TV, where every player is
+  /// ExoPlayer; `null` elsewhere, so mpv keeps upstream's choice.
+  static TvExoLiveChoice? onTv(
+    List<Stream> streams,
+    TvExoLiveChoice choice,
+  ) => TvPlatform.isTv ? resolve(streams, choice) : null;
 
   /// Whether Media3 can't read this stream: FLV with HEVC.
   static bool unreadable(String? formatName, String? codecName) =>

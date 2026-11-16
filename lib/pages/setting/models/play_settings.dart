@@ -14,6 +14,7 @@ import 'package:PiliPlus/plugin/pl_player/models/bottom_progress_behavior.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/tv/tv_exo_settings.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/desktop/window_controller.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -57,6 +58,7 @@ List<SettingsModel> get playSettings => [
           fallback =
               '，无参数时:「${AudioNormalization.getTitleFromConfig(fallback)}」';
         }
+        fallback += TvExoSettings.normalizationNote; // TV (M17.9)
         return '当前:「$audioNormalization」$fallback';
       },
       onTap: audioNormalization,

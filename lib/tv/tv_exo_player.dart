@@ -89,16 +89,34 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   static String failureErrorText(String text) =>
       'Cannot open (ExoPlayer): $text';
 
-  /// Makes the player. A failure throws, so mpv is never made in its place.
+  /// Makes the player. It never throws and never hands back mpv: if the
+  /// bridge can't make its Media3 player, each open tries again and ends on
+  /// the failure screen until it can (fail closed, M17.9).
   static Future<TvExoPlayer> create({bool Function()? isLive}) async {
     final player = TvExoPlayer._(
       isLive ?? () => PlPlayerController.instance?.isLive ?? false,
     );
     _owner = player;
     channel.setMethodCallHandler(player._onEvent);
-    await channel.invokeMethod<void>('create');
+    await player._createBridge();
     return player;
   }
+
+  /// Whether the bridge holds a Media3 player for this one.
+  bool _bridgeReady = false;
+
+  Future<bool> _createBridge() async {
+    try {
+      await channel.invokeMethod<void>('create');
+      _bridgeReady = true;
+    } on PlatformException catch (e) {
+      _log('create failed: ${e.message}');
+      _bridgeError = e.message;
+    }
+    return _bridgeReady;
+  }
+
+  String? _bridgeError;
 
   /// `M17.9`'s hook in place of `VideoController.create`.
   static VideoController? videoControllerOf(Player player) =>
@@ -467,6 +485,10 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
       'buffer=${buffer.bytes}B/${buffer.ms}ms $normalization '
       'video=${_short(video)} audio=${_short(audio)}',
     );
+    if (!_bridgeReady && !await _createBridge()) {
+      _fail('ExoPlayer 启动失败（$_bridgeError），已停止播放');
+      return;
+    }
     try {
       await channel.invokeMethod<void>(
         'setNormalization',
@@ -625,9 +647,13 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     disposed = true;
     _cancelRetry();
     if (identical(_owner, this)) {
-      _owner = null;
       channel.setMethodCallHandler(null);
+      // While still the owner, so `_invoke` sends it: the bridge releases
+      // Media3, which otherwise keeps loading (from a closed ripper proxy,
+      // after a video page) until the next player is made.
       await _invoke('dispose');
+      // A player made meanwhile is the owner now; leave it.
+      if (identical(_owner, this)) _owner = null;
     }
     failed.dispose();
     videoSize.dispose();
@@ -1067,7 +1093,10 @@ class TvExoNormalization {
         final loudnorm = _args(filter, 'loudnorm');
         final measured = loudnorm['measured_i'];
         final target = loudnorm['i'];
-        if (measured != null && target != null) {
+        // Real loudness is negative. Bilibili sends 0.001 for a video it
+        // never measured, which upstream's `Volume.format` turns into 0, and
+        // a gain from it would cut the sound by the whole target.
+        if (measured != null && measured < 0 && target != null) {
           final preset = _args(AudioNormalization.loudnorm.param, 'loudnorm');
           return .loudness(target - measured, preset['tp'] ?? -1.5);
         }

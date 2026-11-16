@@ -8,6 +8,7 @@ import 'package:PiliPlus/pages/setting/widgets/ordered_multi_select_dialog.dart'
 import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/audio_output_type.dart';
 import 'package:PiliPlus/plugin/pl_player/models/hwdec_type.dart';
+import 'package:PiliPlus/tv/tv_exo_settings.dart';
 import 'package:PiliPlus/utils/filtering_text.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -276,6 +277,7 @@ List<SettingsModel> get videoSettings => [
     title: '缓冲大小',
     leading: const Icon(Icons.storage_outlined),
     getSubtitle: () =>
+        TvExoSettings.bufferSize ??
         '当前：${Pref.bufferSize}MB。点播视频的前向和后向缓冲区大小（此选项即mpv的--demuxer-max-bytes，--demuxer-max-back-bytes）。直播流请设置下方的直播缓冲大小',
     onTap: _showBufferSizeDialog,
   ),
@@ -283,6 +285,7 @@ List<SettingsModel> get videoSettings => [
     title: '缓冲时长',
     leading: const Icon(Icons.av_timer),
     getSubtitle: () =>
+        TvExoSettings.bufferSec ??
         '当前：${Pref.bufferSec}s。点播视频的实际缓冲为大小与时长二者的最小值（此选项即mpv的--cache-secs）。直播流该选项无效，请设置下方的直播缓冲时长',
     onTap: _showBufferSecDialog,
   ),
@@ -290,6 +293,7 @@ List<SettingsModel> get videoSettings => [
     title: '直播缓冲大小',
     leading: const Icon(Icons.storage_outlined),
     getSubtitle: () =>
+        TvExoSettings.liveBufferSize ??
         '当前：${Pref.liveBufferSize > 0 ? '${Pref.liveBufferSize}MB' : '跟随缓冲大小（${(Pref.bufferSize * 2).toStringAsFixed(0)}MB）'}。仅对直播流生效，小于等于0时使用缓冲大小的2倍（此选项即mpv的--demuxer-max-bytes）',
     onTap: _showLiveBufferSizeDialog,
   ),
@@ -297,6 +301,7 @@ List<SettingsModel> get videoSettings => [
     title: '直播缓冲时长',
     leading: const Icon(Icons.av_timer),
     getSubtitle: () =>
+        TvExoSettings.liveBufferSec ??
         '当前：${Pref.liveBufferSec > 0 ? '${Pref.liveBufferSec}s' : '不限制'}。仅对直播流生效，大于0时可限制直播缓冲时长以降低延迟（此选项即mpv的--cache-secs）',
     onTap: _showLiveBufferSecDialog,
   ),
