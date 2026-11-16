@@ -147,6 +147,10 @@ class TvExoPlayer private constructor(
                     setNormalization(call)
                     result.success(null)
                 }
+                "setVideoEnabled" -> {
+                    setVideoEnabled(call.arguments as Boolean)
+                    result.success(null)
+                }
                 "stop" -> {
                     player?.stop()
                     player?.clearMediaItems()
@@ -280,6 +284,8 @@ class TvExoPlayer private constructor(
         dropped = 0
         lastPosition = longArrayOf(-1, -1, -1)
         rateFrames = -1
+        // 听视频's switch lasts until the next open.
+        setVideoEnabled(true)
         if (live) {
             // A live room starts at its live edge.
             p.setMediaSource(source)
@@ -290,6 +296,17 @@ class TvExoPlayer private constructor(
         p.playWhenReady = call.argument<Boolean>("play") ?: true
         p.prepare()
         Log.i(TAG, "open gen=$gen live=$live hls=$hls audio=${audio != null} maxPixels=$maxPixels")
+    }
+
+    /**
+     * 听视频 during a video: the video track off (audio only) or back on. A
+     * video track left out this way isn't a refusal (see onTracksChanged).
+     */
+    private fun setVideoEnabled(on: Boolean) {
+        val p = player ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !on)
+            .build()
     }
 
     /** `mode` is `off`, `loudness` (gainDb, ceilingDb) or `dynamic`. */
@@ -368,6 +385,9 @@ class TvExoPlayer private constructor(
 
         override fun onIsPlayingChanged(isPlaying: Boolean) = sendState()
 
+        // Dart's "caught up" signal for the thread ripper reads `loading`.
+        override fun onIsLoadingChanged(isLoading: Boolean) = sendState()
+
         override fun onVideoSizeChanged(size: VideoSize) {
             send("videoSize", mapOf("w" to size.width, "h" to size.height))
         }
@@ -407,7 +427,9 @@ class TvExoPlayer private constructor(
             )
             // Refused during track selection: no decoder has started.
             val f = refused
-            if (f != null && !videoSelected) {
+            val videoOff = player?.trackSelectionParameters
+                ?.disabledTrackTypes?.contains(C.TRACK_TYPE_VIDEO) == true
+            if (f != null && !videoSelected && !videoOff) {
                 val dv = f.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION
                 Log.w(TAG, "refused ${f.sampleMimeType} ${f.codecs} ${f.width}x${f.height}")
                 player?.stop()
