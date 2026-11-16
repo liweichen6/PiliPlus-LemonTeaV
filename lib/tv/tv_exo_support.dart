@@ -18,6 +18,7 @@ abstract final class TvExoCodec {
       'avc1' || 'avc3' => 'AVC',
       'hev1' || 'hvc1' => 'HEVC',
       'av01' => 'AV1',
+      'vp09' => 'VP9',
       'dvhe' || 'dvh1' || 'dav1' || 'dva1' || 'dvav' => '杜比视界',
       '' => '未知编码',
       _ => head,
@@ -119,7 +120,6 @@ abstract final class TvExoCodec {
 
   /// An Android level constant as a number, for the codec of [codecs]; each
   /// constant is one bit, in order (HEVC's alternate main and high tier).
-  @visibleForTesting
   static String? androidLevel(String? codecs, int? level) {
     if (level == null || level <= 0) return null;
     final bit = (math.log(level) / math.ln2).round();
@@ -131,12 +131,32 @@ abstract final class TvExoCodec {
         null => null,
       },
       'AV1' => _av1Levels.elementAtOrNull(bit),
+      'VP9' => _vp9Levels.elementAtOrNull(bit),
+      '杜比视界' => _dolbyVisionLevels.elementAtOrNull(bit),
       _ => null,
     };
   }
 
+  static const _vp9Levels = [
+    '1', '1.1', '2', '2.1', '3', '3.1', '4', '4.1', '5', '5.1', '5.2', //
+    '6', '6.1', '6.2',
+  ];
+  static const _dolbyVisionLevels = [
+    'HD24', 'HD30', 'FHD24', 'FHD30', 'FHD60', 'UHD24', 'UHD30', 'UHD48', //
+    'UHD60', 'UHD120', '8K60',
+  ];
+
+  /// A codecs prefix for a decoder's MIME type, so the names above apply.
+  static String codecsOfMime(String mime) => switch (mime) {
+    'video/avc' => 'avc1',
+    'video/hevc' => 'hev1',
+    'video/av01' => 'av01',
+    'video/x-vnd.on2.vp9' => 'vp09',
+    'video/dolby-vision' => 'dvhe',
+    _ => mime,
+  };
+
   /// An Android profile constant as a name, for the codec of [codecs].
-  @visibleForTesting
   static String? androidProfile(String? codecs, int? profile) =>
       switch (name(codecs)) {
         'AVC' => const {
@@ -154,15 +174,28 @@ abstract final class TvExoCodec {
           1: 'Main',
           2: 'Main 10',
           4: 'Main Still',
-          0x1000: 'Main 10',
-          0x2000: 'Main 10',
+          0x1000: 'Main 10 HDR10',
+          0x2000: 'Main 10 HDR10+',
         }[profile],
         'AV1' => const {
           1: 'Main',
           2: 'Main 10',
-          0x1000: 'Main 10',
-          0x2000: 'Main 10',
+          0x1000: 'Main 10 HDR10',
+          0x2000: 'Main 10 HDR10+',
         }[profile],
+        'VP9' => const {
+          1: 'Profile 0',
+          2: 'Profile 1',
+          4: 'Profile 2',
+          8: 'Profile 3',
+          0x1000: 'Profile 2 HDR',
+          0x2000: 'Profile 3 HDR',
+          0x4000: 'Profile 2 HDR10+',
+          0x8000: 'Profile 3 HDR10+',
+        }[profile],
+        // DolbyVisionProfileDvavPer (1) is Profile 0, … DvheSt (0x100) is 8.
+        '杜比视界' when profile != null && profile > 0 =>
+          'Profile ${(math.log(profile) / math.ln2).round()}',
         _ => null,
       };
 }

@@ -176,6 +176,7 @@ class TvExoPlayer private constructor(
                 "decoders" -> result.success(decoders())
                 "supports" -> result.success(supports(call.arguments as List<*>))
                 "audioSupport" -> result.success(audioSupport(call.arguments as List<*>))
+                "capabilities" -> result.success(capabilities())
                 "displayHdr" -> result.success(displayHdrTypes())
                 "layerRect" -> {
                     layerRect(call.arguments as? Map<*, *>)
@@ -932,6 +933,88 @@ class TvExoPlayer private constructor(
     }
 
     /**
+     * Everything this TV can decode and show, for the 解码能力 page in
+     * settings (M17.10): each video decoder with its profiles (each at its
+     * highest level, as Android's constants), its size range and the frame
+     * rate it declares at 1080p, 4K and 8K; each audio decoder; which encoded
+     * audio the output takes undecoded; and the display's mode and HDR types.
+     */
+    private fun capabilities(): Map<String, Any?> {
+        val video = CAPABILITY_VIDEO_MIMES.flatMap { mime ->
+            decoderInfos(mime).map { d ->
+                val v = d.capabilities?.videoCapabilities
+                fun rate(w: Int, h: Int): Double? = try {
+                    if (v != null && v.isSizeSupported(w, h)) v.getSupportedFrameRatesFor(w, h).upper else null
+                } catch (_: Throwable) {
+                    null
+                }
+                mapOf(
+                    "name" to d.name,
+                    "mime" to mime,
+                    "hardware" to d.hardwareAccelerated,
+                    "software" to d.softwareOnly,
+                    "vendor" to d.vendor,
+                    "minWidth" to v?.supportedWidths?.lower,
+                    "maxWidth" to v?.supportedWidths?.upper,
+                    "maxHeight" to v?.supportedHeights?.upper,
+                    "profiles" to d.profileLevels.groupBy { it.profile }
+                        .map { (profile, levels) -> listOf(profile, levels.maxOf { it.level }) },
+                    "fps1080" to rate(1920, 1080),
+                    "fps2160" to rate(3840, 2160),
+                    "fps4320" to rate(7680, 4320),
+                )
+            }
+        }
+        val audio = CAPABILITY_AUDIO_MIMES.flatMap { mime ->
+            decoderInfos(mime).map { d ->
+                val a = d.capabilities?.audioCapabilities
+                mapOf(
+                    "name" to d.name,
+                    "mime" to mime,
+                    "hardware" to d.hardwareAccelerated,
+                    "maxChannels" to a?.maxInputChannelCount,
+                    "maxSampleRate" to a?.supportedSampleRateRanges?.maxOfOrNull { it.upper },
+                )
+            }
+        }
+        val attributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+        val output = try {
+            AudioCapabilities.getCapabilities(context, attributes, null)
+        } catch (_: Throwable) {
+            null
+        }
+        val passthrough = PASSTHROUGH_ENCODINGS.mapValues { (_, encoding) ->
+            output?.supportsEncoding(encoding) ?: false
+        }
+        @Suppress("DEPRECATION")
+        val mode = try {
+            activity.windowManager.defaultDisplay.mode
+        } catch (_: Throwable) {
+            null
+        }
+        @Suppress("DEPRECATION")
+        val modes = try {
+            activity.windowManager.defaultDisplay.supportedModes.map {
+                listOf(it.physicalWidth, it.physicalHeight, it.refreshRate.toDouble())
+            }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        return mapOf(
+            "video" to video,
+            "audio" to audio,
+            "passthrough" to passthrough,
+            "maxChannels" to output?.maxChannelCount,
+            "displayHdr" to displayHdrTypes(),
+            "display" to mode?.let { listOf(it.physicalWidth, it.physicalHeight, it.refreshRate.toDouble()) },
+            "modes" to modes,
+        )
+    }
+
+    /**
      * The HDR types the display reports, as `Display.HdrCapabilities`
      * numbers (1 Dolby Vision, 2 HDR10, 3 HLG, 4 HDR10+), for the quality
      * list (M17.9). Empty when it reports none or can't be read.
@@ -1079,6 +1162,37 @@ class TvExoPlayer private constructor(
         private const val HIDE_DELAY_MS = 500L
         private const val RATE_WINDOW_MS = 2000L
         private const val MAX_DROPPED_TO_NOTIFY = 50
+
+        private val CAPABILITY_VIDEO_MIMES = listOf(
+            MimeTypes.VIDEO_H264,
+            MimeTypes.VIDEO_H265,
+            MimeTypes.VIDEO_AV1,
+            MimeTypes.VIDEO_DOLBY_VISION,
+            MimeTypes.VIDEO_VP9,
+        )
+
+        private val CAPABILITY_AUDIO_MIMES = listOf(
+            MimeTypes.AUDIO_AAC,
+            MimeTypes.AUDIO_FLAC,
+            MimeTypes.AUDIO_E_AC3,
+            MimeTypes.AUDIO_E_AC3_JOC,
+            MimeTypes.AUDIO_AC3,
+            MimeTypes.AUDIO_AC4,
+            MimeTypes.AUDIO_OPUS,
+            MimeTypes.AUDIO_MPEG,
+            MimeTypes.AUDIO_DTS,
+        )
+
+        /** Encoded audio the output may take undecoded, by Dart's key. */
+        private val PASSTHROUGH_ENCODINGS = linkedMapOf(
+            "eac3joc" to C.ENCODING_E_AC3_JOC,
+            "eac3" to C.ENCODING_E_AC3,
+            "ac3" to C.ENCODING_AC3,
+            "ac4" to C.ENCODING_AC4,
+            "dts" to C.ENCODING_DTS,
+            "dtshd" to C.ENCODING_DTS_HD,
+            "truehd" to C.ENCODING_DOLBY_TRUEHD,
+        )
 
         private val VIDEO_MIMES = listOf(
             MimeTypes.VIDEO_H264,

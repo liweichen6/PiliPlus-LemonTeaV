@@ -23,6 +23,8 @@ import 'package:material_design_icons_flutter/material_design_icons_flutter.dart
 import 'package:material_ui/material_ui.dart';
 
 List<SettingsModel> get videoSettings => [
+  // TV: what this TV can decode and show (docs/tv/PLAN.md, M17.10).
+  ...TvExoSettings.capabilitiesEntry,
   const SwitchModel(
     title: '开启硬解',
     subtitle: '以较低功耗播放视频，若异常卡死请关闭',

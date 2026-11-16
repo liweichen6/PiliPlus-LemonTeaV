@@ -12,6 +12,7 @@ import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
+import 'package:PiliPlus/tv/tv_exo_capabilities.dart';
 import 'package:PiliPlus/tv/tv_exo_hud_text.dart';
 import 'package:PiliPlus/tv/tv_exo_live_source.dart';
 import 'package:PiliPlus/tv/tv_exo_player.dart';
@@ -27,6 +28,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:material_ui/material_ui.dart' show MaterialApp, ListTile;
 import 'package:media_kit/media_kit.dart';
 
 CodecItem _codec(String name, int qn) => CodecItem(
@@ -183,6 +185,12 @@ void main() {
       );
     });
 
+    test('解码能力 is only in the settings on TV', () {
+      expect(TvExoSettings.capabilitiesEntry, isEmpty);
+      TvPlatform.setTvModeForTesting(true);
+      expect(TvExoSettings.capabilitiesEntry.single.title, '解码能力');
+    });
+
     test('the loudness hook adds nothing off TV', () {
       final volume = Volume.fromJson(const {'measured_i': -19.4});
       expect(TvExoNormalization.loudnessExtras(volume), isEmpty);
@@ -255,6 +263,16 @@ void main() {
         read('lib/pages/video/controller.dart'),
         contains('await TvExoQualities.onTv(\n        data,'),
       );
+      // 解码能力 (M17.10): one inserted spread at the top of 音视频设置.
+      expect(
+        read('lib/pages/setting/models/video_settings.dart'),
+        contains(
+          'List<SettingsModel> get videoSettings => [\n'
+          '  // TV: what this TV can decode and show (docs/tv/PLAN.md, M17.10).\n'
+          '  ...TvExoSettings.capabilitiesEntry,\n',
+        ),
+      );
+
       // 音量均衡 in the HUD (M17.10): the loudness is always asked for and
       // handed to ExoPlayer on TV.
       expect(
@@ -951,6 +969,106 @@ void main() {
           expect(TvExoHudText.audioPlays('mp4a.40.2', 'no'), '此设备无法播放');
         },
       );
+
+      test('解码能力 in words', () {
+        final caps = TvExoCapabilities.fromMap({
+          'video': [
+            {
+              'name': 'c2.mtk.hevc.decoder',
+              'mime': 'video/hevc',
+              'hardware': true,
+              'maxWidth': 4096,
+              'maxHeight': 2304,
+              'profiles': [
+                [2, 0x20000],
+                [1, 0x20000],
+              ],
+              'fps1080': 120.0,
+              'fps2160': 64.0,
+              'fps4320': null,
+            },
+            {
+              'name': 'c2.mtk.dvhe.stn.decoder',
+              'mime': 'video/dolby-vision',
+              'hardware': true,
+              'profiles': [
+                [0x20, 0x100],
+                [0x100, 0x100],
+              ],
+            },
+          ],
+          'audio': [
+            {
+              'name': 'c2.android.aac.decoder',
+              'mime': 'audio/mp4a-latm',
+              'maxChannels': 8,
+              'maxSampleRate': 96000,
+            },
+          ],
+          'passthrough': {'eac3joc': true, 'eac3': true, 'ac3': false},
+          'maxChannels': 8,
+          'displayHdr': [3, 1, 2, 4],
+          'display': [3840, 2160, 60.0],
+          'modes': [
+            [3840, 2160, 60.0],
+            [3840, 2160, 59.94],
+            [1920, 1080, 50.000004],
+          ],
+        });
+        final hevc = caps.video.first;
+        expect(hevc.title, 'HEVC · c2.mtk.hevc.decoder（硬件）');
+        expect(hevc.sizes, '最大 4096×2304 · 1080P 120 帧 · 4K 64 帧 · 8K 不支持');
+        expect(hevc.profileLine, 'Main 最高 5.1 High · Main 10 最高 5.1 High');
+        expect(
+          caps.video.last.profileLine,
+          'Profile 5 最高 UHD60 · Profile 8 最高 UHD60',
+        );
+        expect(caps.hdrText, '杜比视界 · HDR10 · HLG · HDR10+');
+        expect(caps.passthroughText, 'E-AC-3 JOC（杜比全景声） · E-AC-3');
+        expect(caps.audio.single.title, 'AAC · c2.android.aac.decoder');
+        expect(caps.audio.single.detail, '最多 8 声道 · 最高 96 kHz');
+        expect(caps.rows.first.detail, '3840×2160 @ 60 Hz');
+        expect(
+          caps.rows.firstWhere((r) => r.title == '支持的模式').detail,
+          '3840×2160 @ 60 Hz\n3840×2160 @ 59.94 Hz\n1920×1080 @ 50 Hz',
+        );
+        expect(const TvExoCapabilities().hdrText, '未报告 HDR');
+        expect(const TvExoCapabilities().passthroughText, '无（全部在电视上解码）');
+      });
+
+      testWidgets('the 解码能力 page lists every row, focusable', (
+        tester,
+      ) async {
+        const caps = TvExoCapabilities(
+          video: [
+            TvExoVideoDecoder(
+              name: 'c2.mtk.avc.decoder',
+              mime: 'video/avc',
+              hardware: true,
+              maxWidth: 4096,
+              maxHeight: 2304,
+              fps1080: 120,
+            ),
+          ],
+          passthrough: {'eac3': true},
+          displayHdr: {2},
+          display: (3840, 2160, 60.0),
+        );
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: TvExoCapabilitiesPage(debugCapabilities: caps),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('解码能力（视频 1 · 音频 0）'), findsOneWidget);
+        expect(find.text('显示器'), findsOneWidget);
+        expect(find.text('3840×2160 @ 60 Hz'), findsOneWidget);
+        expect(find.text('HDR10'), findsOneWidget);
+        expect(find.text('E-AC-3'), findsOneWidget);
+        expect(find.text('视频解码器'), findsOneWidget);
+        expect(find.text('AVC · c2.mtk.avc.decoder（硬件）'), findsOneWidget);
+        expect(find.byType(ListTile), findsNWidgets(4));
+      });
 
       test('the HUD\'s words', () {
         final facts = TvExoFacts();

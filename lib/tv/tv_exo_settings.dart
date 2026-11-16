@@ -3,12 +3,15 @@
 // describe mpv's options, which don't apply there. Each getter is `null`
 // (or empty) off TV, so upstream's text stands.
 import 'package:PiliPlus/models/common/audio_normalization.dart';
+import 'package:PiliPlus/pages/setting/models/model.dart';
 import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
+import 'package:PiliPlus/tv/tv_exo_capabilities.dart';
 import 'package:PiliPlus/tv/tv_exo_player.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -72,6 +75,18 @@ abstract final class TvExoSettings {
     return '当前：$current。仅对直播流生效，大于0时限制直播缓冲时长以降低延迟。'
         '${heapNote(heapLimit)}';
   }
+
+  /// 解码能力 (M17.10): the hook at the top of 音视频设置; nothing off TV.
+  static List<SettingsModel> get capabilitiesEntry => TvPlatform.isTv
+      ? [
+          NormalModel(
+            title: '解码能力',
+            subtitle: '本机的视频、音频解码器，显示器 HDR 和音频直通，ExoPlayer 按这些判断能否播放',
+            leading: const Icon(Icons.memory_rounded),
+            onTap: (_, _) => Get.to(const TvExoCapabilitiesPage()),
+          ),
+        ]
+      : const [];
 
   // ---- 音量均衡 on TV (the user, 2026-11-16) ----
   //

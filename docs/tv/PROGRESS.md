@@ -2849,3 +2849,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Device state**: `PiliPlus TV dev` is the final build (仍要尝试 on). 默认画质, 默认音质 and 音量均衡 (动态压缩, the user's) were left as found: the tries and 降低画质 don't save a default, and no quality was picked to save. The dev app was stopped, the guard and its logcat stream stopped, and adb disconnected; the TV was left awake.
 * **Next**: `M17.11`.
 
+### [2026-11-16] Milestone M17 (Task `M17.10`): 解码能力 in Settings
+* **Status**: ✅ Done, checked on `<vm-tv>`, and installed on `<physical-tv>` for the user to read.
+* **Asked** (the user, 2026-11-16, during the physical run): "Is there an option in settings to display all video/audio codec capabilities?" There wasn't; the user asked for it to be added in this task.
+* **Files Changed**: `[NEW] lib/tv/tv_exo_capabilities.dart` (the model, its words and the page); `[MODIFY] android/app/src/main/kotlin/com/example/piliplus/TvExoPlayer.kt` (`capabilities`), `lib/tv/tv_exo_settings.dart` (`capabilitiesEntry`), `lib/tv/tv_exo_support.dart` (names for VP9 and Dolby Vision profiles and levels, HDR10 profile variants), `lib/pages/setting/models/video_settings.dart` (one inserted spread at the top of the list), `test/tv_exo_hooks_test.dart`, `docs/tv/PLAN.md`, `docs/tv/PROGRESS.md`.
+* **The page** (音视频设置 → 解码能力, TV only): 显示器 (current mode, supported modes, HDR types), 音频输出 (formats passed through undecoded, so not balanced; channel count), 视频解码器 (each decoder: codec, name, hardware or software, largest size, frame rate declared at 1080p, 4K and 8K, each profile at its highest level), 音频解码器 (channels and sample rate). Rows take focus for the D-pad, and Select copies a row.
+* **`<vm-tv>`**: 解码能力 is the first row of 音视频设置 and opens the page: 3840×2160 @ 60 Hz, no HDR reported, nothing passed through, 2 channels, six video decoders (for example `c2.goldfish.h264.decoder`, hardware, 最大 4096×4096 · 1080P 254 帧 · 4K 64 帧 · 8K 不支持, Baseline to Constrained High at 5.2) and four audio decoders. "60.00 Hz" (Android reports 60.000004) was fixed to "60 Hz". The emulator was synced and shut down.
+* **Tests**: the hook inert off TV and its shape in `video_settings.dart`, the words (HEVC, Dolby Vision profiles and levels, HDR types, passthrough, modes), and the page's rows; 277 TV tests pass.
+* **`<physical-tv>`**: the final build is installed on `PiliPlus TV dev`; the page wasn't opened there in this session.
+
