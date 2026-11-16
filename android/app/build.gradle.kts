@@ -101,3 +101,9 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Media3 pinned at 1.11.1 (M17.6, decision 14); HLS for live rooms.
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+}

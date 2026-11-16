@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:PiliPlus/tv/tv_exo_test_page.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -118,6 +119,8 @@ abstract final class TvPlatform {
         // GStorage.setting may not be initialized in isolated widget tests.
       }
       _installSoftKeyboardGate();
+      // The dev build's Media3 test page (M17.7), when launched for it.
+      TvExoTestPage.openIfAsked();
     }
   }
 
