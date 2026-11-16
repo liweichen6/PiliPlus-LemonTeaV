@@ -4,6 +4,7 @@
 // `M17.11` adds the adapter's own tests beside these.
 import 'dart:io';
 
+import 'package:PiliPlus/models/common/audio_normalization.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models/video/play/url.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
@@ -172,7 +173,11 @@ void main() {
       expect(TvExoSettings.bufferSec, isNull);
       expect(TvExoSettings.liveBufferSize, isNull);
       expect(TvExoSettings.liveBufferSec, isNull);
-      expect(TvExoSettings.normalizationNote, isEmpty);
+      expect(TvExoSettings.normalizationSubtitle, isNull);
+      expect(
+        TvExoSettings.normalizationDialog(_NoContext(), () {}),
+        isNull,
+      );
     });
 
     test('the view hook builds nothing for a player that isn\'t ExoPlayer', () {
@@ -241,7 +246,12 @@ void main() {
       }
       expect(
         read('lib/pages/setting/models/play_settings.dart'),
-        contains('fallback += TvExoSettings.normalizationNote;'),
+        allOf(
+          contains(
+            'if (TvExoSettings.normalizationSubtitle case final tv?) return tv;',
+          ),
+          contains('TvExoSettings.normalizationDialog('),
+        ),
       );
     });
   });
@@ -311,10 +321,151 @@ void main() {
       }
       expect(TvExoSettings.liveBufferSize, startsWith('当前：64MB。'));
       expect(TvExoSettings.liveBufferSec, startsWith('当前：不限制。'));
-      expect(TvExoSettings.normalizationNote, contains('自定义参数'));
-      expect(TvExoSettings.normalizationNote, contains('杜比全景声'));
       TvExoSettings.heapLimit = null;
       expect(TvExoSettings.heapNote(null), isNot(contains('MB')));
+    });
+
+    group('音量均衡', () {
+      // The filter upstream builds for mpv from the stored value and the
+      // video's measurement, which the adapter reads.
+      String? filter(String config, Map<String, Object>? volume) {
+        final param = AudioNormalization.getParamFromConfig(config);
+        final f = AudioNormalization.parse(
+          volume == null ? null : Volume.fromJson(volume),
+          param,
+        );
+        return f.isEmpty ? null : '"[aid1] $f [ao]"';
+      }
+
+      Map<String, Object> measured(num i) => {
+        'measured_i': i,
+        'measured_lra': 4.5,
+        'measured_tp': -2.1,
+        'measured_threshold': -29.7,
+        'target_offset': 0.9,
+        'target_i': -14,
+        'target_tp': -1,
+      };
+
+      TvExoNormalization resolve(String config, Map<String, Object>? v) =>
+          TvExoNormalization.resolve(
+            config: config,
+            fallback: '1',
+            filter: filter(config, v),
+          );
+
+      test('标准 and 高动态 are one gain toward -14 and -24 LUFS', () {
+        const standard = TvExoNormalization.standard;
+        const high = TvExoNormalization.highDynamic;
+        expect(
+          resolve(standard, measured(-19.4)),
+          const TvExoNormalization.loudness(-14 - -19.4, -1),
+        );
+        expect(
+          resolve(high, measured(-16.4)),
+          const TvExoNormalization.loudness(-24 - -16.4, -1),
+        );
+      });
+
+      test('nothing without a usable measurement, and no fallback', () {
+        for (final config in const [
+          TvExoNormalization.standard,
+          TvExoNormalization.highDynamic,
+        ]) {
+          expect(resolve(config, null).mode, 'off');
+          expect(resolve(config, measured(0.001)).mode, 'off');
+          expect(resolve(config, measured(-28.5)).mode, 'off');
+          expect(resolve(config, measured(-28)).mode, 'loudness');
+        }
+      });
+
+      test('动态压缩 is upstream\'s dynaudnorm, with or without data', () {
+        expect(resolve('1', measured(-19.4)).mode, 'dynamic');
+        expect(resolve('1', null).mode, 'dynamic');
+        expect(resolve('0', measured(-19.4)).mode, 'off');
+      });
+
+      test(
+        'a value stored before: 预设 loudnorm as before',
+        () async {
+          // Upstream builds its fallback into the filter from the stored one.
+          await GStorage.setting.put(SettingBoxKey.fallbackNormalization, '1');
+          addTearDown(
+            () => GStorage.setting.delete(SettingBoxKey.fallbackNormalization),
+          );
+          expect(
+            resolve('2', measured(-22.5)),
+            const TvExoNormalization.loudness(-16 - -22.5, -1.5),
+          );
+          expect(resolve('2', null).mode, 'dynamic');
+          expect(resolve('2', measured(0.001)).mode, 'dynamic');
+        },
+      );
+
+      test('自定义 reads loudnorm\'s I and TP, or dynaudnorm\'s numbers', () {
+        expect(
+          resolve('loudnorm=I=-18:LRA=7:TP=-0.5', measured(-20)),
+          const TvExoNormalization.loudness(2, -0.5),
+        );
+        // ffmpeg's defaults where the string gives none. A bare `loudnorm`
+        // gets no measurement from upstream's builder, so it does nothing.
+        expect(resolve('loudnorm', measured(-20)).mode, 'off');
+        expect(
+          resolve('loudnorm=LRA=7', measured(-20)),
+          const TvExoNormalization.loudness(-4, -2),
+        );
+        expect(resolve('loudnorm=I=-18', null).mode, 'off');
+        expect(
+          resolve('dynaudnorm=f=100:g=7:p=0.8', null).toArgs(),
+          <String, Object>{
+            'mode': 'dynamic',
+            'frameMs': 100,
+            'window': 7,
+            'targetRms': 0.0,
+            'peak': 0.8,
+            'maxGain': 10.0,
+          },
+        );
+        expect(resolve('acompressor=threshold=0.1', measured(-20)).mode, 'off');
+        expect(TvExoSettings.isCustom('loudnorm=I=-18'), isTrue);
+        expect(TvExoSettings.isCustom(TvExoNormalization.standard), isFalse);
+        expect(TvExoSettings.isCustom('1'), isFalse);
+        expect(TvExoSettings.isCustom('2'), isFalse);
+      });
+
+      test('the setting shows the five options and what each does', () {
+        expect(TvExoSettings.normalizationOptions.map((o) => o.$2), [
+          '关闭',
+          '标准 (-14 LUFS)',
+          '高动态 (-24 LUFS)',
+          '动态压缩',
+          '自定义',
+        ]);
+        expect(TvExoSettings.normalizationSubtitleFor('0'), '当前:「关闭」');
+        final standard = TvExoSettings.normalizationSubtitleFor(
+          TvExoNormalization.standard,
+        );
+        expect(standard, startsWith('当前:「标准 (-14 LUFS)」'));
+        expect(standard, contains('-28 LUFS'));
+        expect(standard, contains('杜比全景声'));
+        expect(
+          TvExoSettings.normalizationSubtitleFor('1'),
+          startsWith('当前:「动态压缩」'),
+        );
+        expect(
+          TvExoSettings.normalizationSubtitleFor('loudnorm=I=-20'),
+          allOf(startsWith('当前:「自定义」：loudnorm=I=-20'), contains('-28 LUFS')),
+        );
+        expect(
+          TvExoSettings.normalizationSubtitleFor('dynaudnorm=f=100'),
+          contains('f、g、r、p、m'),
+        );
+        expect(
+          TvExoSettings.normalizationSubtitleFor('acompressor'),
+          contains('按关闭处理'),
+        );
+        expect(TvExoSettings.normalizationSubtitleFor('2'), contains('旧设置'));
+      });
     });
 
     group('the quality list', () {
@@ -505,6 +656,9 @@ void main() {
     });
   });
 }
+
+/// The off-TV dialog hook never reads its context.
+class _NoContext extends Fake implements BuildContext {}
 
 /// Any player that isn't ExoPlayer, for the hook's null case.
 class _NotExo extends Fake implements Player {}

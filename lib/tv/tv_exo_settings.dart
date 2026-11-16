@@ -2,10 +2,14 @@
 // live room (docs/tv/PLAN.md, M17.9; M17.6, decisions 10 and 13). Upstream's
 // describe mpv's options, which don't apply there. Each getter is `null`
 // (or empty) off TV, so upstream's text stands.
+import 'package:PiliPlus/models/common/audio_normalization.dart';
+import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/tv/tv_exo_player.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
+import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
-import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 abstract final class TvExoSettings {
@@ -69,9 +73,165 @@ abstract final class TvExoSettings {
         '${heapNote(heapLimit)}';
   }
 
-  /// Appended to 音量均衡's description on TV; empty elsewhere.
-  static String get normalizationNote => TvPlatform.isTv
-      ? '\nExoPlayer 上「自定义参数」不生效，按关闭处理；'
-            '杜比全景声和 E-AC-3 直通到电视的音频输出，不做均衡'
-      : '';
+  // ---- 音量均衡 on TV (the user, 2026-11-16) ----
+  //
+  // 关闭 / 标准 (-14 LUFS) / 高动态 (-24 LUFS) / 动态压缩 / 自定义, after
+  // Bilibili's web player's 关闭 / 标准 / 高动态, with upstream's dynaudnorm
+  // preset as 动态压缩 and upstream's 自定义参数 as 自定义. 关闭 and 动态压缩
+  // keep upstream's stored values ('0', '1'); 标准, 高动态 and 自定义 are
+  // stored as filter strings, which mpv reads as 自定义参数 the same way.
+  // `TvExoNormalization.resolve` maps them.
+
+  static const String off = '0';
+  static const String compress = '1';
+
+  /// The 自定义 row's value in the dialog, as upstream's dialog uses it; what
+  /// is stored is the filter typed after it.
+  static const String customRow = '3';
+
+  /// The four options, stored value and title, in the dialog's order.
+  static const List<(String, String)> normalizationOptions = [
+    (off, '关闭'),
+    (TvExoNormalization.standard, '标准 (-14 LUFS)'),
+    (TvExoNormalization.highDynamic, '高动态 (-24 LUFS)'),
+    (compress, '动态压缩'),
+    (customRow, '自定义'),
+  ];
+
+  /// Whether a stored value is a filter typed for 自定义 (or one upstream
+  /// stored as 自定义参数), not one of the other rows.
+  @visibleForTesting
+  static bool isCustom(String value) =>
+      value != '2' &&
+      value != customRow &&
+      !normalizationOptions.any((o) => o.$1 == value);
+
+  @visibleForTesting
+  static String normalizationHelp(String value) => switch (value) {
+    off => '不调整音量',
+    TvExoNormalization.standard => '按 B 站测得的响度，把整段视频调到 -14 LUFS，带限幅',
+    TvExoNormalization.highDynamic => '调到 -24 LUFS：整体更安静，需调高电视音量；很少触发限幅，保留更多动态',
+    compress => '随播放持续调整，小声处放大、大声处压低；不需要响度数据',
+    customRow => 'loudnorm 的 I、TP，或 dynaudnorm 的 f、g、r、p、m',
+    _ => '',
+  };
+
+  /// The title of a stored value on TV: one of the four, or upstream's for a
+  /// value stored before M17.9 (预设 loudnorm, 自定义参数).
+  @visibleForTesting
+  static String normalizationTitle(String value) {
+    for (final (v, title) in normalizationOptions) {
+      if (v == value) return title;
+    }
+    if (isCustom(value)) return '自定义';
+    return AudioNormalization.getTitleFromConfig(value);
+  }
+
+  /// 音量均衡's description on TV; `null` elsewhere, so upstream's stands.
+  static String? get normalizationSubtitle {
+    if (!TvPlatform.isTv) return null;
+    return normalizationSubtitleFor(Pref.audioNormalization);
+  }
+
+  @visibleForTesting
+  static String normalizationSubtitleFor(String value) {
+    final title = normalizationTitle(value);
+    final help = switch (value) {
+      off => '',
+      TvExoNormalization.standard || TvExoNormalization.highDynamic =>
+        '\n${normalizationHelp(value)}。视频没有响度数据，或响度低于 -28 LUFS 时不调整',
+      compress => '\n${normalizationHelp(value)}',
+      // 预设 loudnorm, stored before M17.9: still plays as before.
+      '2' => '\n旧设置，仍按 -16 LUFS 调整；可在此改选',
+      _ when isCustom(value) => '：$value\n${_customHelp(value)}',
+      _ => '',
+    };
+    final passthrough = value == off
+        ? ''
+        : '\n杜比全景声和 E-AC-3 直通到电视的音频输出，不做均衡；直播不做均衡';
+    return '当前:「$title」$help$passthrough';
+  }
+
+  static String _customHelp(String value) {
+    final n = TvExoNormalization.custom(value, '');
+    if (RegExp('(?:^|[^a-z])loudnorm(?:[^a-z]|\$)').hasMatch(value)) {
+      return '按 B 站测得的响度调到 I，TP 为限幅（缺省 -24、-2）；'
+          '视频没有响度数据，或响度低于 -28 LUFS 时不调整。其他参数不生效';
+    }
+    if (n.mode == 'dynamic') return '按 f、g、r、p、m 动态调整，其他参数不生效';
+    return '此播放器只支持 loudnorm 和 dynaudnorm，按关闭处理';
+  }
+
+  /// 音量均衡's dialog on TV: the four options, each with what it does, and
+  /// no fallback to choose (标准 and 高动态 do nothing without data, as on
+  /// Bilibili's web player). `null` off TV, or for upstream's fallback dialog.
+  static Future<void>? normalizationDialog(
+    BuildContext context,
+    VoidCallback setState, {
+    bool fallback = false,
+  }) {
+    if (!TvPlatform.isTv || fallback) return null;
+    return _normalizationDialog(context, setState);
+  }
+
+  static Future<void> _normalizationDialog(
+    BuildContext context,
+    VoidCallback setState,
+  ) async {
+    final stored = Pref.audioNormalization;
+    final res = await showDialog<String>(
+      context: context,
+      builder: (context) => SelectDialog<String>(
+        title: '音量均衡',
+        value: isCustom(stored) ? customRow : stored,
+        values: normalizationOptions,
+        subtitleBuilder: (context, index, value) =>
+            Text(normalizationHelp(value)),
+      ),
+    );
+    if (res == null || !context.mounted) return;
+    var value = res;
+    if (res == customRow) {
+      final typed = await _customDialog(
+        context,
+        isCustom(stored) ? stored : TvExoNormalization.standard,
+      );
+      if (typed == null || typed.isEmpty) return;
+      value = typed;
+    }
+    await GStorage.setting.put(SettingBoxKey.audioNormalization, value);
+    setState();
+  }
+
+  static Future<String?> _customDialog(BuildContext context, String initial) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('自定义'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 16,
+          children: [
+            const Text(
+              '例如 loudnorm=I=-18:TP=-1 或 dynaudnorm=f=250:g=5:p=0.5\n'
+              '此播放器只读取 loudnorm 的 I、TP 和 dynaudnorm 的 f、g、r、p、m',
+            ),
+            TextField(controller: controller),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
+  }
 }

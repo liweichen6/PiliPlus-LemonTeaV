@@ -48,6 +48,7 @@ List<SettingsModel> get playSettings => [
       title: '音量均衡',
       leading: const Icon(Icons.multitrack_audio),
       getSubtitle: () {
+        if (TvExoSettings.normalizationSubtitle case final tv?) return tv;
         final audioNormalization = AudioNormalization.getTitleFromConfig(
           Pref.audioNormalization,
         );
@@ -58,7 +59,6 @@ List<SettingsModel> get playSettings => [
           fallback =
               '，无参数时:「${AudioNormalization.getTitleFromConfig(fallback)}」';
         }
-        fallback += TvExoSettings.normalizationNote; // TV (M17.9)
         return '当前:「$audioNormalization」$fallback';
       },
       onTap: audioNormalization,
@@ -569,6 +569,13 @@ Future<void> audioNormalization(
   VoidCallback setState, {
   bool fallback = false,
 }) async {
+  // TV: 关闭 / 标准 / 高动态 / 动态压缩 on ExoPlayer (docs/tv/PLAN.md, M17.9).
+  final tv = TvExoSettings.normalizationDialog(
+    context,
+    setState,
+    fallback: fallback,
+  );
+  if (tv != null) return tv;
   final key = fallback
       ? SettingBoxKey.fallbackNormalization
       : SettingBoxKey.audioNormalization;

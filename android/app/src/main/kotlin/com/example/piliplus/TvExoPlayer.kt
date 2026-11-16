@@ -314,6 +314,7 @@ class TvExoPlayer private constructor(
     /** `mode` is `off`, `loudness` (gainDb, ceilingDb) or `dynamic`. */
     private fun setNormalization(call: MethodCall) {
         fun num(key: String) = call.argument<Number>(key)!!.toDouble()
+        Log.i(TAG, "normalization ${call.arguments}")
         when (call.argument<String>("mode")) {
             "loudness" -> {
                 dynamic.current = null

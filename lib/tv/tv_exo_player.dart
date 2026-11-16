@@ -1017,11 +1017,17 @@ abstract final class TvExoBuffer {
 /// Audio normalization on ExoPlayer (M17.6, decision 13), from
 /// `Pref.audioNormalization` and the filter upstream builds for mpv, which
 /// carries the video's measured `Volume`:
-///  - 预设 dynaudnorm: the dynamic normalizer with the preset's numbers;
-///  - 预设 loudnorm: one gain, the preset's target minus the measured
-///    loudness, under a limiter at the preset's true-peak target; with no
-///    measurement, upstream's fallback (预设 dynaudnorm, or off);
-///  - 禁用 and 自定义参数 (an ffmpeg filter Media3 can't run): off;
+///  - 标准 and 高动态 (the TV's 音量均衡, M17.9; stored as [standard] and
+///    [highDynamic]): as Bilibili's web player, one gain, the target minus
+///    the measured loudness, here under a limiter at the true-peak target;
+///    nothing when the video has no measurement or measures below
+///    [undersizedLufs], and no fallback;
+///  - 动态压缩 (预设 dynaudnorm): the dynamic normalizer with the preset's
+///    numbers;
+///  - 预设 loudnorm (stored before M17.9): one gain toward the preset's
+///    −16 LUFS; with no measurement, upstream's fallback;
+///  - 自定义: see [custom];
+///  - 关闭: off;
 ///  - no filter (a live room, which mpv doesn't normalize either): off.
 class TvExoNormalization {
   const TvExoNormalization.off()
@@ -1080,6 +1086,25 @@ class TvExoNormalization {
   @override
   String toString() => 'TvExoNormalization($mode, ${toArgs()})';
 
+  /// 标准: Bilibili's `normal_target_i`, and its `target_tp` as the ceiling.
+  /// As a loudnorm filter, so mpv would read it as 自定义参数 the same way.
+  static const String standard = 'loudnorm=I=-14:LRA=11:TP=-1';
+
+  /// 高动态: Bilibili's `high_dynamic_target_i`.
+  static const String highDynamic = 'loudnorm=I=-24:LRA=11:TP=-1';
+
+  /// Bilibili's `undersized_target_i`: its web player doesn't balance a
+  /// video measured below this.
+  static const double undersizedLufs = -28;
+
+  /// Real loudness is negative. Bilibili sends 0.001 for a video it never
+  /// measured, which upstream's `Volume.format` turns into 0, and a gain
+  /// from it would cut the sound by the whole target.
+  static double? _measured(String filter) {
+    final m = _args(filter, 'loudnorm')['measured_i'];
+    return m != null && m < 0 ? m : null;
+  }
+
   static TvExoNormalization resolve({
     required String config,
     required String fallback,
@@ -1090,23 +1115,41 @@ class TvExoNormalization {
       case '1':
         return _dynamic(AudioNormalization.dynaudnorm.param);
       case '2':
-        final loudnorm = _args(filter, 'loudnorm');
-        final measured = loudnorm['measured_i'];
-        final target = loudnorm['i'];
-        // Real loudness is negative. Bilibili sends 0.001 for a video it
-        // never measured, which upstream's `Volume.format` turns into 0, and
-        // a gain from it would cut the sound by the whole target.
-        if (measured != null && measured < 0 && target != null) {
+        final measured = _measured(filter);
+        final target = _args(filter, 'loudnorm')['i'];
+        if (measured != null && target != null) {
           final preset = _args(AudioNormalization.loudnorm.param, 'loudnorm');
           return .loudness(target - measured, preset['tp'] ?? -1.5);
         }
         return fallback == '1'
             ? _dynamic(AudioNormalization.dynaudnorm.param)
             : const .off();
-      default:
+      case '0':
         return const .off();
+      default:
+        return custom(config, filter);
     }
   }
+
+  /// 标准, 高动态 and 自定义 (a filter string, as mpv takes it): a loudnorm
+  /// filter is one gain toward its `I` with `TP` as the limiter's ceiling
+  /// (ffmpeg's defaults, -24 and -2, where it gives none), and nothing when
+  /// the video has no usable measurement or measures below
+  /// [undersizedLufs]. A dynaudnorm filter is the dynamic normalizer with
+  /// its `f`, `g`, `r`, `p` and `m`. Anything else Media3 can't run: off.
+  static TvExoNormalization custom(String config, String filter) {
+    if (_has(config, 'loudnorm')) {
+      final target = _args(config, 'loudnorm');
+      final measured = _measured(filter);
+      if (measured == null || measured < undersizedLufs) return const .off();
+      return .loudness((target['i'] ?? -24) - measured, target['tp'] ?? -2);
+    }
+    if (_has(config, 'dynaudnorm')) return _dynamic(config);
+    return const .off();
+  }
+
+  static bool _has(String filter, String name) =>
+      RegExp('(?:^|[^a-z])$name(?:[^a-z]|\$)').hasMatch(filter);
 
   static TvExoNormalization _dynamic(String param) {
     final a = _args(param, 'dynaudnorm');
