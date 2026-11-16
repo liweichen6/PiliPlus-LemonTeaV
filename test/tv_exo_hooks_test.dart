@@ -6,15 +6,18 @@ import 'dart:io';
 
 import 'package:PiliPlus/models/common/audio_normalization.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
+import 'package:PiliPlus/models/common/video/video_decode_type.dart';
 import 'package:PiliPlus/models/video/play/url.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
+import 'package:PiliPlus/tv/tv_exo_hud_text.dart';
 import 'package:PiliPlus/tv/tv_exo_live_source.dart';
 import 'package:PiliPlus/tv/tv_exo_player.dart';
 import 'package:PiliPlus/tv/tv_exo_qualities.dart';
 import 'package:PiliPlus/tv/tv_exo_settings.dart';
+import 'package:PiliPlus/tv/tv_exo_support.dart';
 import 'package:PiliPlus/tv/tv_exo_view.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage.dart';
@@ -180,6 +183,23 @@ void main() {
       );
     });
 
+    test('the loudness hook adds nothing off TV', () {
+      final volume = Volume.fromJson(const {'measured_i': -19.4});
+      expect(TvExoNormalization.loudnessExtras(volume), isEmpty);
+      TvPlatform.setTvModeForTesting(true);
+      expect(TvExoNormalization.loudnessExtras(volume), {
+        TvExoNormalization.loudnessKey: '-19.4',
+      });
+      expect(TvExoNormalization.loudnessExtras(null), isEmpty);
+    });
+
+    test('完整设置 keeps mpv\'s entries for any player that isn\'t '
+        'ExoPlayer', () {
+      expect(TvExoPlayer.notExo(null), isTrue);
+      expect(TvExoPlayer.notExo(_NotExo()), isTrue);
+      expect(TvExoPlayer.isExo(_NotExo()), isFalse);
+    });
+
     test('the view hook builds nothing for a player that isn\'t ExoPlayer', () {
       expect(
         TvExoView.of(null, VideoFitType.contain, Alignment.center),
@@ -233,8 +253,48 @@ void main() {
       );
       expect(
         read('lib/pages/video/controller.dart'),
-        contains('await TvExoQualities.onTv(data);'),
+        contains('await TvExoQualities.onTv(\n        data,'),
       );
+      // 音量均衡 in the HUD (M17.10): the loudness is always asked for and
+      // handed to ExoPlayer on TV.
+      expect(
+        read('lib/http/video.dart'),
+        contains('    if (TvPlatform.isTv) voiceBalance = true;\n'),
+      );
+      final source = read('lib/plugin/pl_player/controller.dart');
+      expect(
+        source.indexOf(
+          'extras.addAll(TvExoNormalization.loudnessExtras(volume));',
+        ),
+        allOf(
+          greaterThan(0),
+          lessThan(source.indexOf('audioFilterExtras(volume, map: extras);')),
+        ),
+      );
+
+      // 完整设置 (M17.10): one inserted `if` before each of mpv's entries.
+      final header = read('lib/pages/video/widgets/header_control.dart');
+      const guard =
+          'if (TvExoPlayer.notExo(plPlayerController.videoPlayerController))';
+      expect(guard.allMatches(header), hasLength(4));
+      for (final next in const [
+        'PopupListTile<SuperResolutionType>(',
+        'if (PlatformUtils.isMobile)\n                  if (plPlayerController',
+        'Obx(\n                        () => ActionRowLineItem(\n'
+            '                          text: " 左右翻转 ",',
+        'Obx(\n                        () => ActionRowLineItem(\n'
+            '                          text: " 上下翻转 ",',
+      ]) {
+        final at = header.indexOf(next);
+        expect(at, greaterThan(0), reason: next);
+        final line = header.lastIndexOf('\n', at);
+        final previous = header.lastIndexOf('\n', line - 1);
+        expect(
+          header.substring(previous + 1, line).trim(),
+          guard,
+          reason: next,
+        );
+      }
       final settings = read('lib/pages/setting/models/video_settings.dart');
       for (final getter in const [
         'bufferSize',
@@ -491,7 +551,9 @@ void main() {
         ]);
         final f120 = model.supportFormats!.firstWhere((f) => f.quality == 120);
         expect(f120.codecs, ['hev1.1.6.L156.90']);
-        expect(_desc(model, 126), '杜比视界');
+        // A quality where only some streams play says which (M17.10).
+        expect(_desc(model, 126), '杜比视界（仅 Profile 8）');
+        expect(_desc(model, 120), '4K 超清（仅 HEVC）');
         expect(model.acceptQuality, [126, 125, 120, 116, 80]);
       });
 
@@ -550,7 +612,8 @@ void main() {
           'yes',
         ], const {});
         expect(model.dash!.video!.availableVideoQualities, {120, 116, 80});
-        expect(_desc(model, 125), endsWith(TvExoQualities.unsupportedSuffix));
+        expect(_desc(model, 125), 'HDR 真彩（显示器未报告 HDR10）');
+        expect(_desc(model, 126), '杜比视界（显示器未报告杜比视界）');
         expect(
           TvExoQualities.playable(126, 'dolbyVision', const {
             TvExoQualities.displayHdr10,
@@ -594,6 +657,328 @@ void main() {
         await TvExoQualities.onTv(model);
         expect(calls, contains('supports'));
         expect(model.dash!.video, hasLength(6));
+      });
+    });
+
+    group('why a quality can\'t play (M17.10)', () {
+      const hevc52 = TvExoStream(
+        codecs: 'hev1.2.4.L156.90',
+        width: 3996,
+        height: 2160,
+        frameRate: 24.39,
+      );
+
+      test('codec strings in words', () {
+        expect(TvExoCodec.describe('avc1.640033'), 'AVC High 5.1');
+        expect(TvExoCodec.describe('avc1.640032'), 'AVC High 5');
+        expect(TvExoCodec.describe('hev1.1.6.L150.90'), 'HEVC Main 5');
+        expect(TvExoCodec.describe('hev1.2.4.L156.90'), 'HEVC Main 10 5.2');
+        expect(TvExoCodec.describe('av01.0.13M.10'), 'AV1 Main 10 5.1');
+        expect(TvExoCodec.describe('av01.0.08M.08'), 'AV1 Main 4');
+        expect(TvExoCodec.describe('dvhe.05.07'), '杜比视界 Profile 5');
+        expect(TvExoCodec.level('hev1.2.4'), '');
+        expect(TvExoCodec.decoder('c2.mtk.hevc.decoder'), 'c2.mtk.hevc');
+        // Android's constants: HEVC Main tier 5.1 and 5.2, AVC 5.1, AV1 5.1.
+        expect(TvExoCodec.androidLevel('hev1', 0x10000), '5.1');
+        expect(TvExoCodec.androidLevel('hev1', 0x40000), '5.2');
+        expect(TvExoCodec.androidLevel('hev1', 0x20000), '5.1 High');
+        expect(TvExoCodec.androidLevel('avc1', 0x8000), '5.1');
+        expect(TvExoCodec.androidLevel('av01', 0x2000), '5.1');
+        expect(TvExoCodec.androidLevel('av01', 3), isNull);
+      });
+
+      test('each refusal has a short reason and a detail line', () {
+        TvExoRefusal r(Map<String, Object?> m, [TvExoStream s = hevc52]) =>
+            TvExoRefusal.fromBridge(m, s);
+        final level = r({
+          'kind': 'level',
+          'decoder': 'c2.mtk.hevc.decoder',
+          'maxLevel': 0x10000,
+        });
+        expect(level.short, 'HEVC 5.2 超出解码器 5.1');
+        expect(
+          level.detail,
+          '3996×2160@24 · HEVC Main 10 5.2 · c2.mtk.hevc 最高 5.1',
+        );
+        final size = r({
+          'kind': 'size',
+          'decoder': 'c2.mtk.hevc.decoder',
+          'maxWidth': 4096,
+          'maxHeight': 2304,
+        });
+        expect(size.short, '解码器最高 4096×2304');
+        expect(size.detail, endsWith('c2.mtk.hevc 最高 4096×2304'));
+        expect(
+          r({'kind': 'rate', 'decoder': 'x', 'maxFps': 30}).short,
+          '解码器在此分辨率最高 30 帧',
+        );
+        expect(
+          r({
+            'kind': 'noDecoder',
+          }, const TvExoStream(codecs: 'av01.0.13M.10')).short,
+          '无 AV1 解码器',
+        );
+        expect(
+          r({
+            'kind': 'dvProfile',
+            'dvProfile': 7,
+            'dvDecoders': 1,
+          }, const TvExoStream(codecs: 'dvhe.07.06')).short,
+          '无 Profile 7 解码器',
+        );
+        expect(
+          r({
+            'kind': 'dvProfile',
+            'dvProfile': 5,
+            'dvDecoders': 0,
+          }, const TvExoStream(codecs: 'dvhe.05.06')).short,
+          '无杜比视界解码器',
+        );
+        expect(
+          r({'kind': 'profile', 'decoder': 'x', 'profile': 2}).short,
+          '解码器不支持 HEVC Main 10',
+        );
+        expect(
+          const TvExoRefusal.display(hevc52, 'HDR10').short,
+          '显示器未报告 HDR10',
+        );
+        expect(r({'kind': 'size'}).tryable, isFalse);
+        expect(r({'kind': 'size', 'tryable': true}).tryable, isTrue);
+      });
+
+      test('the quality list keeps each stream\'s reason, and the toast says '
+          'what plays instead of the saved quality', () {
+        final model = _model();
+        final served = model.dash!.video!.firstWhere(
+          (v) => v.id == 120 && v.codecs!.startsWith('hev1'),
+        );
+        TvExoQualities.apply(model, const [
+          {'support': 'dolbyVision', 'decoder': 'c2.mtk.dvhe.stn.decoder'},
+          {
+            'support': 'no',
+            'reason': {'kind': 'dvProfile', 'dvProfile': 5, 'dvDecoders': 1},
+          },
+          {'support': 'yes'},
+          {
+            'support': 'no',
+            'reason': {
+              'kind': 'level',
+              'decoder': 'c2.mtk.hevc.decoder',
+              'maxLevel': 0x10000,
+              'tryable': true,
+            },
+          },
+          {
+            'support': 'no',
+            'reason': {'kind': 'noDecoder'},
+          },
+          {'support': 'yes'},
+          {'support': 'yes'},
+        ], _allHdr);
+        // 4K has nothing left: its reason is the preferred codec's.
+        expect(_desc(model, 120), '4K 超清（HEVC 5.2 超出解码器 5.1）');
+        expect(_desc(model, 126), '杜比视界（仅 Profile 8）');
+        final report = TvExoQualities.reportOf(model)!;
+        expect(report.refused(120), isTrue);
+        expect(
+          report
+              .refusedOf(120, const [VideoDecodeFormatType.AV1])
+              .first
+              .refusal!
+              .short,
+          '无 AV1 解码器',
+        );
+        expect(report.streamOf(served)!.refusal!.tryable, isTrue);
+        final picked = model.dash!.video!.firstWhere((v) => v.id == 116);
+        expect(
+          TvExoQualities.fallbackText(model, served, picked),
+          '4K 超清 HEVC：HEVC 5.2 超出解码器 5.1，本次使用 1080P 60帧 AVC',
+        );
+        expect(TvExoQualities.fallbackText(model, picked, picked), isNull);
+        // 仍要尝试 puts the stream back for one try.
+        expect(TvExoQualities.restore(model, served), isTrue);
+        expect(model.dash!.video, contains(served));
+        expect(model.acceptQuality, contains(120));
+      });
+
+      test('the failure screen gives the reason in the same words', () {
+        expect(
+          TvExoPlayer.failureText(const {
+            'kind': 'unsupported',
+            'codecs': 'hev1.2.4.L156.90',
+            'width': 3996,
+            'height': 2160,
+            'frameRate': 24.39,
+            'reason': {
+              'kind': 'level',
+              'decoder': 'c2.mtk.hevc.decoder',
+              'maxLevel': 0x10000,
+            },
+          }, live: false),
+          '无法播放：HEVC 5.2 超出解码器 5.1\n'
+          '3996×2160@24 · HEVC Main 10 5.2 · c2.mtk.hevc 最高 5.1',
+        );
+      });
+
+      test('仍要尝试 opens once with the bridge told, and a failure doesn\'t '
+          'retry', () async {
+        final calls = <MethodCall>[];
+        _mockBridge((call) async {
+          calls.add(call);
+          return null;
+        });
+        final player = await TvExoPlayer.create(isLive: () => false);
+        TvExoPlayer.tryAnywayNext = true;
+        await player.open(const Media('https://cdn/8k.m4s'), play: false);
+        final open = calls.lastWhere((c) => c.method == 'open');
+        expect((open.arguments as Map)['tryAnyway'], isTrue);
+        expect(TvExoPlayer.tryAnywayNext, isFalse);
+        expect(player.tryingAnyway, isTrue);
+        // A decoder error, recoverable or not, ends on the failure screen.
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              _channel.name,
+              _channel.codec.encodeMethodCall(
+                MethodCall('error', {
+                  'gen': (open.arguments as Map)['gen'],
+                  'kind': 'network',
+                  'recoverable': true,
+                }),
+              ),
+              (_) {},
+            );
+        expect(player.failed.value, isNotNull);
+        // The next open is a normal one.
+        await player.open(const Media('https://cdn/1080.m4s'), play: false);
+        expect(
+          (calls.lastWhere((c) => c.method == 'open').arguments
+              as Map)['tryAnyway'],
+          isFalse,
+        );
+        await player.dispose();
+      });
+
+      test('音量均衡 works from the loudness alone, as when it was off when '
+          'the player was made', () {
+        TvExoNormalization r(String config, {double? measured, bool? live}) =>
+            TvExoNormalization.resolve(
+              config: config,
+              fallback: '0',
+              filter: null,
+              measured: measured,
+              live: live,
+            );
+        expect(
+          r(TvExoNormalization.standard, measured: -19.4, live: false).gainDb,
+          closeTo(5.4, 1e-9),
+        );
+        expect(
+          r(TvExoNormalization.standard, live: false).mode,
+          'off',
+          reason: 'no measurement',
+        );
+        expect(r('1', live: false).mode, 'dynamic');
+        expect(r('1', measured: -19.4, live: true).mode, 'off');
+        expect(r('1').mode, 'off', reason: 'no filter, no live: as before');
+        expect(
+          r('2', measured: -20, live: false).gainDb,
+          closeTo(4, 1e-9),
+          reason: '预设 loudnorm\'s −16 LUFS',
+        );
+        expect(
+          r('loudnorm=I=-18:TP=-2', measured: 0.001, live: false).mode,
+          'off',
+          reason: 'the placeholder',
+        );
+      });
+
+      test(
+        '音量均衡 reaches the bridge during playback, without reopening',
+        () async {
+          final calls = <MethodCall>[];
+          _mockBridge((call) async {
+            calls.add(call);
+            return null;
+          });
+          final player = await TvExoPlayer.create(isLive: () => false);
+          expect(await player.applyNormalization(), isNull);
+          await player.open(
+            const Media(
+              'https://cdn/v.m4s',
+              extras: {
+                'lavfi-complex': '[aid1] loudnorm=I=-16:measured_I=-19.4 [ao]',
+              },
+            ),
+            play: false,
+          );
+          calls.clear();
+          await GStorage.setting.put(
+            SettingBoxKey.audioNormalization,
+            TvExoNormalization.highDynamic,
+          );
+          final now = await player.applyNormalization();
+          expect(now!.mode, 'loudness');
+          expect(now.gainDb, closeTo(-4.6, 1e-9));
+          expect(calls.map((c) => c.method), ['setNormalization']);
+          await GStorage.setting.delete(SettingBoxKey.audioNormalization);
+          await player.dispose();
+        },
+      );
+
+      test(
+        'audio tracks: the bridge\'s answer, asked once per codec',
+        () async {
+          var asked = 0;
+          _mockBridge((call) async {
+            if (call.method != 'audioSupport') return null;
+            asked++;
+            return [
+              for (final c in call.arguments as List)
+                c == 'ec-3' ? 'passthrough' : 'decode',
+            ];
+          });
+          expect(await TvExoPlayer.audioSupport(['ec-3', 'fLaC', null]), [
+            'passthrough',
+            'decode',
+            null,
+          ]);
+          expect(await TvExoPlayer.audioSupport(['ec-3']), ['passthrough']);
+          expect(asked, 1);
+          expect(
+            TvExoHudText.audioPlays('ec-3', null),
+            '直通电视音频输出，不解码，不做音量均衡',
+          );
+          expect(TvExoHudText.audioPlays('mp4a.40.2', 'no'), '此设备无法播放');
+        },
+      );
+
+      test('the HUD\'s words', () {
+        final facts = TvExoFacts();
+        expect(TvExoHudText.qualityLabel('原画', facts), '原画');
+        facts
+          ..setVideo({'width': 1920, 'height': 1080, 'frameRate': -1})
+          ..setMeasuredFps(59.6)
+          ..setFirstFrame(1300);
+        expect(TvExoHudText.qualityLabel('原画', facts), '原画 · 1080P60');
+        expect(TvExoHudText.qualityLabel('1080P60', facts), '1080P60');
+        expect(
+          TvExoHudText.routeHeader('http_hls', 'ts'),
+          'HLS TS（http_hls · ts）',
+        );
+        expect(
+          TvExoHudText.routeLabel(
+            formatName: 'flv',
+            codecName: 'hevc',
+            quality: '原画',
+            host: 'cn-a',
+          ),
+          'HEVC (fMP4) · 原画 · cn-a',
+        );
+        facts.setAudio({'mime': 'audio/eac3', 'codecs': 'ec-3'});
+        expect(facts.audioPassthrough, isTrue);
+        final rows = TvExoHudText.infoRows(facts, normalization: '标准');
+        expect(rows.firstWhere((r) => r.$1 == '音频解码').$2, '直通电视音频输出（不解码）');
+        facts.dispose();
       });
     });
 

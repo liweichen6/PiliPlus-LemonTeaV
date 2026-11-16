@@ -922,9 +922,14 @@ class VideoDetailController extends GetxController
     if (result case Success(:final response)) {
       data = response;
       if (data.dash != null) await _supplementVideoQualities();
-      // TV: only the streams ExoPlayer's decoders and the display can play
-      // (docs/tv/PLAN.md, M17.9). Nothing off TV.
-      await TvExoQualities.onTv(data);
+      // TV: only the streams ExoPlayer's decoders and the display can play,
+      // and a toast when the saved quality can't (docs/tv/PLAN.md, M17.9,
+      // M17.10). Nothing off TV.
+      await TvExoQualities.onTv(
+        data,
+        preferQuality: plPlayerController.cacheVideoQa,
+        preferCodecs: preferCodecs,
+      );
 
       languages.value = data.language?.items;
       currLang.value = data.curLanguage;

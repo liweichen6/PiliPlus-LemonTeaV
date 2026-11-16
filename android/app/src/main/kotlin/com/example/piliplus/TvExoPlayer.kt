@@ -38,6 +38,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.RendererCapabilities
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -99,6 +100,14 @@ class TvExoPlayer private constructor(
     /** Pixels a video may have; 0 for no limit. Read on the playback thread. */
     @Volatile
     private var maxPixels = 0
+
+    /**
+     * 仍要尝试 (M17.10): for this open only, a stream that Media3 finds past
+     * its decoder's declared capabilities is tried once instead of refused.
+     * Never for Dolby Vision, and never for a stream with no decoder at all.
+     */
+    @Volatile
+    private var tryAnyway = false
 
     // Every live surface, newest last. Two exist for a moment on a route change.
     private val surfaces = ArrayList<Surface>()
@@ -166,6 +175,7 @@ class TvExoPlayer private constructor(
                 "heapLimit" -> result.success(Runtime.getRuntime().maxMemory())
                 "decoders" -> result.success(decoders())
                 "supports" -> result.success(supports(call.arguments as List<*>))
+                "audioSupport" -> result.success(audioSupport(call.arguments as List<*>))
                 "displayHdr" -> result.success(displayHdrTypes())
                 "layerRect" -> {
                     layerRect(call.arguments as? Map<*, *>)
@@ -205,7 +215,7 @@ class TvExoPlayer private constructor(
                             .setEventHandler(eventHandler)
                             .setEventListener(eventListener)
                             .setMaxDroppedFramesToNotify(MAX_DROPPED_TO_NOTIFY),
-                    ) { maxPixels },
+                    ),
                 )
             }
 
@@ -255,6 +265,7 @@ class TvExoPlayer private constructor(
         live = call.argument<Boolean>("live") ?: false
         val hls = call.argument<Boolean>("hls") ?: Uri.parse(video).path.orEmpty().endsWith(".m3u8")
         maxPixels = call.argument<Number>("maxPixels")?.toInt() ?: 0
+        tryAnyway = call.argument<Boolean>("tryAnyway") ?: false
         loadControl?.configure(
             call.argument<Number>("bufferBytes")!!.toLong(),
             call.argument<Number>("bufferMs")!!.toLong(),
@@ -298,7 +309,7 @@ class TvExoPlayer private constructor(
         p.repeatMode = Player.REPEAT_MODE_OFF
         p.playWhenReady = call.argument<Boolean>("play") ?: true
         p.prepare()
-        Log.i(TAG, "open gen=$gen live=$live hls=$hls audio=${audio != null} maxPixels=$maxPixels")
+        Log.i(TAG, "open gen=$gen live=$live hls=$hls audio=${audio != null} maxPixels=$maxPixels tryAnyway=$tryAnyway")
     }
 
     /**
@@ -435,7 +446,8 @@ class TvExoPlayer private constructor(
                 ?.disabledTrackTypes?.contains(C.TRACK_TYPE_VIDEO) == true
             if (f != null && !videoSelected && !videoOff) {
                 val dv = f.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION
-                Log.w(TAG, "refused ${f.sampleMimeType} ${f.codecs} ${f.width}x${f.height}")
+                val reason = refusal(f, fits(f))
+                Log.w(TAG, "refused ${f.sampleMimeType} ${f.codecs} ${f.width}x${f.height} $reason")
                 player?.stop()
                 send(
                     "error",
@@ -447,6 +459,8 @@ class TvExoPlayer private constructor(
                         "codecs" to f.codecs,
                         "width" to f.width,
                         "height" to f.height,
+                        "frameRate" to f.frameRate.toDouble(),
+                        "reason" to reason,
                         "message" to "no decoder takes ${f.codecs ?: f.sampleMimeType} ${f.width}x${f.height}",
                     ),
                 )
@@ -723,16 +737,18 @@ class TvExoPlayer private constructor(
 
     /**
      * For each stream Dart may pick (`codecs`, `width`, `height`, `frameRate`):
-     * `yes`, `dolbyVision`, `baseLayer` (Profile 8's HEVC layer) or `no`, by
-     * the same rule the renderer applies, so the quality list never offers a
-     * stream past what its decoder declares.
+     * `support`, which is `yes`, `dolbyVision`, `baseLayer` (Profile 8's HEVC
+     * layer) or `no`, by the same rule the renderer applies, so the quality
+     * list never offers a stream past what its decoder declares; `decoder`,
+     * the decoder Media3 would start; and for `no`, `reason` ([refusal]), so
+     * the quality list, 解码格式 and the failure screen say why (M17.10).
      */
-    private fun supports(streams: List<*>): List<String> = streams.map { item ->
+    private fun supports(streams: List<*>): List<Map<String, Any?>> = streams.map { item ->
         val s = item as Map<*, *>
         val codecs = s["codecs"] as? String
         val mime = MimeTypes.getVideoMediaMimeType(codecs)
         if (mime == null) {
-            "no"
+            mapOf("support" to "no", "reason" to mapOf("kind" to "noDecoder"))
         } else {
             val format = Format.Builder()
                 .setSampleMimeType(mime)
@@ -754,7 +770,166 @@ class TvExoPlayer private constructor(
                 withinDeclared = media3 == C.FORMAT_EXCEEDS_CAPABILITIES && !dv &&
                     withinDeclared(format),
             )
-            TvExoRules.supportName(support, dv, declared)
+            val name = TvExoRules.supportName(support, dv, declared)
+            if (name == "no") {
+                mapOf(
+                    "support" to name,
+                    "reason" to refusal(format, true) +
+                        ("tryable" to TvExoRules.tryable(media3, dv)),
+                )
+            } else {
+                mapOf("support" to name, "decoder" to decoderFor(format, name))
+            }
+        }
+    }
+
+    /** The decoder Media3 would start for a stream [supports] accepts. */
+    private fun decoderFor(format: Format, support: String): String? {
+        val mime = if (support == "baseLayer") MimeTypes.VIDEO_H265 else format.sampleMimeType ?: return null
+        val infos = decoderInfos(mime)
+        if (support == "dolbyVision") {
+            val profile = MediaCodecUtil.getCodecProfileAndLevel(format)?.first
+            return infos.firstOrNull { d -> d.profileLevels.any { it.profile == profile } }?.name
+        }
+        return try {
+            MediaCodecUtil.getDecoderInfosSortedByFormatSupport(context, infos, format).firstOrNull()?.name
+        } catch (_: Throwable) {
+            infos.firstOrNull()?.name
+        }
+    }
+
+    private fun decoderInfos(mime: String): List<MediaCodecInfo> = try {
+        MediaCodecUtil.getDecoderInfos(mime, false, false)
+    } catch (_: MediaCodecUtil.DecoderQueryException) {
+        emptyList()
+    }
+
+    private fun fits(format: Format): Boolean {
+        val limit = maxPixels
+        return limit <= 0 || format.width <= 0 || format.height <= 0 ||
+            format.width.toLong() * format.height <= limit
+    }
+
+    /**
+     * Why [format] can't play here, from what the decoders declare (M17.10),
+     * checked in the order a stream meets them: a decoder for the codec, the
+     * profile, the level, the size (aligned, as Media3 aligns it), then the
+     * frame rate at that size. Hardware decoders are asked when there are
+     * any. `kind` is `limit` (the dev page's cap), `noDecoder`, `dvProfile`,
+     * `profile`, `level`, `size`, `rate` or `unknown`; with the decoder's
+     * name and what it declares (`maxLevel`, `maxWidth`, `maxHeight`,
+     * `maxFps`) and the stream's own `profile` and `level`, as Android's
+     * `CodecProfileLevel` numbers. Dart words it.
+     */
+    private fun refusal(format: Format, fits: Boolean): Map<String, Any?> {
+        if (!fits) return mapOf("kind" to "limit")
+        val mime = format.sampleMimeType ?: return mapOf("kind" to "noDecoder")
+        if (mime == MimeTypes.VIDEO_DOLBY_VISION) {
+            return mapOf(
+                "kind" to "dvProfile",
+                "dvProfile" to TvExoRules.dolbyVisionProfile(format.codecs),
+                "dvDecoders" to dolbyVisionDecoders().size,
+            )
+        }
+        val all = decoderInfos(mime)
+        if (all.isEmpty()) return mapOf("kind" to "noDecoder")
+        val infos = all.filter { it.hardwareAccelerated }.ifEmpty { all }
+        val pl = MediaCodecUtil.getCodecProfileAndLevel(format)
+            ?: return mapOf("kind" to "unknown", "decoder" to infos.first().name)
+        val profile = pl.first
+        val level = pl.second
+        val base = mapOf("profile" to profile, "level" to level)
+        val withProfile = infos.filter { d -> d.profileLevels.any { it.profile == profile } }
+        if (withProfile.isEmpty()) {
+            return base + mapOf("kind" to "profile", "decoder" to infos.first().name)
+        }
+        fun maxLevel(d: MediaCodecInfo) =
+            d.profileLevels.filter { it.profile == profile }.maxOf { it.level }
+        val withLevel = withProfile.filter { maxLevel(it) >= level }
+        if (withLevel.isEmpty()) {
+            val d = withProfile.maxBy(::maxLevel)
+            return base + mapOf("kind" to "level", "decoder" to d.name, "maxLevel" to maxLevel(d))
+        }
+        val w = format.width
+        val h = format.height
+        val first = withLevel.first()
+        val firstVideo = first.capabilities?.videoCapabilities
+        if (w <= 0 || h <= 0) return base + mapOf("kind" to "unknown", "decoder" to first.name)
+        fun aligned(d: MediaCodecInfo): Pair<Int, Int>? {
+            val v = d.capabilities?.videoCapabilities ?: return null
+            val wa = v.widthAlignment
+            val ha = v.heightAlignment
+            return Pair((w + wa - 1) / wa * wa, (h + ha - 1) / ha * ha)
+        }
+        val sized = withLevel.filter { d ->
+            val a = aligned(d)
+            a != null && d.capabilities?.videoCapabilities?.isSizeSupported(a.first, a.second) == true
+        }
+        if (sized.isEmpty()) {
+            return base + mapOf(
+                "kind" to "size",
+                "decoder" to first.name,
+                "maxWidth" to firstVideo?.supportedWidths?.upper,
+                "maxHeight" to firstVideo?.supportedHeights?.upper,
+            )
+        }
+        val fps = format.frameRate
+        if (fps > 0) {
+            val rated = sized.filter { d ->
+                val a = aligned(d)!!
+                d.capabilities?.videoCapabilities
+                    ?.areSizeAndRateSupported(a.first, a.second, floor(fps.toDouble())) == true
+            }
+            if (rated.isEmpty()) {
+                val d = sized.first()
+                val a = aligned(d)!!
+                val maxFps = try {
+                    d.capabilities?.videoCapabilities?.getSupportedFrameRatesFor(a.first, a.second)?.upper
+                } catch (_: Throwable) {
+                    null
+                }
+                return base + mapOf("kind" to "rate", "decoder" to d.name, "maxFps" to maxFps)
+            }
+        }
+        return base + mapOf("kind" to "unknown", "decoder" to sized.first().name)
+    }
+
+    /**
+     * For each audio stream's `codecs` (音质, M17.10): `passthrough` when the
+     * audio output takes it undecoded (杜比全景声 and E-AC-3 over eARC, so it
+     * isn't normalized), `decode` when a decoder here takes it, `no` when
+     * neither does.
+     */
+    private fun audioSupport(codecs: List<*>): List<String> {
+        val attributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+        val capabilities = try {
+            AudioCapabilities.getCapabilities(context, attributes, null)
+        } catch (_: Throwable) {
+            null
+        }
+        return codecs.map { item ->
+            val c = item as? String
+            val mime = MimeTypes.getAudioMediaMimeType(c)
+            if (mime == null) {
+                "no"
+            } else {
+                val encoded = MimeTypes.getEncoding(mime, c) != C.ENCODING_INVALID &&
+                    mime != MimeTypes.AUDIO_AAC && mime != MimeTypes.AUDIO_FLAC
+                val format = Format.Builder()
+                    .setSampleMimeType(mime)
+                    .setCodecs(c)
+                    .setChannelCount(if (encoded) 6 else 2)
+                    .setSampleRate(48000)
+                    .build()
+                when {
+                    encoded && capabilities?.isPassthroughPlaybackSupported(format, attributes) == true -> "passthrough"
+                    decoderInfos(mime).isNotEmpty() -> "decode"
+                    else -> "no"
+                }
+            }
         }
     }
 
@@ -781,7 +956,6 @@ class TvExoPlayer private constructor(
      */
     private inner class PlaneVideoRenderer(
         builder: MediaCodecVideoRenderer.Builder,
-        private val pixelLimit: () -> Int,
     ) : MediaCodecVideoRenderer(builder) {
         override fun shouldUsePlaceholderSurface(codecInfo: MediaCodecInfo): Boolean = false
 
@@ -790,17 +964,15 @@ class TvExoPlayer private constructor(
             val media3 = RendererCapabilities.getFormatSupport(support)
             val dv = format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION
             val declared = dv && dolbyVisionDeclared(format)
-            val limit = pixelLimit()
-            val fits = limit <= 0 || format.width <= 0 || format.height <= 0 ||
-                format.width.toLong() * format.height <= limit
             val decided = TvExoRules.videoFormatSupport(
                 media3,
                 dv,
                 TvExoRules.dolbyVisionProfile(format.codecs),
                 declared,
-                fits,
+                fits(format),
                 withinDeclared = media3 == C.FORMAT_EXCEEDS_CAPABILITIES && !dv &&
                     withinDeclared(format),
+                tryAnyway = tryAnyway,
             )
             if (decided != media3) {
                 Log.i(TAG, "track ${format.codecs} ${format.width}x${format.height}: media3=$media3 decided=$decided")

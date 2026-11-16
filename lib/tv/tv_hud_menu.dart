@@ -104,6 +104,7 @@ class _TvHudMenuPanel extends StatelessWidget {
       icon: action.icon,
       label: action.label,
       active: action.active,
+      dimmed: action.dimmed,
       onPressed: () => Navigator.of(context).pop(action),
     );
   }

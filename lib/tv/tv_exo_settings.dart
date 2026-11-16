@@ -100,13 +100,11 @@ abstract final class TvExoSettings {
 
   /// Whether a stored value is a filter typed for 自定义 (or one upstream
   /// stored as 自定义参数), not one of the other rows.
-  @visibleForTesting
   static bool isCustom(String value) =>
       value != '2' &&
       value != customRow &&
       !normalizationOptions.any((o) => o.$1 == value);
 
-  @visibleForTesting
   static String normalizationHelp(String value) => switch (value) {
     off => '不调整音量',
     TvExoNormalization.standard => '按 B 站测得的响度，把整段视频调到 -14 LUFS，带限幅',
@@ -118,7 +116,6 @@ abstract final class TvExoSettings {
 
   /// The title of a stored value on TV: one of the four, or upstream's for a
   /// value stored before M17.9 (预设 loudnorm, 自定义参数).
-  @visibleForTesting
   static String normalizationTitle(String value) {
     for (final (v, title) in normalizationOptions) {
       if (v == value) return title;
@@ -192,7 +189,7 @@ abstract final class TvExoSettings {
     if (res == null || !context.mounted) return;
     var value = res;
     if (res == customRow) {
-      final typed = await _customDialog(
+      final typed = await customDialog(
         context,
         isCustom(stored) ? stored : TvExoNormalization.standard,
       );
@@ -203,7 +200,8 @@ abstract final class TvExoSettings {
     setState();
   }
 
-  static Future<String?> _customDialog(BuildContext context, String initial) {
+  /// 自定义's text box: a filter string, starting from [initial].
+  static Future<String?> customDialog(BuildContext context, String initial) {
     final controller = TextEditingController(text: initial);
     return showDialog<String>(
       context: context,

@@ -12,6 +12,7 @@ import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
+import 'package:PiliPlus/models/common/video/video_decode_type.dart';
 import 'package:PiliPlus/models/user/danmaku_rule.dart';
 import 'package:PiliPlus/models_new/live/live_room_info_h5/anchor_info.dart';
 import 'package:PiliPlus/models_new/live/live_room_info_h5/base_info.dart';
@@ -38,6 +39,9 @@ import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
+import 'package:PiliPlus/tv/tv_exo_player.dart';
+import 'package:PiliPlus/tv/tv_exo_qualities.dart';
+import 'package:PiliPlus/tv/tv_exo_view.dart';
 import 'package:PiliPlus/tv/tv_navigation.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/tv/tv_player_hud.dart';
@@ -78,8 +82,13 @@ class FakePlPlayerController extends Fake implements PlPlayerController {
   @override
   bool enableBlock = false;
 
+  /// An ExoPlayer for the M17.10 tests; [fakePlayer] (mpv's stand-in)
+  /// otherwise.
+  Player? exoPlayer;
+
   @override
-  Player? get videoPlayerController => noPlayer ? null : fakePlayer;
+  Player? get videoPlayerController =>
+      noPlayer ? null : (exoPlayer ?? fakePlayer);
 
   @override
   final RxBool isFullScreen = false.obs;
@@ -294,6 +303,17 @@ class FakeVideoDetailController extends Fake implements VideoDetailController {
   final Rxn<VideoQuality> currentVideoQa = Rxn<VideoQuality>(
     VideoQuality.high1080,
   );
+
+  @override
+  List<VideoDecodeFormatType> preferCodecs = const [
+    VideoDecodeFormatType.AVC,
+  ];
+
+  @override
+  late play_url.VideoItem firstVideo;
+
+  @override
+  VideoDecodeFormatType currentDecodeFormats = VideoDecodeFormatType.AVC;
 
   int updatePlayerCount = 0;
   @override
@@ -1763,6 +1783,8 @@ void main() {
   group('closing a SuperChat (M15.2)', _superChatTests);
 
   group('Back with the HUD shown', _hudBackTests);
+
+  group('ExoPlayer entries (M17.10)', _exoTests);
 }
 
 /// The remote's menu key, which opens and closes the HUD.
@@ -3395,12 +3417,12 @@ List<String> _drawn(WidgetTester tester, Key group) {
 void _layoutTests() {
   test('saved lists: unknown, unpinnable and repeated ids are skipped, the '
       'top right keeps its first 17, and an empty list stays empty', () {
-    // The 25 pinnable entries of a video, in menu order, with noise mixed in.
+    // The 26 pinnable entries of a video, in menu order, with noise mixed in.
     final List<String> all = [
       for (final TvHudActionId id in TvHudActionId.values)
         if (id.pinnable && id.scope.allows(live: false)) id.name,
     ];
-    expect(all, hasLength(25));
+    expect(all, hasLength(26));
     final TvHudGroups groups = TvHudGroups.fromSaved(
       topRight: ['gone', 'editButtons', all[0], all[0], ...all.skip(1)],
       bottom: [all[0], all[17], 42, all[23]],
@@ -4815,5 +4837,446 @@ void _hudBackTests() {
     expect(find.byKey(TvPlayerHud.menuPanelKey), findsNothing);
     expect(find.byKey(TvPlayerHud.bottomGroupKey), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The HUD on ExoPlayer (M17.10): mpv's entries hide, 画面比例 offers only
+// the fits a SurfaceView shows, 画质 and 解码格式 say why a stream can't
+// play, 音量均衡 applies at once, 播放信息 shows Media3's facts, 切换路线
+// leads with the codec under readable headings, and Down on the failure
+// screen plays the next quality down.
+
+const MethodChannel _exoChannel = TvExoPlayer.channel;
+
+/// A bridge that answers everything and records what it was sent.
+List<MethodCall> _mockExoBridge() {
+  final List<MethodCall> calls = [];
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(_exoChannel, (call) async {
+        calls.add(call);
+        return switch (call.method) {
+          'audioSupport' => [
+            for (final c in call.arguments as List)
+              c.toString().startsWith('ec-3') ? 'passthrough' : 'decode',
+          ],
+          _ => null,
+        };
+      });
+  addTearDown(
+    () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_exoChannel, null),
+  );
+  return calls;
+}
+
+Future<TvExoPlayer> _exoOn(_ActionScene scene) async {
+  final TvExoPlayer exo = await TvExoPlayer.create(isLive: () => false);
+  scene.pl.exoPlayer = exo;
+  return exo;
+}
+
+Map<String, Object?> _exoVideo(int id, String codecs, int w, int h) => {
+  'id': id,
+  'base_url': 'https://cdn/$id-$codecs.m4s',
+  'codecs': codecs,
+  'width': w,
+  'height': h,
+  'frame_rate': '60',
+};
+
+/// 8K (HEVC past the decoder's size), 4K (HEVC past its level, AVC plays),
+/// 1080P60 and 1080P (AVC), with the bridge's answers applied.
+play_url.PlayUrlModel _exoData() {
+  final play_url.PlayUrlModel data = play_url.PlayUrlModel.fromJson({
+    'quality': 116,
+    'accept_quality': [127, 120, 116, 80],
+    'support_formats': [
+      for (final (q, d, c) in [
+        (127, '8K 超高清', ['hev1.2.4.L183.90']),
+        (120, '4K 超高清', ['hev1.1.6.L156.90', 'avc1.640033']),
+        (116, '1080P 60帧', ['avc1.640032']),
+        (80, '1080P 高清', ['avc1.640032']),
+      ])
+        {
+          'quality': q,
+          'format': 'q$q',
+          'new_description': d,
+          'display_desc': d,
+          'codecs': c,
+        },
+    ],
+    'dash': {
+      'duration': 300,
+      'video': [
+        _exoVideo(127, 'hev1.2.4.L183.90', 7680, 4320),
+        _exoVideo(120, 'hev1.1.6.L156.90', 3840, 2160),
+        _exoVideo(120, 'avc1.640033', 3840, 2160),
+        _exoVideo(116, 'avc1.640032', 1920, 1080),
+        _exoVideo(80, 'avc1.640032', 1920, 1080),
+      ],
+      'audio': [
+        {'id': 30280, 'codecs': 'mp4a.40.2'},
+        {'id': 30250, 'codecs': 'ec-3'},
+      ],
+    },
+  });
+  TvExoQualities.apply(
+    data,
+    const [
+      {
+        'support': 'no',
+        'reason': {
+          'kind': 'size',
+          'decoder': 'c2.mtk.hevc.decoder',
+          'maxWidth': 4096,
+          'maxHeight': 2304,
+          'tryable': true,
+        },
+      },
+      {
+        'support': 'no',
+        'reason': {
+          'kind': 'level',
+          'decoder': 'c2.mtk.hevc.decoder',
+          'level': 0x40000,
+          'maxLevel': 0x10000,
+          'tryable': true,
+        },
+      },
+      {'support': 'yes', 'decoder': 'c2.mtk.avc.decoder'},
+      {'support': 'yes', 'decoder': 'c2.mtk.avc.decoder'},
+      {'support': 'yes', 'decoder': 'c2.mtk.avc.decoder'},
+    ],
+    const {1, 2, 3, 4},
+  );
+  return data;
+}
+
+/// Whether the option list's row at [index] is built and wholly inside the
+/// list's viewport.
+bool _rowInView(WidgetTester tester, int index) {
+  if (_optionRow(index).evaluate().isEmpty) return false;
+  final Rect list = tester.getRect(
+    find.descendant(of: _optionList, matching: find.byType(ListView)),
+  );
+  final Rect row = tester.getRect(_optionRow(index));
+  return row.top >= list.top - 0.5 && row.bottom <= list.bottom + 0.5;
+}
+
+/// The texts in the option list's row at [index], title first.
+List<String> _rowTexts(WidgetTester tester, int index) => [
+  for (final Text t in tester.widgetList<Text>(
+    find.descendant(of: _optionRow(index), matching: find.byType(Text)),
+  ))
+    t.data!,
+];
+
+void _exoTests() {
+  testWidgets('mpv\'s entries hide on ExoPlayer, and 画面比例 offers only the '
+      'fits a SurfaceView shows', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    scene.pl.isAnim = true;
+    expect(_ids(source, TvHudActionId.superResolution), isNotEmpty);
+    expect(_ids(source, TvHudActionId.playerVolume), isNotEmpty);
+    expect(_ids(source, TvHudActionId.audioNormalization), isEmpty);
+
+    final TvExoPlayer exo = await _exoOn(scene);
+    expect(_ids(source, TvHudActionId.superResolution), isEmpty);
+    expect(_ids(source, TvHudActionId.playerVolume), isEmpty);
+    expect(_ids(source, TvHudActionId.audioNormalization), isNotEmpty);
+
+    // 裁剪 isn't shown on the video plane: it's drawn, and named, as 自动.
+    scene.pl.videoFit.value = VideoFitType.cover;
+    final TvHudAction fit = _one(source, TvHudActionId.videoFit);
+    expect(fit.label, '画面: ${VideoFitType.contain.desc}');
+    fit.onPressed();
+    await tester.pumpAndSettle();
+    for (final (int i, VideoFitType f) in TvExoView.supportedFits.indexed) {
+      _expectOption(i, f.desc);
+    }
+    expect(_optionRow(TvExoView.supportedFits.length), findsNothing);
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
+    await exo.dispose();
+  });
+
+  testWidgets('画质 on ExoPlayer greys a quality with its reason and a detail '
+      'line, says which codecs play, and Select on a greyed row only '
+      'explains', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    scene.vdc
+      ..data = _exoData()
+      ..currentVideoQa.value = VideoQuality.high108060;
+    // A pick isn't saved as the default (that's upstream's, unchanged).
+    scene.pl.tempPlayerConf = true;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+
+    // The label adds the decoded size and frame rate once a frame is out.
+    expect(_one(source, TvHudActionId.quality).label, '画质: 1080P60');
+    exo.facts
+      ..setVideo({'width': 1920, 'height': 1080, 'frameRate': 59.94})
+      ..setFirstFrame(900);
+    expect(_one(source, TvHudActionId.quality).label, '画质: 1080P60');
+    exo.facts.setMeasuredFps(30);
+    expect(_one(source, TvHudActionId.quality).label, '画质: 1080P60 · 1080P30');
+
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.quality).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.header.calls, isEmpty, reason: 'not upstream\'s panel');
+    expect(_rowTexts(tester, 0), [
+      '8K 超高清（解码器最高 4096×2304）',
+      '7680×4320@60 · HEVC Main 10 6.1 · c2.mtk.hevc 最高 4096×2304',
+    ]);
+    expect(_rowTexts(tester, 1), [
+      '4K 超高清（仅 AVC）',
+      '3840×2160@60 · HEVC Main 5.2 · c2.mtk.hevc 最高 5.1',
+    ]);
+    expect(_rowTexts(tester, 2), ['1080P 60帧']);
+    expect(_focusOn(TvPlayerHud.optionItemKey(2)), isTrue);
+
+    // Select on the greyed 8K row explains; nothing is played.
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsOneWidget);
+    expect(scene.vdc.updatePlayerCount, 0);
+    expect(TvExoPlayer.tryAnywayNext, isFalse);
+
+    // 4K plays as AVC: Select picks it.
+    await _press(tester, dpadDown);
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsNothing);
+    expect(scene.vdc.currentVideoQa.value, VideoQuality.super4K);
+    expect(scene.vdc.updatePlayerCount, 1);
+    // Two toasts, one after the other.
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(seconds: 3));
+    }
+    await exo.dispose();
+  });
+
+  testWidgets('解码格式 on ExoPlayer names the codec playing and greys one '
+      'past its decoder with why', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    final play_url.PlayUrlModel data = _exoData();
+    scene.vdc
+      ..data = data
+      ..currentVideoQa.value = VideoQuality.super4K
+      ..firstVideo = data.dash!.video!.firstWhere((v) => v.id == 120);
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    final TvHudAction decode = _one(source, TvHudActionId.decodeFormat);
+    expect(decode.label, '解码格式: AVC');
+    await _press(tester, dpadUp);
+    decode.onPressed();
+    await tester.pumpAndSettle();
+    expect(_rowTexts(tester, 0), [
+      'HEVC Main 5.2',
+      '3840×2160@60 · HEVC Main 5.2 · c2.mtk.hevc 最高 5.1',
+    ]);
+    expect(_rowTexts(tester, 1), [
+      'AVC High 5.1',
+      '3840×2160@60 · c2.mtk.avc',
+    ]);
+    expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
+    await exo.dispose();
+  });
+
+  testWidgets('音质 on ExoPlayer says which track passes through and which is '
+      'decoded and balanced', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    scene.vdc
+      ..data = _exoData()
+      ..currentAudioQa = AudioQuality.k192;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    _one(source, TvHudActionId.audioQuality).onPressed();
+    await tester.pumpAndSettle();
+    expect(_rowTexts(tester, 0)[1], 'mp4a.40.2 · 电视解码，做音量均衡');
+    expect(_rowTexts(tester, 1)[1], 'ec-3 · 直通电视音频输出，不解码，不做音量均衡');
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
+    await exo.dispose();
+  });
+
+  testWidgets('音量均衡 in the HUD stores the choice and applies it at once; '
+      'greyed on a passthrough track', (tester) async {
+    final List<MethodCall> calls = _mockExoBridge();
+    await GStorage.setting.put(SettingBoxKey.audioNormalization, '0');
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    await exo.open(
+      const Media(
+        'https://cdn/v.m4s',
+        extras: {
+          'lavfi-complex':
+              '[aid1] loudnorm=I=-16:LRA=11:TP=-1.5:measured_I=-19.4:'
+              'measured_LRA=5:measured_TP=-3:measured_thresh=-30:offset=0 [ao]',
+        },
+      ),
+      play: false,
+    );
+    expect(_one(source, TvHudActionId.audioNormalization).label, '音量均衡: 关闭');
+    calls.clear();
+    _one(source, TvHudActionId.audioNormalization).onPressed();
+    await tester.pumpAndSettle();
+    _expectOption(1, '标准 (-14 LUFS)');
+    await tester.tap(_optionRow(1));
+    await tester.pumpAndSettle();
+    expect(
+      GStorage.setting.get(SettingBoxKey.audioNormalization),
+      TvExoNormalization.standard,
+    );
+    final MethodCall sent = calls.singleWhere(
+      (c) => c.method == 'setNormalization',
+    );
+    expect((sent.arguments as Map)['mode'], 'loudness');
+    expect((sent.arguments as Map)['gainDb'], closeTo(5.4, 1e-9));
+    expect(calls.where((c) => c.method == 'open'), isEmpty);
+
+    exo.facts.setAudio({'mime': 'audio/eac3', 'codecs': 'ec-3'});
+    final TvHudAction greyed = _one(source, TvHudActionId.audioNormalization);
+    expect(greyed.dimmed, isTrue);
+    expect(greyed.label, '音量均衡: 直通不调整');
+    await GStorage.setting.put(SettingBoxKey.audioNormalization, '0');
+    await tester.pump(const Duration(seconds: 3));
+    await exo.dispose();
+  });
+
+  testWidgets('播放信息 on ExoPlayer lists Media3\'s facts instead of '
+      'upstream\'s mpv panel', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    exo.facts
+      ..setVideo({
+        'mime': 'video/hevc',
+        'codecs': 'hvc1.2.4.L153.90',
+        'decoder': 'c2.mtk.hevc.decoder',
+        'width': 3840,
+        'height': 2160,
+        'frameRate': 59.94,
+        'hdr': 'hdr10',
+      })
+      ..setDropped(3);
+    _one(source, TvHudActionId.playerInfo).onPressed();
+    await tester.pumpAndSettle();
+    expect(scene.upstream.playerInfoCount, 0);
+    expect(_rowTexts(tester, 0), ['视频编码', 'HEVC Main 10 5.1']);
+    expect(_rowTexts(tester, 3), ['HDR', 'HDR10 (PQ)']);
+    expect(_rowTexts(tester, 4), ['视频解码器', 'c2.mtk.hevc.decoder']);
+    expect(_rowTexts(tester, 5), ['丢帧', '3']);
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
+    await exo.dispose();
+  });
+
+  testWidgets('Down on ExoPlayer\'s failure screen plays the next quality '
+      'down once, without saving it', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    scene.vdc
+      ..data = _exoData()
+      ..currentVideoQa.value = VideoQuality.high108060;
+    scene.pl.cacheVideoQa = VideoQuality.high108060.code;
+    final TvExoPlayer exo = await _exoOn(scene);
+    await scene.pump(tester);
+    // Not failed: Down shows the HUD, as before.
+    await _press(tester, dpadDown);
+    expect(scene.vdc.updatePlayerCount, 0);
+    await _press(tester, dpadBack);
+
+    exo.failed.value = '无法播放';
+    expect(TvExoView.lowerQuality?.call()?.label, '1080P 高清');
+    await _press(tester, dpadDown);
+    expect(scene.vdc.updatePlayerCount, 1);
+    expect(scene.vdc.currentVideoQa.value, VideoQuality.high1080);
+    expect(scene.pl.cacheVideoQa, VideoQuality.high108060.code);
+    await tester.pump(const Duration(seconds: 3));
+    exo.failed.value = null;
+    await exo.dispose();
+  });
+
+  testWidgets('切换路线 on ExoPlayer leads with the codec, names FLV with HEVC '
+      'by the fMP4 it plays as, and heads each section readably', (
+    tester,
+  ) async {
+    _mockExoBridge();
+    final _ActionScene scene = _liveScene();
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await TvExoPlayer.create(isLive: () => true);
+    scene.pl.exoPlayer = exo;
+    _one(source, TvHudActionId.liveRoute).onPressed();
+    await tester.pumpAndSettle();
+    expect(_rowTexts(tester, 0), ['FLV（http_stream · flv）']);
+    expect(_rowTexts(tester, 1), ['AVC · 原画 · cn-a.bilivideo.com']);
+    expect(_rowTexts(tester, 3), ['HEVC (fMP4) · 原画 · cn-c.bilivideo.com']);
+    expect(_rowTexts(tester, 4), ['HLS fMP4（http_hls · fmp4）']);
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
+    await exo.dispose();
+  });
+
+  testWidgets('a section\'s heading scrolls into view with its first row', (
+    tester,
+  ) async {
+    final _ActionScene scene = _liveScene();
+    final FakeLiveRoomController live = _liveOf(scene);
+    // Many hosts in the first section, so the list scrolls.
+    live.streams = [
+      live_stream.Stream(
+        protocolName: 'http_stream',
+        format: [
+          live_format.Format(
+            formatName: 'flv',
+            codec: [
+              CodecItem(
+                codecName: 'avc',
+                currentQn: LiveQuality.origin,
+                acceptQn: const [LiveQuality.origin],
+                baseUrl: '/live',
+                urlInfo: [
+                  for (int i = 0; i < 12; i++)
+                    UrlInfo(host: 'https://cn-$i.bilivideo.com', extra: ''),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+      ..._liveStreams().skip(1),
+    ];
+    live
+      ..streamIndex = 1
+      ..codecIndex = 0
+      ..liveUrlIndex = 0;
+    final TvHudActionSource source = await scene.pump(tester);
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.liveRoute).onPressed();
+    await tester.pumpAndSettle();
+    // Focus starts on the second section's route, with its heading.
+    expect(_focusOn(TvPlayerHud.optionItemKey(14)), isTrue);
+    expect(_rowInView(tester, 13), isTrue);
+    expect(_rowInView(tester, 0), isFalse);
+    for (int i = 0; i < 13; i++) {
+      await _press(tester, dpadUp);
+    }
+    expect(_focusOn(TvPlayerHud.optionItemKey(1)), isTrue);
+    expect(_rowInView(tester, 0), isTrue);
+    Navigator.of(tester.element(_optionList)).pop();
+    await tester.pumpAndSettle();
   });
 }

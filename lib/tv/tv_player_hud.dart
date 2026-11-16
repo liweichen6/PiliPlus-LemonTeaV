@@ -3,7 +3,8 @@ import 'dart:math' as math;
 
 import 'package:PiliPlus/models/common/super_resolution_type.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
-import 'package:PiliPlus/models/video/play/url.dart' show LanguageItem;
+import 'package:PiliPlus/models/common/video/video_decode_type.dart';
+import 'package:PiliPlus/models/video/play/url.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart'
     as live_format;
@@ -31,6 +32,13 @@ import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/plugin/pl_player/view/view.dart' show buildDmChart;
+import 'package:PiliPlus/tv/tv_exo_hud_text.dart';
+import 'package:PiliPlus/tv/tv_exo_player.dart';
+import 'package:PiliPlus/tv/tv_exo_qualities.dart';
+import 'package:PiliPlus/tv/tv_exo_settings.dart';
+import 'package:PiliPlus/tv/tv_exo_support.dart';
+import 'package:PiliPlus/tv/tv_exo_view.dart';
+import 'package:PiliPlus/utils/connectivity_utils.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart'
     show shutdownTimerService;
 import 'package:PiliPlus/utils/duration_utils.dart';
@@ -48,6 +56,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart' show Player;
 
 part 'tv_hud_actions.dart';
+part 'tv_hud_exo.dart';
 part 'tv_hud_groups.dart';
 part 'tv_hud_menu.dart';
 
@@ -301,9 +310,15 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     if (mounted) setState(() {});
   }
 
+  /// 降低画质 on ExoPlayer's failure screen (M17.10, item 6), as this HUD
+  /// registered it with [TvExoView.lowerQuality].
+  late final ({String label, VoidCallback run})? Function()
+  _lowerQualityOption = _lowerQuality;
+
   @override
   void initState() {
     super.initState();
+    TvExoView.lowerQuality = _lowerQualityOption;
     _bindFullScreenListener();
     _pl.addStatusLister(_onPlayerStatusChanged);
     // Suppress upstream touch controls when fullscreen or TV HUD is active
@@ -328,6 +343,9 @@ class _TvPlayerHudState extends State<TvPlayerHud>
 
   @override
   void dispose() {
+    if (identical(TvExoView.lowerQuality, _lowerQualityOption)) {
+      TvExoView.lowerQuality = null;
+    }
     _cancelSelectHold();
     _pl.removeStatusLister(_onPlayerStatusChanged);
     _fullScreenSub?.cancel();
@@ -740,6 +758,14 @@ class _TvPlayerHudState extends State<TvPlayerHud>
         _pl.triggerFullScreen(status: false);
         return KeyEventResult.handled;
       }
+      // ExoPlayer's failure screen: Down plays the next quality that can
+      // (M17.10); Select retries, as above.
+      if (key == LogicalKeyboardKey.arrowDown) {
+        if (_lowerQuality() case final lower?) {
+          lower.run();
+          return KeyEventResult.handled;
+        }
+      }
       if (key == LogicalKeyboardKey.arrowUp ||
           key == LogicalKeyboardKey.arrowDown) {
         _showHud();
@@ -1076,6 +1102,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
       icon: action.icon,
       label: action.label,
       active: action.active,
+      dimmed: action.dimmed,
       onPressed: () {
         _resetAutoHideTimer();
         action.onPressed();
@@ -1751,6 +1778,8 @@ class _TvHudPillButton extends StatefulWidget {
     this.icon,
     this.onKeyEvent,
     this.onFocusLost,
+    this.dimmed = false,
+    this.subtitle,
     required this.label,
     required this.onPressed,
   });
@@ -1758,6 +1787,15 @@ class _TvHudPillButton extends StatefulWidget {
   final FocusNode? focusNode;
   final bool autofocus;
   final bool compact;
+
+  /// Drawn greyed: an option that can't be used as it is (a quality this TV
+  /// can't play, M17.10). It still takes focus, so its reason can be read
+  /// and Select can explain it.
+  final bool dimmed;
+
+  /// A second line under the label, in an option list (M17.10's detail
+  /// line). Not shown on an icon-only pill.
+  final String? subtitle;
 
   /// Draws the icon alone, with [label] under it while focused.
   final bool iconOnly;
@@ -1845,14 +1883,46 @@ class _TvHudPillButtonState extends State<_TvHudPillButton>
                           Icon(
                             widget.icon,
                             size: widget.compact ? 16 : 18,
-                            color: Colors.white,
+                            color: widget.dimmed
+                                ? Colors.white38
+                                : Colors.white,
                           ),
-                        _pillLabel(
-                          widget.label,
-                          compact: widget.compact,
-                          bold: _focused || widget.active,
-                          bounded: widget.alignment != null,
-                        ),
+                        if (widget.subtitle case final subtitle?)
+                          Flexible(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _pillLabel(
+                                  widget.label,
+                                  compact: widget.compact,
+                                  bold: _focused || widget.active,
+                                  bounded: false,
+                                  dimmed: widget.dimmed,
+                                  maxLines: 1,
+                                ),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: _focused
+                                        ? Colors.white
+                                        : Colors.white60,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          _pillLabel(
+                            widget.label,
+                            compact: widget.compact,
+                            bold: _focused || widget.active,
+                            bounded: widget.alignment != null,
+                            dimmed: widget.dimmed,
+                          ),
                       ],
                     ),
             ),
@@ -1871,13 +1941,15 @@ Widget _pillLabel(
   required bool compact,
   required bool bold,
   required bool bounded,
+  bool dimmed = false,
+  int? maxLines,
 }) {
   final Text text = Text(
     label,
-    maxLines: bounded ? 1 : null,
-    overflow: bounded ? TextOverflow.ellipsis : null,
+    maxLines: bounded ? 1 : maxLines,
+    overflow: bounded || maxLines != null ? TextOverflow.ellipsis : null,
     style: TextStyle(
-      color: Colors.white,
+      color: dimmed ? Colors.white54 : Colors.white,
       fontSize: compact ? 13 : 14,
       fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
     ),
@@ -2027,6 +2099,8 @@ class _TvDialogOptionItem {
     this.icon,
     required this.selected,
     required this.onSelect,
+    this.subtitle,
+    this.dimmed = false,
   }) : isHeader = false;
 
   /// A group title between rows (切换路线's `协议 · 格式`); not focusable.
@@ -2034,7 +2108,16 @@ class _TvDialogOptionItem {
     : icon = null,
       selected = false,
       onSelect = _noop,
+      subtitle = null,
+      dimmed = false,
       isHeader = true;
+
+  /// A line under the title: what a row plays as, or why it can't
+  /// (M17.10).
+  final String? subtitle;
+
+  /// Greyed but focusable: Select explains (or, for 仍要尝试, asks).
+  final bool dimmed;
 
   static void _noop() {}
 
@@ -2077,8 +2160,36 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
   /// measured from the label's real text style and text scale (the font size
   /// setting goes up to 1.6x), so a large label is never clipped.
   late double _itemExtent;
+
+  /// The extra height of a row with a subtitle line.
+  late double _subtitleExtent;
   late double _listHeight;
   ScrollController? _scrollController;
+
+  double _extentOf(int index) => widget.items[index].subtitle == null
+      ? _itemExtent
+      : _itemExtent + _subtitleExtent;
+
+  double _offsetOf(int index) {
+    var offset = 0.0;
+    for (var i = 0; i < index; i++) {
+      offset += _extentOf(i);
+    }
+    return offset;
+  }
+
+  /// A row just under a header brings the header into view with it, so a
+  /// section's heading shows when focus reaches its first row from below
+  /// (切换路线's first section, M17.10).
+  void _revealHeaderAbove(int index) {
+    if (index < 1 || !widget.items[index - 1].isHeader) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ScrollController? controller = _scrollController;
+      if (!mounted || controller == null || !controller.hasClients) return;
+      final double top = _offsetOf(index - 1);
+      if (controller.offset > top) controller.jumpTo(top);
+    });
+  }
 
   int get _autofocusIndex {
     final int selectedIndex = widget.items.indexWhere((e) => e.selected);
@@ -2106,18 +2217,33 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
     )..layout();
     final double labelHeight = math.max(18.0, painter.height);
     painter.dispose();
+    final TextPainter subtitlePainter = TextPainter(
+      text: TextSpan(
+        text: '国Ag',
+        style: DefaultTextStyle.of(
+          contentContext,
+        ).style.merge(const TextStyle(fontSize: 12)),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(contentContext),
+      maxLines: 1,
+    )..layout();
+    _subtitleExtent = subtitlePainter.height.ceilToDouble();
+    subtitlePainter.dispose();
 
     _itemExtent = math.max(
       _kMinItemExtent,
       (_kRowChrome + labelHeight).ceilToDouble(),
     );
-    _listHeight = math.min(widget.items.length * _itemExtent, _kMaxListHeight);
-    final double maxOffset = math.max(
-      0.0,
-      widget.items.length * _itemExtent - _listHeight,
-    );
-    final double centered =
-        _autofocusIndex * _itemExtent - (_listHeight - _itemExtent) / 2;
+    final double total = _offsetOf(widget.items.length);
+    _listHeight = math.min(total, _kMaxListHeight);
+    final double maxOffset = math.max(0.0, total - _listHeight);
+    final int at = _autofocusIndex;
+    // A section's first row opens with its heading in view.
+    final int top = at > 0 && widget.items[at - 1].isHeader ? at - 1 : at;
+    final double span =
+        _offsetOf(math.min(at + 1, widget.items.length)) - _offsetOf(top);
+    final double centered = _offsetOf(top) - (_listHeight - span) / 2;
     return _scrollController = ScrollController(
       initialScrollOffset: centered.clamp(0.0, maxOffset),
     );
@@ -2153,7 +2279,8 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
             height: _listHeight,
             child: ListView.builder(
               controller: controller,
-              itemExtent: _itemExtent,
+              itemExtentBuilder: (index, _) =>
+                  index < items.length ? _extentOf(index) : null,
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
@@ -2179,17 +2306,26 @@ class _TvOptionListDialogState extends State<_TvOptionListDialog> {
                 return Padding(
                   key: TvPlayerHud.optionItemKey(index),
                   padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: _TvHudPillButton(
-                    autofocus: index == autofocusIndex,
-                    active: item.selected,
-                    alignment: Alignment.centerLeft,
-                    icon:
-                        item.icon ??
-                        (item.selected
-                            ? Icons.radio_button_checked_rounded
-                            : Icons.radio_button_off_rounded),
-                    label: item.title,
-                    onPressed: item.onSelect,
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onFocusChange: (hasFocus) {
+                      if (hasFocus) _revealHeaderAbove(index);
+                    },
+                    child: _TvHudPillButton(
+                      autofocus: index == autofocusIndex,
+                      active: item.selected,
+                      dimmed: item.dimmed,
+                      subtitle: item.subtitle,
+                      alignment: Alignment.centerLeft,
+                      icon:
+                          item.icon ??
+                          (item.selected
+                              ? Icons.radio_button_checked_rounded
+                              : Icons.radio_button_off_rounded),
+                      label: item.title,
+                      onPressed: item.onSelect,
+                    ),
                   ),
                 );
               },

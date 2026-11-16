@@ -1010,6 +1010,9 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
             // '!delay_open,media_type=audio;'
             '%${isFileSource ? utf8.encode(audio).length : audio.length}%$audio');
       }
+      // TV: the measured loudness for ExoPlayer's 音量均衡, also while it's
+      // off (docs/tv/PLAN.md, M17.10). Nothing off TV.
+      extras.addAll(TvExoNormalization.loudnessExtras(volume));
       audioFilterExtras(volume, map: extras);
     }
 

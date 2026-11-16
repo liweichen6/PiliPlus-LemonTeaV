@@ -16,8 +16,11 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:PiliPlus/models/common/audio_normalization.dart';
+import 'package:PiliPlus/models/video/play/url.dart' show Volume;
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/tv/tv_exo_subtitles.dart';
+import 'package:PiliPlus/tv/tv_exo_support.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +52,19 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   /// bridge refuses a larger stream during track selection. Device runs set
   /// 1920 × 1080 until the user's go-ahead for more.
   static int maxPixels = 0;
+
+  /// 仍要尝试 (M17.10): the next open tries a stream past what its decoder
+  /// declares, once, with no automatic retry; a failure ends on the failure
+  /// screen. Cleared by that open.
+  static bool tryAnywayNext = false;
+
+  /// Whether [player] is this player, for the HUD's capabilities (M17.10)
+  /// and the hooks that hide mpv's entries.
+  static bool isExo(Player? player) => player is TvExoPlayer;
+
+  /// mpv's entries (flip, 超分辨率, volume above 100 %) show only off this
+  /// player; the hooks in upstream's 完整设置 ask this.
+  static bool notExo(Player? player) => player is! TvExoPlayer;
 
   /// Logs this player's decisions with `[TvExoPlayer]`: opens, retries,
   /// failures, normalization and subtitles. On in debug builds; device runs
@@ -148,6 +164,10 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
 
   int _attempts = 0;
   Timer? _retryTimer;
+
+  /// This open is a 仍要尝试: no automatic retry.
+  bool _tryingAnyway = false;
+  bool get tryingAnyway => _tryingAnyway;
 
   TvExoCues _cues = TvExoCues.empty;
   int _subtitleGen = 0;
@@ -333,7 +353,7 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   /// the adapter reconnects them alone.
   void _retryOrFail(Map args, {Duration? delay}) {
     final budget = _live ? liveAttempts : videoAttempts;
-    if (_attempts >= budget) {
+    if (_attempts >= budget || _tryingAnyway) {
       _fail(failureText(args, live: _live, exhausted: true));
       return;
     }
@@ -389,6 +409,19 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     final code = args['code'];
     final status = args['status'];
     final detail = status != null ? 'HTTP $status' : (code ?? kind);
+    if (kind == 'unsupported' && args['reason'] is Map) {
+      final rate = args['frameRate'];
+      final refusal = TvExoRefusal.fromBridge(
+        args['reason'] as Map,
+        TvExoStream(
+          codecs: args['codecs'] as String?,
+          width: args['width'] as int?,
+          height: args['height'] as int?,
+          frameRate: rate is num && rate > 0 ? rate.toDouble() : null,
+        ),
+      );
+      return '无法播放：${refusal.short}\n${refusal.detail}';
+    }
     return switch (kind) {
       'unsupported' when args['dolbyVision'] == true =>
         '此设备没有可播放该杜比视界视频（Profile ${args['profile']}）的解码器，已停止播放',
@@ -451,6 +484,8 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     _live = _isLive();
     _url = video;
     _gen = ++_gens;
+    _tryingAnyway = tryAnywayNext && !_live;
+    tryAnywayNext = false;
     // Media3 buffers once prepared. The earlier open's events are dropped
     // from here on, a pause among them, so the state is set here, as mpv's
     // properties change at once: a page that waits for "playing" (the live
@@ -474,11 +509,7 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
       liveBufferSizeMb: Pref.liveBufferSize,
       liveBufferSec: Pref.liveBufferSec,
     );
-    final normalization = TvExoNormalization.resolve(
-      config: Pref.audioNormalization,
-      fallback: Pref.fallbackNormalization,
-      filter: media.extras?['lavfi-complex'],
-    );
+    final normalization = _normalization(media);
     _log(
       'open gen=$_gen live=$_live hls=${_isHls(video)} play=$play '
       'start=${start.inMilliseconds} attempt=$_attempts '
@@ -506,11 +537,61 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
         'bufferBytes': buffer.bytes,
         'bufferMs': buffer.ms,
         'maxPixels': maxPixels,
+        'tryAnyway': _tryingAnyway,
       });
     } on PlatformException catch (e) {
       // Fail closed: nothing else opens this media.
       _fail('ExoPlayer 启动失败（${e.message}），已停止播放');
     }
+  }
+
+  TvExoNormalization _normalization(Media media) => TvExoNormalization.resolve(
+    config: Pref.audioNormalization,
+    fallback: Pref.fallbackNormalization,
+    filter: media.extras?['lavfi-complex'],
+    measured: double.tryParse(
+      media.extras?[TvExoNormalization.loudnessKey] ?? '',
+    ),
+    live: _live,
+  );
+
+  /// 音量均衡 changed during playback (the HUD's entry, M17.10): the bridge's
+  /// audio processors take the new setting on their next buffer, without
+  /// reopening. Returns what was sent, or `null` with nothing open.
+  Future<TvExoNormalization?> applyNormalization() async {
+    if (current.isEmpty || disposed) return null;
+    final normalization = _normalization(current.last);
+    _log('normalization now $normalization');
+    await _invoke('setNormalization', normalization.toArgs());
+    return normalization;
+  }
+
+  static final Map<String, String> _audioSupport = {};
+
+  /// For each audio stream's `codecs` (音质, M17.10): `passthrough`,
+  /// `decode` or `no`, from the bridge's `audioSupport`, cached for the run;
+  /// `null` for a stream it couldn't answer.
+  static Future<List<String?>> audioSupport(List<String?> codecs) async {
+    final ask = {
+      for (final c in codecs)
+        if (c != null && !_audioSupport.containsKey(c)) c,
+    }.toList();
+    if (ask.isNotEmpty) {
+      try {
+        final answer =
+            await channel.invokeMethod<List>('audioSupport', ask) ?? const [];
+        for (final (i, c) in ask.indexed) {
+          if (answer.elementAtOrNull(i) case final String a) {
+            _audioSupport[c] = a;
+          }
+        }
+      } on PlatformException catch (e) {
+        _log('audioSupport failed: ${e.message}');
+      } on MissingPluginException {
+        // No bridge (tests).
+      }
+    }
+    return [for (final c in codecs) c == null ? null : _audioSupport[c]];
   }
 
   static bool _isHls(String url) =>
@@ -972,6 +1053,22 @@ class TvExoFacts extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The audio track goes to the TV's output undecoded (杜比全景声, E-AC-3
+  /// over eARC), so it isn't normalized: an encoded format with no decoder
+  /// started for it.
+  bool get audioPassthrough => audioDecoder == null && encodedAudio(audioMime);
+
+  /// The audio formats a TV's output may take undecoded.
+  static bool encodedAudio(String? mime) => const {
+    'audio/eac3',
+    'audio/eac3-joc',
+    'audio/ac3',
+    'audio/ac4',
+    'audio/true-hd',
+    'audio/vnd.dts',
+    'audio/vnd.dts.hd',
+  }.contains(mime);
+
   /// The first frame after the open; Media3 also reports one after each
   /// seek, which isn't kept.
   void setFirstFrame(Object? ms) {
@@ -1100,26 +1197,47 @@ class TvExoNormalization {
   /// Real loudness is negative. Bilibili sends 0.001 for a video it never
   /// measured, which upstream's `Volume.format` turns into 0, and a gain
   /// from it would cut the sound by the whole target.
-  static double? _measured(String filter) {
-    final m = _args(filter, 'loudnorm')['measured_i'];
+  static double? _measured(String? filter, [double? measured]) {
+    final m = measured ?? _args(filter ?? '', 'loudnorm')['measured_i'];
     return m != null && m < 0 ? m : null;
   }
 
+  /// The key of [loudnessExtras] in a media's extras.
+  static const String loudnessKey = 'tv-loudness';
+
+  /// The hook beside upstream's `audioFilterExtras` in `setDataSource`: on
+  /// TV, the video's measured loudness (Bilibili's `measured_i`), also while
+  /// 音量均衡 is off, so the HUD can switch it on during playback (M17.10).
+  /// Nothing off TV, or without a measurement.
+  static Map<String, String> loudnessExtras(Volume? volume) =>
+      TvPlatform.isTv && volume != null
+      ? {loudnessKey: '${volume.measuredI}'}
+      : const {};
+
+  /// [filter] is upstream's mpv filter (it carries the measurement while
+  /// 音量均衡 was on when the player was made); [measured] is the loudness
+  /// from [loudnessExtras]. With [live] given, a live room is off and a
+  /// video needs neither for 动态压缩; without it, no filter means off.
   static TvExoNormalization resolve({
     required String config,
     required String fallback,
     required String? filter,
+    double? measured,
+    bool? live,
   }) {
-    if (filter == null || filter.isEmpty) return const .off();
+    if (live == true) return const .off();
+    if (live == null && (filter == null || filter.isEmpty)) {
+      return const .off();
+    }
     switch (config) {
       case '1':
         return _dynamic(AudioNormalization.dynaudnorm.param);
       case '2':
-        final measured = _measured(filter);
-        final target = _args(filter, 'loudnorm')['i'];
-        if (measured != null && target != null) {
-          final preset = _args(AudioNormalization.loudnorm.param, 'loudnorm');
-          return .loudness(target - measured, preset['tp'] ?? -1.5);
+        final measuredI = _measured(filter, measured);
+        final preset = _args(AudioNormalization.loudnorm.param, 'loudnorm');
+        final target = _args(filter ?? '', 'loudnorm')['i'] ?? preset['i'];
+        if (measuredI != null && target != null) {
+          return .loudness(target - measuredI, preset['tp'] ?? -1.5);
         }
         return fallback == '1'
             ? _dynamic(AudioNormalization.dynaudnorm.param)
@@ -1127,7 +1245,7 @@ class TvExoNormalization {
       case '0':
         return const .off();
       default:
-        return custom(config, filter);
+        return custom(config, filter ?? '', measured);
     }
   }
 
@@ -1137,10 +1255,14 @@ class TvExoNormalization {
   /// the video has no usable measurement or measures below
   /// [undersizedLufs]. A dynaudnorm filter is the dynamic normalizer with
   /// its `f`, `g`, `r`, `p` and `m`. Anything else Media3 can't run: off.
-  static TvExoNormalization custom(String config, String filter) {
+  static TvExoNormalization custom(
+    String config,
+    String filter, [
+    double? measuredI,
+  ]) {
     if (_has(config, 'loudnorm')) {
       final target = _args(config, 'loudnorm');
-      final measured = _measured(filter);
+      final measured = _measured(filter, measuredI);
       if (measured == null || measured < undersizedLufs) return const .off();
       return .loudness((target['i'] ?? -24) - measured, target['tp'] ?? -2);
     }

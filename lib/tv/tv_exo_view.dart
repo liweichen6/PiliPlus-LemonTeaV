@@ -40,6 +40,11 @@ class TvExoView extends StatelessWidget {
         )
       : null;
 
+  /// 降低画质 on the failure screen (M17.10, item 6): the next quality that
+  /// can play and how to play it, from the TV HUD, which also takes Down for
+  /// it. `null` when there's none.
+  static ({String label, VoidCallback run})? Function()? lowerQuality;
+
   final TvExoPlayer player;
   final VideoFitType videoFit;
   final Alignment alignment;
@@ -102,7 +107,12 @@ class TvExoView extends StatelessWidget {
                   child: child!,
                 ),
                 if (failed != null)
-                  Positioned.fill(child: _FailureScreen(text: failed)),
+                  Positioned.fill(
+                    child: _FailureScreen(
+                      text: failed,
+                      lower: lowerQuality?.call()?.label,
+                    ),
+                  ),
               ],
             );
           },
@@ -118,9 +128,12 @@ class TvExoView extends StatelessWidget {
 /// buffering once it fails. Select retries on ExoPlayer: upstream's play and
 /// pause toggle reaches `TvExoPlayer.play`, which reopens the media.
 class _FailureScreen extends StatelessWidget {
-  const _FailureScreen({required this.text});
+  const _FailureScreen({required this.text, this.lower});
 
   final String text;
+
+  /// The quality 降低画质 would play, if any.
+  final String? lower;
 
   @override
   Widget build(BuildContext context) {
@@ -138,9 +151,10 @@ class _FailureScreen extends StatelessWidget {
                 style: const TextStyle(color: Colors.white, fontSize: 18),
               ),
               const SizedBox(height: 12),
-              const Text(
-                '按确认键重试',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+              Text(
+                lower == null ? '按确认键重试' : '按确认键重试　·　按下键降低画质（$lower）',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],
           ),

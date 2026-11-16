@@ -194,6 +194,15 @@ enum TvHudActionId {
     '播放器音量',
     Icons.volume_up_rounded,
   ),
+
+  /// 音量均衡 on ExoPlayer (M17.10, the user, 2026-11-16): the setting's TV
+  /// options, applied at once.
+  audioNormalization(
+    TvHudMenuGroup.pictureAndSound,
+    '音量均衡',
+    Icons.equalizer_rounded,
+    scope: TvHudScope.video,
+  ),
   shutdownTimer(
     TvHudMenuGroup.pictureAndSound,
     '定时关闭',
@@ -255,6 +264,7 @@ class TvHudAction {
     required this.label,
     required this.onPressed,
     this.active = false,
+    this.dimmed = false,
     this.onHoldStart,
     this.onHoldEnd,
   });
@@ -270,6 +280,10 @@ class TvHudAction {
 
   /// Drawn highlighted: a switch that's on, a liked or favourited video.
   final bool active;
+
+  /// Drawn greyed: shown, but it can't act now; Select says why (音量均衡 on
+  /// a passthrough track, M17.10).
+  final bool dimmed;
 
   /// Select (or a tap) on the button.
   final VoidCallback onPressed;
@@ -521,12 +535,14 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     required String label,
     required VoidCallback onPressed,
     bool active = false,
+    bool dimmed = false,
   }) => TvHudAction(
     id: id,
     buttonId: id.name,
     icon: icon,
     label: label,
     active: active,
+    dimmed: dimmed,
     onPressed: onPressed,
   );
 
@@ -559,6 +575,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.decodeFormat => _decodeFormatAction(),
       TvHudActionId.superResolution => _superResolutionAction(),
       TvHudActionId.playerVolume => _playerVolumeAction(),
+      TvHudActionId.audioNormalization => _audioNormalizationAction(),
       TvHudActionId.shutdownTimer => _shutdownTimerAction(),
       TvHudActionId.reload => _reloadAction(),
       TvHudActionId.playerInfo => _playerInfoAction(),
@@ -579,7 +596,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       return _single(
         TvHudActionId.quality,
         icon: Icons.hd_rounded,
-        label: '画质: ${liveCtr.currentQn.value?.desc ?? '默认'}',
+        label: '画质: ${_qualityLabel(liveCtr.currentQn.value?.desc ?? '默认')}',
         onPressed: () => _showLiveQualityDialog(liveCtr),
       );
     }
@@ -596,8 +613,10 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     return _single(
       TvHudActionId.quality,
       icon: Icons.hd_rounded,
-      label: '画质: ${current.shortDesc}',
-      onPressed: () => _openUpstreamPanel(panels.showSetVideoQa),
+      label: '画质: ${_qualityLabel(current.shortDesc)}',
+      onPressed: _onExo
+          ? () => _showExoQualityDialog(ctr)
+          : () => _openUpstreamPanel(panels.showSetVideoQa),
     );
   }
 
@@ -644,9 +663,15 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
                 formatIndex: fi,
                 codecIndex: ci,
                 urlIndex: ui,
-                label:
-                    '${codec.codecName ?? ci} (${codec.currentQn.desc}) · '
-                    '${_hostOf(url.host)}',
+                label: _onExo
+                    ? TvExoHudText.routeLabel(
+                        formatName: format.formatName,
+                        codecName: codec.codecName,
+                        quality: codec.currentQn.desc,
+                        host: _hostOf(url.host),
+                      )
+                    : '${codec.codecName ?? ci} (${codec.currentQn.desc}) · '
+                          '${_hostOf(url.host)}',
                 current:
                     si == liveCtr.streamIndex &&
                     fi == liveCtr.formatIndex &&
@@ -659,7 +684,9 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
         ];
         if (routes.isEmpty) continue;
         groups.add((
-          header: '${stream.protocolName ?? si} · ${format.formatName ?? fi}',
+          header: _onExo
+              ? TvExoHudText.routeHeader(stream.protocolName, format.formatName)
+              : '${stream.protocolName ?? si} · ${format.formatName ?? fi}',
           routes: routes,
         ));
       }
@@ -759,17 +786,27 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
   TvHudAction _videoFitAction() => _single(
     TvHudActionId.videoFit,
     icon: Icons.aspect_ratio_rounded,
-    label: '画面: ${_pl.videoFit.value.desc}',
+    label: '画面: ${_shownFit.desc}',
     onPressed: _showVideoFitDialog,
   );
 
+  /// On ExoPlayer, only the fits a `SurfaceView` can show (M17.10); one it
+  /// can't is drawn as 自动, so the label says so.
+  List<VideoFitType> get _fits =>
+      _onExo ? TvExoView.supportedFits : VideoFitType.values;
+
+  VideoFitType get _shownFit {
+    final VideoFitType fit = _pl.videoFit.value;
+    return _fits.contains(fit) ? fit : VideoFitType.contain;
+  }
+
   Future<void> _showVideoFitDialog() async {
-    final VideoFitType currentFit = _pl.videoFit.value;
+    final VideoFitType currentFit = _shownFit;
     await _showTvDialog((dialogContext) {
       return _TvOptionListDialog(
         title: '选择画面比例',
         items: [
-          for (final fit in VideoFitType.values)
+          for (final fit in _fits)
             _TvDialogOptionItem(
               title: fit.desc,
               selected: fit == currentFit,
@@ -1294,7 +1331,9 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.audioQuality,
       icon: Icons.album_outlined,
       label: '音质: ${current.desc}',
-      onPressed: () => _openUpstreamPanel(panels.showSetAudioQa),
+      onPressed: _onExo
+          ? () => _showExoAudioDialog(ctr)
+          : () => _openUpstreamPanel(panels.showSetAudioQa),
     );
   }
 
@@ -1311,14 +1350,17 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     return _single(
       TvHudActionId.decodeFormat,
       icon: Icons.av_timer_outlined,
-      label: '解码格式',
-      onPressed: () => _openUpstreamPanel(panels.showSetDecodeFormats),
+      label: _onExo ? '解码格式: ${_decodingName(ctr)}' : '解码格式',
+      onPressed: _onExo
+          ? () => _showExoDecodeDialog(ctr)
+          : () => _openUpstreamPanel(panels.showSetDecodeFormats),
     );
   }
 
-  /// Animation only, as upstream (`PlPlayerController.isAnim`).
+  /// Animation only, as upstream (`PlPlayerController.isAnim`). mpv's
+  /// shaders aren't on ExoPlayer's path (M17.6, decision 12).
   TvHudAction? _superResolutionAction() {
-    if (!_isVideo || !_pl.isAnim || !_hasPlayer) return null;
+    if (!_isVideo || !_pl.isAnim || !_hasPlayer || _onExo) return null;
     return _single(
       TvHudActionId.superResolution,
       icon: Icons.auto_awesome_rounded,
@@ -1348,9 +1390,11 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     });
   }
 
+  /// Upstream's 100–300 % boost. ExoPlayer stops at 100 % (M17.6, decision
+  /// 12), so the entry hides there.
   TvHudAction? _playerVolumeAction() {
     final Player? player = _pl.videoPlayerController;
-    if (player == null || _pl.isPipMode) return null;
+    if (player == null || _pl.isPipMode || _onExo) return null;
     return _single(
       TvHudActionId.playerVolume,
       icon: Icons.volume_up_rounded,
@@ -1410,9 +1454,11 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       TvHudActionId.playerInfo,
       icon: Icons.info_outline_rounded,
       label: '播放信息',
-      onPressed: () => _openUpstreamPanel(
-        () => _upstream.showPlayerInfo(context, player),
-      ),
+      onPressed: player is TvExoPlayer
+          ? () => _showExoPlayerInfo(player)
+          : () => _openUpstreamPanel(
+              () => _upstream.showPlayerInfo(context, player),
+            ),
     );
   }
 

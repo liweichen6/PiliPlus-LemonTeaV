@@ -27,6 +27,7 @@ import 'package:PiliPlus/models_new/video/video_note_list/data.dart';
 import 'package:PiliPlus/models_new/video/video_play_info/data.dart';
 import 'package:PiliPlus/models_new/video/video_relation/data.dart';
 import 'package:PiliPlus/models_new/video/video_shot/data.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/app_sign.dart';
 import 'package:PiliPlus/utils/extension/string_ext.dart';
@@ -249,6 +250,9 @@ abstract final class VideoHttp {
     bool voiceBalance = false,
     bool fallback = false,
   }) async {
+    // TV: always ask for the measured loudness, so 音量均衡 can be switched
+    // on during playback (docs/tv/PLAN.md, M17.10). Nothing off TV.
+    if (TvPlatform.isTv) voiceBalance = true;
     final dmImgStr = Utils.base64EncodeRandomString(16, 64);
     final dmCoverImgStr = Utils.base64EncodeRandomString(32, 128);
     final params = await WbiSign.makSign({

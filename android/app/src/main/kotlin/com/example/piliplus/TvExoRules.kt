@@ -35,7 +35,10 @@ object TvExoRules {
      *    refuses Bilibili's 3996 × 2160 @ 24 4K, which its decoders declare
      *    and play (M17.9, the user, 2026-11-16);
      *  - a stream larger than [fits] allows is refused (the dev test page's
-     *    1080p cap).
+     *    1080p cap);
+     *  - [tryAnyway] (仍要尝试, M17.10, one open at the user's request):
+     *    Media3's "exceeds" is tried instead of refused, for a stream that
+     *    [tryable] allows.
      * Refusing here means no decoder ever starts for the stream.
      */
     fun videoFormatSupport(
@@ -45,6 +48,7 @@ object TvExoRules {
         declared: Boolean,
         fits: Boolean = true,
         withinDeclared: Boolean = false,
+        tryAnyway: Boolean = false,
     ): Int {
         if (!fits) return C.FORMAT_UNSUPPORTED_SUBTYPE
         if (dolbyVision && declared &&
@@ -59,10 +63,24 @@ object TvExoRules {
                 C.FORMAT_UNSUPPORTED_SUBTYPE
             }
             C.FORMAT_EXCEEDS_CAPABILITIES ->
-                if (!dolbyVision && withinDeclared) C.FORMAT_HANDLED else C.FORMAT_UNSUPPORTED_SUBTYPE
+                if (!dolbyVision && (withinDeclared || tryAnyway)) {
+                    C.FORMAT_HANDLED
+                } else {
+                    C.FORMAT_UNSUPPORTED_SUBTYPE
+                }
             else -> media3
         }
     }
+
+    /**
+     * Whether a refused stream may be tried once anyway (仍要尝试, M17.10): a
+     * decoder for its codec exists and Media3 only finds the stream past what
+     * that decoder declares (level, size or rate). Never Dolby Vision, which
+     * plays only through a Dolby Vision decoder, and never a stream with no
+     * decoder at all.
+     */
+    fun tryable(media3: Int, dolbyVision: Boolean): Boolean =
+        !dolbyVision && media3 == C.FORMAT_EXCEEDS_CAPABILITIES
 
     /** What [videoFormatSupport] means for the quality list in Dart. */
     fun supportName(support: Int, dolbyVision: Boolean, declared: Boolean): String = when {
