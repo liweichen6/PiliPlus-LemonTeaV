@@ -152,14 +152,12 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.10` | HUD Capabilities and 播放信息 | ⏳ Planned | `lib/tv/tv_hud_actions.dart`, `lib/tv/tv_player_hud.dart` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.11` | Tests and CI | ⏳ Planned | `test/tv_exo_player_test.dart`, `test/tv_player_hud_test.dart`, `.github/workflows/tv-checks.yml` |
 | **M17: ExoPlayer for HDR and Dolby Vision** | Epic M17.3 | `M17.12` | Device Pass, Soak and Docs; the Variant's Future | ⏳ Planned | `<physical-tv>`, `<vm-tv>`, `tool/tv_m17/`, `docs/tv/*` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.1 | `M18.1` | Baseline and What Feels Slow | ⏳ Planned | `<physical-tv>`, the current variant build, `tool/tv_m16/`, `tool/tv_m13/` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.1 | `M18.2` | Where a Frame's Time Goes, and the Bar (Discussion Gate) | ⏳ Planned | `<physical-tv>`, `docs/tv/PLAN.md` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.2 | `M18.3` | Transparent View: Spike (Go/No-Go) | ⏳ Planned | Uncommitted `-Pdev` build from the variant, `<physical-tv>` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.2 | `M18.4` | Transparent View: Build and Tests | ⏳ Planned (only after a go) | `TvVideoPlane.kt`, `MainActivity.kt`, `lib/tv/tv_video_plane.dart`, `test/tv_video_plane_test.dart`, on `variant/4k-passthrough` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.3 | `M18.5` | The Thread Ripper's Load | ⏳ Planned (only if `M18.1` shows a cost) | `lib/tv/tv_platform.dart`; `lib/services/thread_ripper/` only by the user's decision |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.3 | `M18.6` | Fewer UI Frames While a Video Plays | ⏳ Planned (only what `M18.1` found) | `lib/tv/*` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.3 | `M18.7` | mpv Start-Up, Seeking and Remaining Options | ⏳ Planned (only what `M18.1` found) | `lib/tv/tv_video_plane.dart`, `docs/tv/PLAYBACK_PARAMETERS.md` |
-| **M18: Video Plane Performance (PiliPlus TVP)** | Epic M18.4 | `M18.8` | Device Pass, Soak and Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*`, **Build PiliPlus TVP** |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.1 | `M18.1` | Baseline and What Feels Slow (on the M17 Build) | ⏳ Planned (retargeted to `main` 2026-11-15; after M17 lands) | `<physical-tv>`, the M17 build, `tool/tv_m17/`, `tool/tv_m13/` |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.1 | `M18.2` | Where the Time Goes, and the Bar (Discussion Gate) | ⏳ Planned | `<physical-tv>`, `docs/tv/PLAN.md` |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.2 | `M18.3` | Start-Up and Seeking on ExoPlayer | ⏳ Planned (only if `M18.2` says go) | `TvExoPlayer.kt`, `lib/tv/tv_exo_player.dart` |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.2 | `M18.4` | Fewer UI Frames While a Video Plays | ⏳ Planned (only what `M18.1` found) | `lib/tv/*` |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.2 | `M18.5` | The Thread Ripper's Load (the Proxy in Its Own Isolate) | ⏳ Planned (step 1 done in `M17.5a`; spike, then the user's go) | `lib/services/thread_ripper/` only by the user's decision |
+| **M18: Playback Performance on ExoPlayer** | Epic M18.3 | `M18.6` | Device Pass, Soak and Docs | ⏳ Planned | `<physical-tv>`, `docs/tv/*`, `main` |
 
 ---
 
@@ -2655,3 +2653,16 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **What changed in the build tasks**: `M17.7` starts with live on the TV, adds the live sources, the load control from the app's settings and the normalization processors; `M17.8` takes the transparent view, the adapter's own retry and failure screen, the FLAC guard and live behaviour; `M17.9` loses the setting and the stored-quality reset and gains the player rule for every TV page, the buffer TV defaults and the settings' descriptions; `M17.10` covers the live HUD; `M17.11` loses the "setting off" tests and gains the live, buffer and normalization tests; `M17.12` adds live rooms and normalization to the device pass. The milestone's last bar item is now "off TV, the app behaves as it does today".
 * **Open input** (owner: user): for `M17.7`'s first check, the TV on, its adb address in chat, and a live room or two that offers HEVC; the go-ahead before any live run above 1080p.
 * **Next**: `M17.7` on `feat/tv-m17-exoplayer` from `main`, adapting from the stash "M17.5 spike (final): …".
+
+### [2026-11-15] Milestone M18 (Planning): Retargeted to `main` on ExoPlayer; the Variant Frozen
+* **Status**: ✅ Done (planning only), by the user's decision after `M17.6` ("Yes, rewrite here"). M18 now works on `main` after M17 lands, and `variant/4k-passthrough` (PiliPlus TVP) is frozen. Nothing in M18 has started.
+* **Files Changed**: `[MODIFY] docs/tv/PLAN.md` (Phase 5 roadmap rows for M16 and M18, the ordering, M17's relation to M16 and `M17.12`, M18 rewritten), `docs/tv/4K_VARIANT.md` (a frozen note), `docs/tv/PROGRESS.md`. Markdown only.
+* **The user's question**: M18 was meant to optimize the variant, but ExoPlayer replaces mpv, so does the variant have reasons to stay, and should M18 optimize `main` instead?
+* **Why the variant is frozen**: it was separate because 4K on mpv's video plane rests on media_kit's internals, so an upstream change that still compiles could put 4K60 back on the GPU and shut `<physical-tv>` down. ExoPlayer doesn't rest on them. After M17, `main` plays 4K and 2K+ live on the plane, adds real HDR and Dolby Vision, and has the transparent view (10.3 ms UI p50 with heavy danmaku, against 18–24 ms under Hybrid Composition). The variant keeps only volume above 100 %, custom ffmpeg normalization, and a known-good 4K route. So it gets no new work, stays installed as the fallback through `M17.12`'s soak, and `M17.12` decides with the user whether it retires (proposed) or stays frozen.
+* **What changed in M18**:
+  * Kept, on ExoPlayer: the baseline and the user's list (`M18.1`), the trace and the bar (`M18.2`), fewer UI frames (`M18.4`, was `M18.6`), the thread ripper (`M18.5`, now a spike of the proxy in its own isolate, then the user's go; `M17.6` left 4K's 22.5 ms UI p50 to it), and the close (`M18.6`, was `M18.8`).
+  * New: start-up and seeking on ExoPlayer (`M18.3`), from `M17.4`'s and `M17.5a`'s times (first frame 4.4–5.7 s at a resume position at 1080p, 7.2–10.1 s at 4K with the ripper against 2.9 s direct; seeks 3–15 s).
+  * Dropped: the transparent view's spike and build (old `M18.3`–`M18.4`; `M17.8` builds it), Hybrid Composition and its hidden switch, and mpv's options and start-up (old `M18.7`), since no TV video plays on mpv after M17.
+  * The bar now aims at 4K: UI p50 under 16.7 ms at 4K 杜比视界 with heavy danmaku and the ripper on, with the rest against `M18.1`'s baseline. The user confirms it in `M18.2`.
+  * Size: about 3.5–4 days for measuring and the close, plus 4–8 if the candidates go ahead.
+* **Next**: M17's build, `M17.7`. M18 starts after M17 lands; `M18.1` can use the build of `M17.12`'s soak, and what the user notices during the soak is its list.

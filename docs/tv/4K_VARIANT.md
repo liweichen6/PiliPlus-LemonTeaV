@@ -2,6 +2,8 @@
 
 `variant/4k-passthrough` is `main` plus M16: 4K on the TV's video plane (`4K 视频直通`). It's a separate app, built by hand, with no releases and no update check.
 
+> **Frozen** (the user, 2026-11-15): no new work goes here, and M18 now targets `main`. Once M17 lands, `main` plays 4K and 2K+ live on the video plane through ExoPlayer, with real HDR and Dolby Vision, and doesn't rest on media_kit's internals. This app stays installed as the 4K fallback through `M17.12`'s soak, and `M17.12` decides with the user whether it retires. See M17 in [`PLAN.md`](./PLAN.md).
+
 **Why it's separate** (the user's decision, 2026-10-31): `main` merges upstream and publishes automatically, and CI has no TV. Upstream changes the code this path relies on often: `media_kit_video` moved 15 times in six months, and `androidAttachSurfaceAfterVideoParameters` changed on 2026-10-10. On this path, a change that still compiles could put 4K60 back on the GPU, which shuts `<physical-tv>` down. So this branch only moves when someone has checked it on a TV.
 
 ## What Differs From `main`
