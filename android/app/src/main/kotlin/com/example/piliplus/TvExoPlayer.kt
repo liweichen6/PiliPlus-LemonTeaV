@@ -441,9 +441,9 @@ class TvExoPlayer private constructor(
         override fun onPlaybackStateChanged(state: Int) {
             // How far behind the end of its window a live room plays (M17.12).
             // Bilibili's playlists carry no program date-time, so Media3's
-            // own live offset is unset.
+            // own live offset is unset. FLV has no window.
             val p = player
-            if (live && state == Player.STATE_READY && p != null) {
+            if (live && state == Player.STATE_READY && p != null && p.duration != C.TIME_UNSET) {
                 Log.i(TAG, "live behind=${p.duration - p.currentPosition}ms window=${p.duration}ms")
             }
             sendState()
