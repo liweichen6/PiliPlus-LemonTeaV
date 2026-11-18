@@ -602,30 +602,44 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
 
   /// `edl://!no_chapters;%<len>%<video>;!new_stream;!no_chapters;%<len>%<audio>`
   /// back into its two URLs. The lengths are in bytes for files and in
-  /// characters for URLs, which are ASCII, so bytes serve for both. Anything
-  /// else is a single URL (a live room, 听视频, a video with no audio).
+  /// characters for URLs, which are ASCII, so bytes serve for both. The
+  /// audio is the first part after `!new_stream`. Anything else is a single
+  /// URL (a live room, 听视频, a video with no audio). An old multi-part
+  /// video (`durl`, parts in sequence with no `!new_stream`) plays its first
+  /// part only (M17.11).
   @visibleForTesting
   static (String, String?) splitEdl(String uri) {
     const prefix = 'edl://';
     if (!uri.startsWith(prefix)) return (uri, null);
     final bytes = utf8.encode(uri.substring(prefix.length));
-    final parts = <String>[];
+    final newStream = utf8.encode('!new_stream');
+    String? video, audio;
+    var streams = 0;
     var i = 0;
     while (i < bytes.length) {
       if (bytes[i] == 0x25) {
         final end = bytes.indexOf(0x25, i + 1);
         final length = int.parse(ascii.decode(bytes.sublist(i + 1, end)));
-        parts.add(utf8.decode(bytes.sublist(end + 1, end + 1 + length)));
+        final part = utf8.decode(bytes.sublist(end + 1, end + 1 + length));
+        if (streams == 0) {
+          video ??= part;
+        } else if (streams == 1) {
+          audio ??= part;
+        }
         i = end + 1 + length;
       } else {
         final end = bytes.indexOf(0x3B, i);
-        i = end == -1 ? bytes.length : end + 1;
+        final stop = end == -1 ? bytes.length : end;
+        if (listEquals(bytes.sublist(i, stop), newStream)) streams++;
+        i = stop + 1;
         continue;
       }
-      if (i < bytes.length && bytes[i] == 0x3B) i++;
+      // Past the part's own options (`,length=…`) to the next entry.
+      final end = bytes.indexOf(0x3B, i);
+      i = end == -1 ? bytes.length : end + 1;
     }
-    if (parts.isEmpty) return (uri, null);
-    return (parts.first, parts.length > 1 ? parts[1] : null);
+    if (video == null) return (uri, null);
+    return (video, audio);
   }
 
   /// Plays; after a failure, retries on ExoPlayer (Select on the failure
@@ -839,7 +853,9 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
           client.close();
         }
       }
-      final file = File(id.startsWith('file://') ? Uri.parse(id).path : id);
+      final file = File(
+        id.startsWith('file://') ? Uri.parse(id).toFilePath() : id,
+      );
       return file.existsSync() ? await file.readAsString() : null;
     } catch (e) {
       _log('subtitle failed: $e');

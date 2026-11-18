@@ -971,7 +971,7 @@ void main() {
       );
 
       test('解码能力 in words', () {
-        final caps = TvExoCapabilities.fromMap({
+        final caps = TvExoCapabilities.fromMap(const {
           'video': [
             {
               'name': 'c2.mtk.hevc.decoder',

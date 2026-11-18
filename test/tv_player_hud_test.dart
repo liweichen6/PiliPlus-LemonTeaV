@@ -2369,6 +2369,118 @@ void _recordedPaths() {
     ]);
   });
 
+  testWidgets('player HUD on ExoPlayer (M17.11): the bottom row\'s 画质 '
+      'opens its list on the playing quality, below 4K (AVC only) and 8K '
+      '(greyed, with why), '
+      'and the ⋮ menu has 音质, 解码格式 and 音量均衡 but not 播放器音量', (
+    tester,
+  ) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    scene.pl.isFullScreen.value = false;
+    final play_url.PlayUrlModel data = _exoData();
+    scene.vdc
+      ..data = data
+      ..currentVideoQa.value = VideoQuality.high108060
+      ..firstVideo = data.dash!.video!.firstWhere((v) => v.id == 116)
+      ..currentAudioQa = AudioQuality.k192;
+    scene.pl.cacheVideoQa = VideoQuality.high108060.code;
+    final TvExoPlayer exo = await _exoOn(scene);
+    await scene.pump(tester);
+    useTvScreen(tester);
+    await tester.pumpAndSettle();
+    await walkPath(tester, '全屏', [
+      (menuKey, '00:30'),
+      (dpadDown, '上集'),
+      (dpadRight, '下集'),
+      (dpadRight, '选集 (3)'),
+      (dpadRight, '画质: 1080P60'),
+      (dpadSelect, '1080P 60帧'),
+      (dpadUp, '4K 超高清（仅 AVC）'),
+      (dpadUp, '8K 超高清（解码器最高 4096×2304）'),
+      (dpadDown, '4K 超高清（仅 AVC）'),
+      (dpadDown, '1080P 60帧'),
+      (dpadDown, '1080P 高清'),
+      (dpadDown, '取消'),
+      (dpadBack, '全屏'),
+      (menuKey, '00:30'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadRight, '更多'),
+      (dpadSelect, '画质: 1080P60'),
+      (dpadDown, '倍速: 1.0x'),
+      (dpadDown, '画面: 自动'),
+      (dpadDown, '上集'),
+      (dpadDown, '下集'),
+      (dpadDown, '选集 (3)'),
+      (dpadDown, '播放顺序: 播完暂停'),
+      (dpadDown, '弹幕: 开'),
+      (dpadDown, '弹幕设置'),
+      (dpadDown, '点赞 (长按三连)'),
+      (dpadDown, '投币'),
+      (dpadDown, '收藏'),
+      (dpadDown, '稍后再看'),
+      (dpadDown, '音质: 192K'),
+      (dpadDown, '解码格式: AVC'),
+      (dpadDown, '音量均衡: 关闭'),
+      (dpadDown, '定时关闭'),
+      (dpadDown, '重载视频'),
+      (dpadDown, '播放信息'),
+      (dpadDown, '完整设置'),
+      (dpadDown, '编辑按钮'),
+      (dpadUp, '完整设置'),
+      (dpadBack, '更多'),
+      (dpadDown, '00:30'),
+      (dpadBack, '全屏'),
+    ]);
+    await exo.dispose();
+  });
+
+  testWidgets('live room HUD on ExoPlayer (M17.11): the same live entries, '
+      '切换路线 opens on the playing route under its heading, and the ⋮ menu '
+      'has no 播放器音量 or 音量均衡', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _liveScene(fullScreen: false)..onRefresh = () {};
+    await scene.pump(tester);
+    useTvScreen(tester);
+    final TvExoPlayer exo = await TvExoPlayer.create(isLive: () => true);
+    scene.pl.exoPlayer = exo;
+    await tester.pumpAndSettle();
+    await walkPath(tester, '全屏', [
+      (dpadRight, '暂停'),
+      (dpadLeft, '全屏'),
+      (menuKey, '刷新'),
+      (dpadRight, '画质: 原画'),
+      (dpadRight, '切换路线'),
+      (dpadSelect, 'AVC · 原画 · cn-a.bilivideo.com'),
+      (dpadDown, 'AVC · 原画 · cn-b.bilivideo.com'),
+      (dpadDown, 'HEVC (fMP4) · 原画 · cn-c.bilivideo.com'),
+      (dpadBack, '全屏'),
+      (menuKey, '刷新'),
+      (dpadRight, '画质: 原画'),
+      (dpadRight, '切换路线'),
+      (dpadRight, '画面: 自动'),
+      (dpadUp, '弹幕: 开'),
+      (dpadRight, '弹幕设置'),
+      (dpadRight, '更多'),
+      (dpadSelect, '画质: 原画'),
+      (dpadDown, '切换路线'),
+      (dpadDown, '画面: 自动'),
+      (dpadDown, '弹幕: 开'),
+      (dpadDown, '弹幕设置'),
+      (dpadDown, '发弹幕'),
+      (dpadDown, '屏蔽词'),
+      (dpadDown, '定时关闭'),
+      (dpadDown, '刷新'),
+      (dpadDown, '播放信息'),
+      (dpadDown, '编辑按钮'),
+      (dpadBack, '更多'),
+      (dpadDown, '刷新|画质: 原画|切换路线|画面: 自动'),
+      (dpadBack, '全屏'),
+    ]);
+    await exo.dispose();
+  });
+
   testWidgets('player HUD: a custom layout, with labels off and 点赞 and '
       '收藏 pinned top right', (tester) async {
     _saveGroups(
@@ -5274,32 +5386,31 @@ void _exoTests() {
     tester,
   ) async {
     final _ActionScene scene = _liveScene();
-    final FakeLiveRoomController live = _liveOf(scene);
     // Many hosts in the first section, so the list scrolls.
-    live.streams = [
-      live_stream.Stream(
-        protocolName: 'http_stream',
-        format: [
-          live_format.Format(
-            formatName: 'flv',
-            codec: [
-              CodecItem(
-                codecName: 'avc',
-                currentQn: LiveQuality.origin,
-                acceptQn: const [LiveQuality.origin],
-                baseUrl: '/live',
-                urlInfo: [
-                  for (int i = 0; i < 12; i++)
-                    UrlInfo(host: 'https://cn-$i.bilivideo.com', extra: ''),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-      ..._liveStreams().skip(1),
-    ];
-    live
+    _liveOf(scene)
+      ..streams = [
+        live_stream.Stream(
+          protocolName: 'http_stream',
+          format: [
+            live_format.Format(
+              formatName: 'flv',
+              codec: [
+                CodecItem(
+                  codecName: 'avc',
+                  currentQn: LiveQuality.origin,
+                  acceptQn: const [LiveQuality.origin],
+                  baseUrl: '/live',
+                  urlInfo: [
+                    for (int i = 0; i < 12; i++)
+                      UrlInfo(host: 'https://cn-$i.bilivideo.com', extra: ''),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        ..._liveStreams().skip(1),
+      ]
       ..streamIndex = 1
       ..codecIndex = 0
       ..liveUrlIndex = 0;
