@@ -254,13 +254,9 @@ abstract final class TvExoQualities {
     ];
     final report = TvExoQualityReport._(streams, names, preferCodecs);
     _reports[data] = report;
-    if (drop.isEmpty || keep.isEmpty) return const [];
-    videos
-      ..clear()
-      ..addAll(keep);
-    final kept = {for (final v in keep) v.id};
-    final gone = {for (final v in drop) v.id}.difference(kept);
-    data.acceptQuality?.removeWhere(gone.contains);
+    if (keep.isEmpty) return const [];
+    // Suffixes even when nothing is dropped: 杜比视界 on its HLG base layer
+    // (M17.11 review).
     for (final f in data.supportFormats ?? const <FormatItem>[]) {
       final q = f.quality;
       if (q == null) continue;
@@ -270,6 +266,13 @@ abstract final class TvExoQualities {
       final suffix = report.suffixOf(q);
       if (suffix.isNotEmpty) f.newDesc = '${f.newDesc ?? q}$suffix';
     }
+    if (drop.isEmpty) return const [];
+    videos
+      ..clear()
+      ..addAll(keep);
+    final kept = {for (final v in keep) v.id};
+    final gone = {for (final v in drop) v.id}.difference(kept);
+    data.acceptQuality?.removeWhere(gone.contains);
     return [for (final v in drop) '${v.id} ${v.codecs}'];
   }
 

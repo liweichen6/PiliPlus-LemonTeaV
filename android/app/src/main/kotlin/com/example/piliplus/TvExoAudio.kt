@@ -43,11 +43,16 @@ abstract class TvExoNormalizer : BaseAudioProcessor() {
     /** Called when the settings change or the stream is flushed. */
     protected open fun resetState(settings: Any?) {}
 
+    /**
+     * 16-bit and float PCM only. Anything else (24- or 32-bit PCM, say) goes
+     * past this processor untouched, unbalanced: throwing here would fail the
+     * whole audio sink, and the video with it (M17.11 review).
+     */
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
-            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+            return AudioProcessor.AudioFormat.NOT_SET
         }
         return inputAudioFormat
     }

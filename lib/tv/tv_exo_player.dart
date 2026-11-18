@@ -75,6 +75,17 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     if (log) debugPrint('[TvExoPlayer] $text');
   }
 
+  /// What the HUD of the page on top offers: 降低画质 for the failure screen
+  /// and a fresh play link. Pages stack (a live room over a video page), so
+  /// the newest HUD's hooks apply, and the one below takes over when it goes.
+  static final List<TvExoHudHooks> _hooks = [];
+
+  static TvExoHudHooks? get hooks => _hooks.lastOrNull;
+
+  static void addHooks(TvExoHudHooks h) => _hooks.add(h);
+
+  static void removeHooks(TvExoHudHooks h) => _hooks.remove(h);
+
   static String _short(String? url) {
     if (url == null) return 'null';
     final q = url.indexOf('?');
@@ -164,6 +175,16 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
 
   int _attempts = 0;
   Timer? _retryTimer;
+
+  /// Fresh play links fetched since the stream last played, and whether one
+  /// is being fetched. A video's signed link expires (after a long pause,
+  /// say), and through the thread ripper that reads as a 502 from its
+  /// loopback proxy, so retrying the same link can't help (M17.11 review).
+  int _refetches = 0;
+  bool _refetching = false;
+
+  /// The error that last stopped playback, for Select on the failure screen.
+  Map? _lastError;
 
   /// This open is a 仍要尝试: no automatic retry.
   bool _tryingAnyway = false;
@@ -270,6 +291,7 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     if (_exoState == _ready) {
       // Playing again: the next failure gets the whole budget.
       _attempts = 0;
+      _refetches = 0;
     } else if (_exoState == _ended && _live && failed.value == null) {
       // A live stream that ends reconnects, as on mpv.
       _retryOrFail(
@@ -308,7 +330,7 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   /// player reads as buffering, so upstream's spinner shows and its own retry
   /// can run. Once failed, neither, so no spinner draws over the screen.
   void _emitState() {
-    final retrying = _retryTimer != null;
+    final retrying = _retryTimer != null || _refetching;
     final ok = failed.value == null;
     final active = _exoState == _buffering || _exoState == _ready;
     final playing = ok && _playWhenReady && (active || retrying);
@@ -337,11 +359,58 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
     _log(
       'error ${args['kind']} ${args['code'] ?? ''} status=${args['status']}',
     );
-    if (failed.value != null) return;
+    if (failed.value != null || _refetching) return;
+    _lastError = args;
     if (args['recoverable'] == true) {
+      // A direct 403 is a link the CDN refuses: the same link won't do.
+      if (args['status'] == 403 && _canRefetch) {
+        unawaited(_refetch(args));
+        return;
+      }
       _retryOrFail(args);
     } else {
       _fail(failureText(args, live: _live));
+    }
+  }
+
+  /// Whether a fresh play link may be fetched now: a video (a live room
+  /// reconnects), not a 仍要尝试, once until the stream plays again, and only
+  /// where the page on top can fetch one.
+  bool get _canRefetch =>
+      !_live && !_tryingAnyway && _refetches == 0 && hooks?.refetch() != null;
+
+  /// Fetches a fresh play link through the page (重载视频's path, which
+  /// reopens at the position). If nothing opens from it, the failure screen.
+  Future<void> _refetch(Map args) async {
+    final fetch = hooks?.refetch();
+    if (fetch == null) {
+      _fail(failureText(args, live: _live, exhausted: true));
+      return;
+    }
+    _refetches++;
+    _cancelRetry();
+    _refetching = true;
+    failed.value = null;
+    // The failing open's events are dropped from here on.
+    _gen = ++_gens;
+    final gen = _gen;
+    unawaited(_invoke('stop'));
+    _log(
+      'refetch the play link after ${args['kind']} ${args['code'] ?? ''} '
+      'status=${args['status']} at ${state.position.inMilliseconds} ms',
+    );
+    _emitState();
+    try {
+      await fetch();
+    } catch (e) {
+      _log('refetch failed: $e');
+    }
+    _refetching = false;
+    if (disposed) return;
+    if (_gen == gen && failed.value == null) {
+      _fail(failureText(args, live: _live, exhausted: true));
+    } else {
+      _emitState();
     }
   }
 
@@ -354,6 +423,11 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   void _retryOrFail(Map args, {Duration? delay}) {
     final budget = _live ? liveAttempts : videoAttempts;
     if (_attempts >= budget || _tryingAnyway) {
+      // A video's link may have expired: one fresh link before giving up.
+      if (_canRefetch) {
+        unawaited(_refetch(args));
+        return;
+      }
       _fail(failureText(args, live: _live, exhausted: true));
       return;
     }
@@ -647,9 +721,15 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
   @override
   Future<void> play({bool synchronized = true}) async {
     if (failed.value != null || _retryTimer != null) {
+      final error = failed.value != null ? _lastError : null;
       _attempts = 0;
       _cancelRetry();
       if (current.isEmpty) return;
+      // A network failure: try a fresh link, which an expired one needs.
+      if (error != null && error['recoverable'] == true) {
+        _refetches = 0;
+        if (_canRefetch) return _refetch(error);
+      }
       return _openMedia(current.last, play: true, at: state.position);
     }
     // Reported at once, as mpv's `pause` property changes at once; the
@@ -1316,4 +1396,17 @@ class TvExoNormalization {
           k.toLowerCase(): double.parse(v),
     };
   }
+}
+
+/// What a page's TV HUD offers the player (`TvExoPlayer.addHooks`).
+class TvExoHudHooks {
+  const TvExoHudHooks({required this.lowerQuality, required this.refetch});
+
+  /// 降低画质 on the failure screen: the next quality that can play, or
+  /// `null`.
+  final ({String label, VoidCallback run})? Function() lowerQuality;
+
+  /// How to fetch a fresh play link and reopen at the position, or `null`
+  /// where the page can't (a live room, which reconnects; a local file).
+  final Future<void> Function()? Function() refetch;
 }

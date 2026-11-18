@@ -618,6 +618,24 @@ void main() {
         expect(_desc(model, 126), '杜比视界${TvExoQualities.hlgSuffix}');
       });
 
+      test('the HLG label shows when nothing is taken out too '
+          '(M17.11 review)', () {
+        final model = _model();
+        final removed = TvExoQualities.apply(model, const [
+          'baseLayer',
+          'baseLayer',
+          'yes',
+          'yes',
+          'yes',
+          'yes',
+          'yes',
+        ], _allHdr);
+        expect(removed, isEmpty);
+        expect(model.dash!.video, hasLength(7));
+        expect(_desc(model, 126), '杜比视界${TvExoQualities.hlgSuffix}');
+        expect(_desc(model, 120), '4K 超清');
+      });
+
       test('HDR needs a display that reports it', () {
         final model = _model();
         TvExoQualities.apply(model, const [

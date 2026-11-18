@@ -13,11 +13,14 @@ import 'dart:io';
 
 import 'package:PiliPlus/models/common/audio_normalization.dart';
 import 'package:PiliPlus/tv/tv_exo_player.dart';
+import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
 import 'package:PiliPlus/tv/tv_exo_subtitles.dart';
+import 'package:PiliPlus/tv/tv_exo_view.dart';
 import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:media_kit/media_kit.dart';
@@ -768,6 +771,235 @@ void main() {
       expect(bridge.methods.last, 'stop');
       await pumpEventQueue();
       expect(errors.single, startsWith('Cannot open'));
+      await player.dispose();
+    });
+  });
+
+  group('a fresh play link (M17.11 review)', () {
+    /// Hooks as a video page's HUD gives them; [fetch] stands in for
+    /// 重载视频's re-query, which opens the new link.
+    TvExoHudHooks hooks(Future<void> Function()? fetch) {
+      final h = TvExoHudHooks(lowerQuality: () => null, refetch: () => fetch);
+      TvExoPlayer.addHooks(h);
+      addTearDown(() => TvExoPlayer.removeHooks(h));
+      return h;
+    }
+
+    const fresh = Media('https://upos-sz-mirrorcos.bilivideo.com/v.m4s?e=2');
+
+    testWidgets('after a video\'s retries, one fresh link instead of the '
+        'failure screen', (tester) async {
+      final bridge = _Bridge();
+      final player = await TvExoPlayer.create(isLive: () => false);
+      var fetched = 0;
+      hooks(() async {
+        fetched++;
+        await player.open(fresh);
+      });
+      await player.open(const Media(_videoUrl));
+      for (var i = 0; i < TvExoPlayer.videoAttempts; i++) {
+        await bridge.error('http', recoverable: true, status: 502);
+        await tester.pump(const Duration(seconds: 10));
+      }
+      // Through the ripper an expired link is the proxy's 502.
+      await bridge.error('http', recoverable: true, status: 502);
+      await tester.pump();
+      expect(fetched, 1);
+      expect(player.failed.value, isNull);
+      expect(bridge.lastOpen['video'], fresh.uri);
+      expect(player.state.buffering, isTrue);
+
+      // The fresh link fails too: no second fetch before it has played.
+      for (var i = 0; i < TvExoPlayer.videoAttempts; i++) {
+        await bridge.error('http', recoverable: true, status: 502);
+        await tester.pump(const Duration(seconds: 10));
+      }
+      await bridge.error('http', recoverable: true, status: 502);
+      await tester.pump();
+      expect(fetched, 1);
+      expect(player.failed.value, contains('已重试 3 次'));
+      await player.dispose();
+    });
+
+    testWidgets('a direct 403 fetches a fresh link at once', (tester) async {
+      final bridge = _Bridge();
+      final player = await TvExoPlayer.create(isLive: () => false);
+      var fetched = 0;
+      hooks(() async {
+        fetched++;
+        await player.open(fresh);
+      });
+      await player.open(const Media(_videoUrl));
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump();
+      expect(fetched, 1);
+      expect(bridge.opens, hasLength(2));
+      expect(bridge.lastOpen['video'], fresh.uri);
+      // It played: the next expiry may fetch again.
+      await bridge.state(_ready);
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump();
+      expect(fetched, 2);
+      await player.dispose();
+    });
+
+    testWidgets('a fetch that opens nothing ends on the failure screen', (
+      tester,
+    ) async {
+      final bridge = _Bridge();
+      final player = await TvExoPlayer.create(isLive: () => false);
+      hooks(() async => throw Exception('no network'));
+      await player.open(const Media(_videoUrl));
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump();
+      expect(player.failed.value, '视频链接打开失败（HTTP 403），已重试 3 次');
+      expect(player.state.buffering, isFalse);
+      await player.dispose();
+    });
+
+    testWidgets('Select after a network failure fetches a fresh link; after '
+        'a decoder failure it reopens', (tester) async {
+      final bridge = _Bridge();
+      final player = await TvExoPlayer.create(isLive: () => false);
+      var fetched = 0;
+      hooks(() async {
+        fetched++;
+        await player.open(fresh);
+      });
+      await player.open(const Media(_videoUrl));
+      await bridge.state(_ready);
+      await bridge.error('decoder', code: 'DECODING_FAILED');
+      await player.play();
+      expect(fetched, 0);
+      expect(bridge.lastOpen['video'], _videoUrl);
+
+      // A fetch already spent on this open, then the failure screen.
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump();
+      expect(fetched, 1);
+      for (var i = 0; i <= TvExoPlayer.videoAttempts; i++) {
+        await bridge.error('network', recoverable: true);
+        await tester.pump(const Duration(seconds: 10));
+      }
+      expect(player.failed.value, isNotNull);
+      await player.play();
+      await tester.pump();
+      expect(fetched, 2);
+      expect(player.failed.value, isNull);
+      await player.dispose();
+    });
+
+    testWidgets('no fetch in a live room, for a 仍要尝试, or without a page '
+        'that can fetch', (tester) async {
+      final bridge = _Bridge();
+      var live = true;
+      final player = await TvExoPlayer.create(isLive: () => live);
+      var fetched = 0;
+      hooks(() async => fetched++);
+      await player.open(const Media('https://live/room.m3u8'));
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump(const Duration(seconds: 4));
+      expect(fetched, 0);
+
+      live = false;
+      TvExoPlayer.tryAnywayNext = true;
+      await player.open(const Media(_videoUrl));
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump();
+      expect(fetched, 0);
+      expect(player.failed.value, startsWith('仍要尝试失败'));
+
+      hooks(null);
+      await player.open(const Media('https://cdn/next.m4s'));
+      await bridge.error('http', recoverable: true, status: 403);
+      await tester.pump(const Duration(seconds: 4));
+      expect(fetched, 0);
+      expect(bridge.opens.last['video'], 'https://cdn/next.m4s');
+      await player.dispose();
+    });
+
+    test('the newest page\'s hooks apply, and the one below takes over', () {
+      ({String label, VoidCallback run}) option(String label) =>
+          (label: label, run: () {});
+      final video = TvExoHudHooks(
+        lowerQuality: () => option('1080P'),
+        refetch: () => null,
+      );
+      final live = TvExoHudHooks(
+        lowerQuality: () => option('高清'),
+        refetch: () => null,
+      );
+      TvExoPlayer.addHooks(video);
+      TvExoPlayer.addHooks(live);
+      expect(TvExoView.lowerQuality?.call()?.label, '高清');
+      TvExoPlayer.removeHooks(live);
+      expect(TvExoView.lowerQuality?.call()?.label, '1080P');
+      TvExoPlayer.removeHooks(video);
+      expect(TvExoView.lowerQuality, isNull);
+    });
+  });
+
+  group('the video layer (M17.11 review)', () {
+    testWidgets('a live room over a video page places the layer, and Back '
+        'puts it back at the video page\'s box', (tester) async {
+      final rects = <Object?>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_channel, (call) async {
+            if (call.method == 'layerRect') rects.add(call.arguments);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(_channel, null),
+      );
+      final player = await TvExoPlayer.create(isLive: () => false);
+      final liveOn = ValueNotifier(false);
+      addTearDown(liveOn.dispose);
+      Widget box(double w) => SizedBox(
+        width: w,
+        height: w * 9 / 16,
+        child: TvExoView(
+          player: player,
+          videoFit: VideoFitType.contain,
+          alignment: Alignment.center,
+        ),
+      );
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: liveOn,
+            builder: (_, on, _) => Stack(
+              children: [
+                // The video page stays mounted under the live room.
+                Positioned(left: 0, top: 0, child: box(1166)),
+                if (on) Positioned(left: 0, top: 0, child: box(1920)),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      const video = {'l': 0, 't': 0, 'w': 1166, 'h': 656};
+      const room = {'l': 0, 't': 0, 'w': 1920, 'h': 1080};
+      expect(rects.last, video);
+      liveOn.value = true;
+      await tester.pump();
+      await tester.pump();
+      expect(rects.last, room);
+      // The video page's box, off screen, doesn't move the layer back.
+      await tester.pump(const Duration(seconds: 2));
+      expect(rects.last, room);
+      liveOn.value = false;
+      await tester.pump();
+      await tester.pump();
+      expect(rects.last, video);
+      await tester.pumpWidget(const SizedBox());
+      expect(rects.last, isNull);
       await player.dispose();
     });
   });

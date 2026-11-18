@@ -6,6 +6,7 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -85,9 +86,19 @@ class TvExoAudioTest {
         }
     }
 
-    @Test(expected = AudioProcessor.UnhandledAudioFormatException::class)
-    fun onlyDecodedPcmIsTaken() {
-        TvExoLoudnessProcessor().configure(AudioProcessor.AudioFormat(rate, 6, C.ENCODING_E_AC3_JOC))
+    @Test
+    fun otherAudioPassesThroughInsteadOfFailingTheSink() {
+        for (encoding in listOf(C.ENCODING_PCM_24BIT, C.ENCODING_PCM_32BIT, C.ENCODING_E_AC3_JOC)) {
+            val processor = TvExoLoudnessProcessor().apply {
+                current = TvExoLoudnessProcessor.Settings(gainDb = 6.0, ceilingDb = -1.0)
+            }
+            assertEquals(
+                "encoding $encoding",
+                AudioProcessor.AudioFormat.NOT_SET,
+                processor.configure(AudioProcessor.AudioFormat(rate, 2, encoding)),
+            )
+            assertFalse(processor.isActive)
+        }
     }
 
     @Test

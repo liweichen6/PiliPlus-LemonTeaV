@@ -91,6 +91,9 @@ extension _TvHudExo on _TvHudActionTable {
   }) {
     final List<TvExoStreamReport> refused =
         report?.refusedOf(q, ctr.preferCodecs) ?? const [];
+    // A 仍要尝试 puts a refused stream back into the list for its one try;
+    // the row stays greyed (M17.11 review).
+    final bool playable = available && !(report?.refused(q) ?? false);
     // One detail line per codec that can't play.
     final String? detail = refused.isEmpty
         ? null
@@ -99,13 +102,13 @@ extension _TvHudExo on _TvHudActionTable {
       title: f.newDesc ?? VideoQuality.fromCode(q).desc,
       subtitle: detail,
       selected: current,
-      dimmed: !available,
+      dimmed: !playable,
       onSelect: () {
         if (current) {
           Navigator.of(dialogContext).pop();
           return;
         }
-        if (available) {
+        if (playable) {
           Navigator.of(dialogContext).pop();
           _pickVideoQuality(ctr, q);
           return;
@@ -184,16 +187,33 @@ extension _TvHudExo on _TvHudActionTable {
 
   // ---- 解码格式 ----
 
-  /// The codec being decoded, or the one asked for before the first frame.
-  String _decodingName(VideoDetailController ctr) {
-    final String? codecs = _exo?.facts.videoCodecs ?? ctr.firstVideo.codecs;
-    return TvExoCodec.name(codecs);
+  /// Upstream's `firstVideo`, or `null` while the page's first play link
+  /// is still being read (it's `late`, M17.11 review).
+  static VideoItem? _firstVideoOf(VideoDetailController ctr) {
+    try {
+      return ctr.firstVideo;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The codec being decoded, or the one asked for before the first frame;
+  /// `null` before either is known.
+  String? _decodingName(VideoDetailController ctr) {
+    final String? codecs =
+        _exo?.facts.videoCodecs ?? _firstVideoOf(ctr)?.codecs;
+    return codecs == null ? null : TvExoCodec.name(codecs);
   }
 
   /// 解码格式 on ExoPlayer: every codec the server offers for the current
   /// quality, a greyed one with why, and the decoder each plays on.
   Future<void> _showExoDecodeDialog(VideoDetailController ctr) async {
-    final int quality = ctr.firstVideo.quality.code;
+    final VideoItem? first = _firstVideoOf(ctr);
+    if (first == null) {
+      SmartDialog.showToast('视频加载中');
+      return;
+    }
+    final int quality = first.quality.code;
     final TvExoQualityReport? report = TvExoQualities.reportOf(ctr.data);
     final List<TvExoStreamReport> streams = report?.of(quality) ?? const [];
     final List<({VideoItem video, TvExoStreamReport? report})> rows =
@@ -207,7 +227,7 @@ extension _TvHudExo on _TvHudActionTable {
       SmartDialog.showToast('当前视频不支持选择解码格式');
       return;
     }
-    final String? playing = ctr.firstVideo.codecs;
+    final String? playing = first.codecs;
     await _showTvDialog((dialogContext) {
       return _TvOptionListDialog(
         title: '选择解码格式',
@@ -430,6 +450,18 @@ extension _TvHudExo on _TvHudActionTable {
     }
   }
 
+  // ---- A fresh play link (M17.11 review) ----
+
+  /// 重载视频's path for the player: a fresh play link for this video,
+  /// reopened at the position. `null` in a live room, which the player
+  /// reconnects itself, and for a local file.
+  Future<void> Function()? _refetchLink() {
+    if (!_isVideo) return null;
+    final VideoDetailController? ctr = _videoDetailCtr;
+    if (ctr == null || ctr.isFileSource) return null;
+    return () => ctr.queryVideoUrl(fromReset: true);
+  }
+
   // ---- 降低画质 on the failure screen (M17.10, item 6) ----
 
   /// The next quality below the current one that can play, and how to play
@@ -442,15 +474,16 @@ extension _TvHudExo on _TvHudActionTable {
       final int? current = ctr?.currentVideoQa.value?.code;
       final List<VideoItem>? videos = ctr?.data.dash?.video;
       if (ctr == null || current == null || videos == null) return null;
+      final TvExoQualityReport? report = TvExoQualities.reportOf(ctr.data);
       final List<int> lower =
-          videos.availableVideoQualities.where((q) => q < current).toList()
+          videos.availableVideoQualities
+              .where((q) => q < current && !(report?.refused(q) ?? false))
+              .toList()
             ..sort((a, b) => b.compareTo(a));
       if (lower.isEmpty) return null;
       final int q = lower.first;
       return (
-        label:
-            TvExoQualities.reportOf(ctr.data)?.nameOf(q) ??
-            VideoQuality.fromCode(q).desc,
+        label: report?.nameOf(q) ?? VideoQuality.fromCode(q).desc,
         run: () => _pickVideoQuality(ctr, q, once: true),
       );
     }

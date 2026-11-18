@@ -1350,7 +1350,10 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
     return _single(
       TvHudActionId.decodeFormat,
       icon: Icons.av_timer_outlined,
-      label: _onExo ? '解码格式: ${_decodingName(ctr)}' : '解码格式',
+      label: switch (_onExo ? _decodingName(ctr) : null) {
+        final String name => '解码格式: $name',
+        null => '解码格式',
+      },
       onPressed: _onExo
           ? () => _showExoDecodeDialog(ctr)
           : () => _openUpstreamPanel(panels.showSetDecodeFormats),

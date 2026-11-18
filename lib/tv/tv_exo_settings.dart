@@ -104,7 +104,7 @@ abstract final class TvExoSettings {
   /// is stored is the filter typed after it.
   static const String customRow = '3';
 
-  /// The four options, stored value and title, in the dialog's order.
+  /// The five options, stored value and title, in the dialog's order.
   static const List<(String, String)> normalizationOptions = [
     (off, '关闭'),
     (TvExoNormalization.standard, '标准 (-14 LUFS)'),
@@ -216,35 +216,59 @@ abstract final class TvExoSettings {
   }
 
   /// 自定义's text box: a filter string, starting from [initial].
-  static Future<String?> customDialog(BuildContext context, String initial) {
-    final controller = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('自定义'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 16,
-          children: [
-            const Text(
-              '例如 loudnorm=I=-18:TP=-1 或 dynaudnorm=f=250:g=5:p=0.5\n'
-              '此播放器只读取 loudnorm 的 I、TP 和 dynaudnorm 的 f、g、r、p、m',
-            ),
-            TextField(controller: controller),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
+  static Future<String?> customDialog(BuildContext context, String initial) =>
+      showDialog<String>(
+        context: context,
+        builder: (context) => _CustomFilterDialog(initial: initial),
+      );
+}
+
+/// 自定义's dialog. It owns its text controller, so the controller outlives
+/// the dialog's closing animation (M17.11 review).
+class _CustomFilterDialog extends StatefulWidget {
+  const _CustomFilterDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_CustomFilterDialog> createState() => _CustomFilterDialogState();
+}
+
+class _CustomFilterDialogState extends State<_CustomFilterDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('自定义'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 16,
+      children: [
+        const Text(
+          '例如 loudnorm=I=-18:TP=-1 或 dynaudnorm=f=250:g=5:p=0.5\n'
+          '此播放器只读取 loudnorm 的 I、TP 和 dynaudnorm 的 f、g、r、p、m',
+        ),
+        TextField(controller: _controller),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('取消'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+        child: const Text('确定'),
+      ),
+    ],
+  );
 }

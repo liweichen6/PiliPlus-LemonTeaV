@@ -5211,6 +5211,45 @@ void _exoTests() {
     for (int i = 0; i < 2; i++) {
       await tester.pump(const Duration(seconds: 3));
     }
+
+    // The try failed and 降低画质 went back to 1080P60. The stream is back
+    // in the list, but its row stays greyed: Select asks again instead of
+    // picking it and saving it as the default (M17.11 review).
+    scene.vdc.currentVideoQa.value = VideoQuality.high108060;
+    await _press(tester, dpadUp);
+    _one(source, TvHudActionId.quality).onPressed();
+    await tester.pumpAndSettle();
+    expect(_rowTexts(tester, 0).first, '8K 超高清（解码器最高 4096×2304）');
+    await _press(tester, dpadUp);
+    await _press(tester, dpadUp);
+    expect(_focusOn(TvPlayerHud.optionItemKey(0)), isTrue);
+    await _press(tester, dpadSelect);
+    expect(find.text('仍要尝试？解码器最高 4096×2304'), findsOneWidget);
+    await _press(tester, dpadSelect);
+    expect(_optionList, findsNothing);
+    expect(scene.vdc.updatePlayerCount, 1);
+    expect(scene.vdc.currentVideoQa.value, VideoQuality.high108060);
+    expect(TvExoPlayer.tryAnywayNext, isFalse);
+    await exo.dispose();
+  });
+
+  testWidgets('解码格式 before the first play link is in names no codec, and '
+      'says the video is loading', (tester) async {
+    _mockExoBridge();
+    final _ActionScene scene = _ActionScene();
+    // The play link's response is in, but upstream hasn't set `firstVideo`
+    // yet (it waits for the quality list's lookups first).
+    scene.vdc
+      ..data = _exoData()
+      ..currentVideoQa.value = VideoQuality.high108060;
+    final TvHudActionSource source = await scene.pump(tester);
+    final TvExoPlayer exo = await _exoOn(scene);
+    final TvHudAction decode = _one(source, TvHudActionId.decodeFormat);
+    expect(decode.label, '解码格式');
+    decode.onPressed();
+    await tester.pumpAndSettle();
+    expect(_optionList, findsNothing);
+    await tester.pump(const Duration(seconds: 3));
     await exo.dispose();
   });
 

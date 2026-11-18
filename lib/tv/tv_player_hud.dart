@@ -310,15 +310,17 @@ class _TvPlayerHudState extends State<TvPlayerHud>
     if (mounted) setState(() {});
   }
 
-  /// 降低画质 on ExoPlayer's failure screen (M17.10, item 6), as this HUD
-  /// registered it with [TvExoView.lowerQuality].
-  late final ({String label, VoidCallback run})? Function()
-  _lowerQualityOption = _lowerQuality;
+  /// 降低画质 on ExoPlayer's failure screen (M17.10, item 6) and a fresh play
+  /// link, for the player while this HUD's page is on top.
+  late final TvExoHudHooks _exoHooks = TvExoHudHooks(
+    lowerQuality: _lowerQuality,
+    refetch: _refetchLink,
+  );
 
   @override
   void initState() {
     super.initState();
-    TvExoView.lowerQuality = _lowerQualityOption;
+    TvExoPlayer.addHooks(_exoHooks);
     _bindFullScreenListener();
     _pl.addStatusLister(_onPlayerStatusChanged);
     // Suppress upstream touch controls when fullscreen or TV HUD is active
@@ -343,9 +345,7 @@ class _TvPlayerHudState extends State<TvPlayerHud>
 
   @override
   void dispose() {
-    if (identical(TvExoView.lowerQuality, _lowerQualityOption)) {
-      TvExoView.lowerQuality = null;
-    }
+    TvExoPlayer.removeHooks(_exoHooks);
     _cancelSelectHold();
     _pl.removeStatusLister(_onPlayerStatusChanged);
     _fullScreenSub?.cancel();

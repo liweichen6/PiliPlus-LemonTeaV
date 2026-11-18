@@ -41,9 +41,10 @@ class TvExoView extends StatelessWidget {
       : null;
 
   /// 降低画质 on the failure screen (M17.10, item 6): the next quality that
-  /// can play and how to play it, from the TV HUD, which also takes Down for
-  /// it. `null` when there's none.
-  static ({String label, VoidCallback run})? Function()? lowerQuality;
+  /// can play and how to play it, from the HUD of the page on top, which
+  /// also takes Down for it. `null` when there's none.
+  static ({String label, VoidCallback run})? Function()? get lowerQuality =>
+      TvExoPlayer.hooks?.lowerQuality;
 
   final TvExoPlayer player;
   final VideoFitType videoFit;
@@ -176,20 +177,25 @@ class _VideoHole extends StatefulWidget {
 }
 
 class _VideoHoleState extends State<_VideoHole> {
-  /// Holes on screen. A new page's hole can mount before the old one goes,
-  /// so Flutter's surface turns see-through with the first and opaque again
-  /// only when the last one goes.
-  static int _mounted = 0;
+  /// Holes mounted, oldest first. A new page's hole can mount before the old
+  /// one goes, so Flutter's surface turns see-through with the first and
+  /// opaque again only when the last one goes. The bridge has one layer, and
+  /// the newest hole places it: a live room over a video page keeps the
+  /// video page's hole mounted, off screen.
+  static final List<_VideoHoleState> _holes = [];
+
+  /// The rect the layer was last placed at, by whichever hole.
+  static Rect? _sent;
 
   static MethodChannel get _channel => TvExoPlayer.channel;
 
   Timer? _timer;
-  Rect? _sent;
 
   @override
   void initState() {
     super.initState();
-    if (_mounted++ == 0) unawaited(_setTransparent(true));
+    _holes.add(this);
+    if (_holes.length == 1) unawaited(_setTransparent(true));
     // An ancestor can move this box without repainting it.
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _send());
   }
@@ -197,11 +203,22 @@ class _VideoHoleState extends State<_VideoHole> {
   @override
   void dispose() {
     _timer?.cancel();
-    if (--_mounted == 0) {
+    final wasTop = identical(_holes.lastOrNull, this);
+    _holes.remove(this);
+    if (_holes.isEmpty) {
       // The bridge waits a moment before it lets the layer go, so a route
       // change that sends a new rect right after keeps it.
+      _sent = null;
       unawaited(_call('layerRect'));
       unawaited(_setTransparent(false));
+    } else if (wasTop) {
+      // Back from a live room over a video page: the video page's hole
+      // places the layer again (M17.11 review).
+      _sent = null;
+      final top = _holes.last;
+      WidgetsBinding.instance
+        ..addPostFrameCallback((_) => top._send())
+        ..scheduleFrame();
     }
     super.dispose();
   }
@@ -219,7 +236,7 @@ class _VideoHoleState extends State<_VideoHole> {
   }
 
   void _send() {
-    if (!mounted) return;
+    if (!mounted || !identical(_holes.lastOrNull, this)) return;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize || !box.attached) return;
     final origin = box.localToGlobal(Offset.zero) * widget.pixelRatio;
