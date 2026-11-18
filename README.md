@@ -52,17 +52,26 @@
 | 并发数 | 8 | 关闭自动并发数后生效，可选 4–128 |
 | 自定义节点 | 空 | 填写后仅使用指定节点 |
 
+### 3. 电视端播放器 ExoPlayer：4K、HDR 与杜比视界
+- **电视端只用一个播放器，无需设置**：在电视上，所有视频和直播都由 Media3 ExoPlayer 播放，画面直接解码到电视自己的视频层，位于应用界面之下，因此在电视支持时，4K、HDR 真彩（HDR10）与杜比视界都以其真实模式显示。手机、平板与桌面端仍使用 mpv。
+- **只提供能播放的画质**：电视解码器或屏幕无法播放的画质和编码会标灰并注明原因（例如 `4K 超高清（HEVC 5.2 超出解码器 5.1）`），可用「仍要尝试」强行试播。播放失败会在几次重试后停在播放器的失败提示页，不会切换到其他播放器。`设置 → 音视频设置 → 解码能力` 列出这台电视声明的能力。
+- **音量均衡**：`关闭` / `标准`（−14 LUFS）/ `高动态`（−24 LUFS）/ `动态压缩` / `自定义`，播放器菜单中也可切换。杜比音频直接交给电视解码，不做音量均衡。
+- **缓冲**：电视端 `缓冲大小` 默认 100 MB、`缓冲时长` 180 秒、`直播缓冲大小` 64 MB（只填写从未设置过的项）。ExoPlayer 的缓冲占用 Android 的 Java 堆，每个设置项下会显示本机的堆上限，请让缓冲远低于该值。
+- **此路径不支持**：mpv 的超分辨率与着色器、超过 100% 的音量、翻转，以及自定义 ffmpeg 音量均衡。音频页、实况照片和 WebP 截取仍使用 mpv。
+
 ---
 
 ## 已知问题
 
-> [!WARNING]
-> **MediaTek（联发科）芯片的电视请不要在视频中选择 4K 及以上画质，也不要在直播中选择 2K 及以上画质。** 在已测试的一台 MediaTek MT9690 电视上，4K 视频几秒内就会卡死，随后应用无响应；4K60 视频与 2K 及以上直播（`2K`、`4K`、`4K 原画`、`杜比`）还可能让电视内核崩溃并直接关机，需要手动重新开机。
+> [!NOTE]
+> **4K、HDR 与杜比视界在电视的视频层上播放。** 在已测试的一台 MediaTek MT9690 电视上，4K60、HDR 真彩、杜比视界和 1440 × 2560 直播都能用 ExoPlayer 正常播放，没有卡死或关机。改用 ExoPlayer 之前的版本（mpv）在这台电视上播放 4K 会卡死，4K60 视频和 2K 及以上直播还可能让电视直接关机；如果仍在使用这些旧版本，请把 `默认画质` 保持在 1080P 60帧。
 >
-> - 电视端现在默认使用 **1080P 60帧**（直播默认使用 **原画**，在多档位直播中对应 1080P）。从未改过默认画质的旧安装也会如此，已经选过的默认画质不会被改动。
-> - 这只是默认值，不是硬性限制：在播放器里仍然可以选择更高画质，视频中的选择还会保存为新的默认画质，之后的每个视频都会受影响。如果已经选过 4K，请到 `设置 → 音视频设置 → 默认画质` 改回 1080P 60帧（直播默认画质同理改回 原画）。
-> - 目前只测试过这一台实体电视，其他芯片的电视暂未发现此问题。
+> - 电视端视频默认画质仍是 **1080P 60帧**（直播为 **原画**）。在播放器中选择 4K 后会保存为新的默认画质。
+> - 目前只测试过这一台实体电视。
 
+- **部分电视上竖屏视频会被压扁。** 在已测试的电视上，`设置 → 显示和声音 → 屏幕 → 图像比例` 为 `自动`（默认）时，会把比 16:9 窄的视频都当作 4:3，压窄并在两侧加黑边。暂时请改为 `16:9`；应用内的修复已列入计划（`docs/tv/PLAN.md` 中的 `M19.1`）。
+- **直播不经过 BTR 加速。** 高码率直播间（例如 1440 × 2560 的原画）在较慢的海外网络下可能反复重新加载，请选择较低画质。直播加速已列入计划（`M19.2`）。
+- **暂时无法用电视自带键盘在搜索栏输入中文**，只有英文能输入进去（`M19.3`）。
 ---
 
 ## 下载与安装
@@ -93,7 +102,7 @@
 | 文档 | 内容说明 |
 | :--- | :--- |
 | [**docs/tv/README.md**](docs/tv/README.md)（[English](docs/tv/README.en.md)） | **TV 模块总览、上游同步指南（GitHub Actions 与本地命令）、本地 APK 构建指南与签名配置说明** |
-| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M9`）与 22 项 TV 功能不变量（`C1`–`C22`） |
+| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M13`）、电视端 ExoPlayer（§2.16）与 27 项 TV 功能不变量（`C1`–`C23`、`C25`–`C28`） |
 | [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **TV 控制层全面代码与架构审查报告**：逐文件工程审计、边界细节（`R1`–`R7`）与上游合并风险评估 |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | 完整实施与演进路线图（Phase 1 基础移植、Phase 2 深度优化 & Phase 3 回归修复） |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | 任务级演进日志、性能基准测试对比与真机/模拟器双端验证记录 |
@@ -107,3 +116,7 @@
 - [lemonteaau/PiliPlus](https://github.com/lemonteaau/PiliPlus)：海外多线程加速（BTR）集成上游分支。
 - [N3urda/PiliPlus-TV](https://github.com/N3urda/PiliPlus-TV)：灵感来源，本来想把 lemonteaau merge 进去的，但是问题越修越多干脆推倒重来了。
 - [MrTangLuyao/Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thread-ripper)：多线程下载核心思路来源，基于 MIT 许可，详见 [docs/licenses/bilibili-thread-ripper.txt](docs/licenses/bilibili-thread-ripper.txt)。
+- [AndroidX Media3](https://github.com/androidx/media)：电视端播放器 ExoPlayer，基于 Apache-2.0 许可。
+- [loneshu7/PiliPlusPlus](https://github.com/loneshu7/PiliPlusPlus)（GPL-3.0）：音量均衡处理器，以及把缓冲设置映射到 Media3 的方式，改编于 `TvExoAudio.kt` 与 `TvExoLoadControl.kt`。
+- [Hunter-Clipper/OpenIPTV](https://github.com/Hunter-Clipper/OpenIPTV)（GPL-3.0）：位于透明 Flutter 界面之下的视频层，改编于 `TvExoPlayer.kt` 与 `lib/tv/tv_exo_view.dart`。
+- [kkren/PiliPlus](https://github.com/kkren/PiliPlus)（GPL-3.0）：只允许明文连接本地代理（`network_security_config.xml`）。kkren、yifgu、AvalonUltra 的分支与 PiliPlus 的 2145 号拉取请求中的 ExoPlayer 实现为设计提供了参考（`docs/tv/M17_MEDIA3_STUDY.md`）。
