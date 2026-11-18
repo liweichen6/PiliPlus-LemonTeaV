@@ -2930,4 +2930,10 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
 * **Media3**: 1.12.0 isn't stable yet (Google's Maven lists `1.12.0-beta01` as the latest, 2026-11-11), so 1.11.1 stays pinned and there's nothing to decide.
 * **Device state**: `PiliPlus TV dev` on `<physical-tv>` is the build of `a7d52061d`, signed in, for the soak; its saved quality and codec are the user's last picks. The run scripts' sampler was removed from the TV. Run folders stay in the session's scratchpad.
 * **The long pause** (2026-11-18): a video paused at about 01:09 with the TV asleep, played again at 11:04, about 10 hours later and long past its link's 2-hour `deadline`. The app was the same process, and the media service answered in 0.15 s on wake. Through the thread ripper, what was buffered played for about 90 s while every load to the proxy timed out; then the player stopped with a network timeout, retried the dead link three times (about 35 s each), fetched a fresh link at 11:07:50 and showed the picture 4 s later, at the same position, with no failure screen. The media service answered in 0.51 s afterwards. The fresh-link fetch (`R30`) works, but the picture stood still for about 2 minutes, because the proxy outlasts Media3's read timeout and the CDN's 403 never reaches the player: recorded as `R40` and moved to `M19.4` by the user's choice, not fixed.
+* **Soak checks** (`tool/tv_m17/health.sh`):
+
+  | When | TV up | Media service | Dev app's exits since the last check |
+  | :--- | :--- | :--- | :--- |
+  | 2026-11-18 11:12 | 4 d 21 h | 0.28 s | None: the same process since the device pass's last run (00:39). The latest exits are that run's force-stops, two installs and one kill (signal 9, 00:23, during the pass); no crash, no ANR |
+
 * **Next**: the rest of the soak, with `health.sh` now and then; then, with the user, landing on `main` (a pull request runs the TV checks on GitHub with the new test files) and the variant's future.
