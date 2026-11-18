@@ -367,7 +367,14 @@ class TvExoPlayer extends PlatformPlayer implements NativePlayer {
         unawaited(_refetch(args));
         return;
       }
-      _retryOrFail(args);
+      // Out of a live room's window: rejoin at the live edge at once, since
+      // waiting only falls further behind (M17.12).
+      _retryOrFail(
+        args,
+        delay: _live && args['kind'] == 'behindLiveWindow'
+            ? Duration.zero
+            : null,
+      );
     } else {
       _fail(failureText(args, live: _live));
     }

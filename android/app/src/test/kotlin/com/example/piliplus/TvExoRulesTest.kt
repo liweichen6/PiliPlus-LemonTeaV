@@ -5,6 +5,7 @@ import androidx.media3.common.MimeTypes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -200,5 +201,18 @@ class TvExoRulesTest {
         assertEquals(Int.MAX_VALUE, TvExoRules.capBytes(4096L * 1024 * 1024))
         assertEquals(Long.MAX_VALUE, TvExoRules.capUs(0))
         assertEquals(180_000_000L, TvExoRules.capUs(180_000))
+    }
+
+    @Test
+    fun liveStartTagIsDroppedSoPlaybackStartsAtTheEdge() {
+        val playlist = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-START:TIME-OFFSET=0\n" +
+            "#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.00,a|b\n5.m4s\n"
+        val out = TvExoRules.withoutStartTag(playlist)
+        assertFalse(out.contains("EXT-X-START"))
+        assertTrue(out.contains("#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.00,a|b\n5.m4s"))
+        // CRLF lines, and a playlist without the tag is returned as it is.
+        assertFalse(TvExoRules.withoutStartTag("#EXTM3U\r\n#EXT-X-START:TIME-OFFSET=-3\r\n1.m4s").contains("EXT-X-START"))
+        val plain = "#EXTM3U\n#EXTINF:1.00,\n1.m4s\n"
+        assertSame(plain, TvExoRules.withoutStartTag(plain))
     }
 }

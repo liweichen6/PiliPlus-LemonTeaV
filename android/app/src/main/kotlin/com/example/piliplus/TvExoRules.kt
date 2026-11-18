@@ -119,6 +119,21 @@ object TvExoRules {
         kind == "http" || kind == "network" || kind == "behindLiveWindow"
 
     /**
+     * A live room's HLS playlist without `#EXT-X-START`. Bilibili's start
+     * with `#EXT-X-START:TIME-OFFSET=0` over a window of about seven
+     * one-second segments, and Media3 honours it: playback starts at the
+     * oldest segment, and any delay drops it out of the window
+     * (BEHIND_LIVE_WINDOW; M17.12 on `<physical-tv>`). Without the tag Media3
+     * starts three target durations from the live edge, as mpv's demuxer does.
+     */
+    fun withoutStartTag(playlist: String): String {
+        if (!playlist.contains("#EXT-X-START:")) return playlist
+        return playlist.lineSequence()
+            .filterNot { it.trimStart().startsWith("#EXT-X-START:") }
+            .joinToString("\n")
+    }
+
+    /**
      * Bilibili's `upos-sz-mirrorcosov` answers 567 to a request with no Range
      * header (the1812/Bilibili-Evolved#5857), and Media3 sends none when it
      * reads from byte 0. So a direct video request from byte 0 asks for

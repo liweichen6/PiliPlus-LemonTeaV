@@ -42,12 +42,18 @@ import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.hls.playlist.DefaultHlsPlaylistParserFactory
+import androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist
+import androidx.media3.exoplayer.hls.playlist.HlsMultivariantPlaylist
+import androidx.media3.exoplayer.hls.playlist.HlsPlaylist
+import androidx.media3.exoplayer.hls.playlist.HlsPlaylistParserFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.upstream.ParsingLoadable
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 import io.flutter.embedding.android.FlutterSurfaceView
@@ -293,7 +299,9 @@ class TvExoPlayer private constructor(
         val data = DefaultDataSource.Factory(context, upstream)
 
         val source: MediaSource = if (hls) {
-            HlsMediaSource.Factory(data).createMediaSource(MediaItem.fromUri(video))
+            HlsMediaSource.Factory(data)
+                .apply { if (live) setPlaylistParserFactory(LiveEdgePlaylistParserFactory()) }
+                .createMediaSource(MediaItem.fromUri(video))
         } else {
             val progressive = ProgressiveMediaSource.Factory(data)
             val videoSource = progressive.createMediaSource(MediaItem.fromUri(video))
@@ -404,10 +412,42 @@ class TvExoPlayer private constructor(
         override fun close() = inner.close()
     }
 
+    /**
+     * A live room's playlists without `#EXT-X-START` (see
+     * [TvExoRules.withoutStartTag]), so playback starts near the live edge.
+     */
+    private class LiveEdgePlaylistParserFactory : HlsPlaylistParserFactory {
+        private val inner = DefaultHlsPlaylistParserFactory()
+
+        override fun createPlaylistParser(): ParsingLoadable.Parser<HlsPlaylist> =
+            wrap(inner.createPlaylistParser())
+
+        override fun createPlaylistParser(
+            multivariantPlaylist: HlsMultivariantPlaylist,
+            previousMediaPlaylist: HlsMediaPlaylist?,
+        ): ParsingLoadable.Parser<HlsPlaylist> =
+            wrap(inner.createPlaylistParser(multivariantPlaylist, previousMediaPlaylist))
+
+        private fun wrap(parser: ParsingLoadable.Parser<HlsPlaylist>) =
+            ParsingLoadable.Parser<HlsPlaylist> { uri, stream ->
+                val text = stream.readBytes().toString(Charsets.UTF_8)
+                parser.parse(uri, TvExoRules.withoutStartTag(text).byteInputStream(Charsets.UTF_8))
+            }
+    }
+
     // ---- Events ----
 
     private val listener = object : Player.Listener {
-        override fun onPlaybackStateChanged(state: Int) = sendState()
+        override fun onPlaybackStateChanged(state: Int) {
+            // How far behind the end of its window a live room plays (M17.12).
+            // Bilibili's playlists carry no program date-time, so Media3's
+            // own live offset is unset.
+            val p = player
+            if (live && state == Player.STATE_READY && p != null) {
+                Log.i(TAG, "live behind=${p.duration - p.currentPosition}ms window=${p.duration}ms")
+            }
+            sendState()
+        }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = sendState()
 

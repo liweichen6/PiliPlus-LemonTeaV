@@ -1029,6 +1029,27 @@ void main() {
       await player.dispose();
     });
 
+    testWidgets('a live room that falls out of its window rejoins at once, '
+        'and the budget still holds', (tester) async {
+      final bridge = _Bridge();
+      final player = await TvExoPlayer.create(isLive: () => true);
+      await player.open(const Media('https://live/room.m3u8'));
+      await bridge.state(_ready);
+      for (var i = 0; i < TvExoPlayer.liveAttempts; i++) {
+        await bridge.error('behindLiveWindow', recoverable: true);
+        // Not the 4 s of other live failures.
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(bridge.opens, hasLength(i + 2));
+        expect(bridge.lastOpen['startMs'], 0);
+      }
+      await bridge.error('behindLiveWindow', recoverable: true);
+      expect(
+        player.failed.value,
+        '直播连接失败（behindLiveWindow），已重试 ${TvExoPlayer.liveAttempts} 次',
+      );
+      await player.dispose();
+    });
+
     testWidgets('a live stream that ends reconnects after 1 s, and not '
         'completed', (tester) async {
       final bridge = _Bridge();
