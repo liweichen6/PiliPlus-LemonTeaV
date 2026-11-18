@@ -75,18 +75,21 @@ PIDS=()
           stop_app "decoder off the plane (${line##*bufferQueue})"
         fi
       done
-) & PIDS+=($!)
+) 2>/dev/null & PIDS+=($!)
 (
-  # A video layer above 1080p must stay DEVICE: CLIENT means the GPU composes it.
+  # A video layer above 1080p (either way up, so a vertical 1440x2560 live
+  # room counts) must stay DEVICE: CLIENT means the GPU composes it.
   while sleep 20; do
     rows="$(adb shell dumpsys SurfaceFlinger 2>/dev/null \
       | grep -E '^ SurfaceView.*BLAST' -A1 \
-      | grep -E ' (2[5-9][0-9]{2}|3[0-9]{3}|40[0-9]{2})\.0 +(1[4-9][0-9]{2}|2[0-9]{3})\.0')"
+      | grep -E ' ([0-9]+)\.0 +([0-9]+)\.0 \|' \
+      | awk '{ for (i = 1; i < NF; i++) if ($i ~ /^[0-9]+\.0$/ && $(i+1) ~ /^[0-9]+\.0$/) { w = $i; h = $(i+1) }
+               if ((w > 1920 && h > 1080) || (w > 1080 && h > 1920)) print }')"
     [[ -z "${rows}" ]] && continue
     echo "${rows}" | sed -E "s/ +/ /g; s/^/$(date +%H:%M:%S) /" >> "${GUARD_LOG}"
     [[ "${rows}" == *CLIENT* ]] && stop_app "a >1080p video layer on CLIENT"
   done
-) & PIDS+=($!)
+) 2>/dev/null & PIDS+=($!)
 if [[ "${SAMPLE}" == 1 ]]; then
   (
     sleep 30
@@ -97,16 +100,28 @@ if [[ "${SAMPLE}" == 1 ]]; then
       if [[ -n "${pid}" ]]; then
         { echo "== $(date +%T)"; adb shell top -H -b -n 1 -p "${pid}" 2>/dev/null | head -24; } >> "${OUT}/top.txt"
       fi
-      { echo "== $(date +%T)"; adb shell dumpsys SurfaceFlinger 2>/dev/null | grep -E '^ (SurfaceView|com\.lemontea)' -A1; } >> "${OUT}/layers.txt"
+      # The layer table, then each video layer's composition and dataspace:
+      # HDR10 is BT2020_ITU_PQ, HLG BT2020_ITU_HLG, Dolby Vision the vendor's
+      # 0x10860000 on this TV.
+      { echo "== $(date +%T)"
+        adb shell dumpsys SurfaceFlinger 2>/dev/null > "${OUT}/sf.tmp"
+        grep -E '^ (SurfaceView|com\.lemontea)' -A1 "${OUT}/sf.tmp"
+        awk '/^\* Layer / { on = /SurfaceView.*\(BLAST\)/; if (on) { id = $0; sub(/.*#/, "#", id); sub(/\).*/, "", id); printf "\n%s", id } }
+             on && match($0, /composition type=[A-Z_]+/) { printf " %s", substr($0, RSTART, RLENGTH) }
+             on && match($0, /dataspace=[^ ]+ \([0-9]+\)/) { printf " %s", substr($0, RSTART, RLENGTH) }
+             END { print "" }' "${OUT}/sf.tmp"
+      } >> "${OUT}/layers.txt"
       adb shell dumpsys SurfaceFlinger --list 2>/dev/null | tr -d '\r' | grep -E '^SurfaceView\[.*\(BLAST\)#[0-9]+$' \
         | while IFS= read -r layer; do
             adb shell "dumpsys SurfaceFlinger --latency '${layer}'" > "${OUT}/latency-${layer##*#}-${n}.txt" 2>/dev/null </dev/null
           done
       sleep 18
     done
-  ) & PIDS+=($!)
+  ) 2>/dev/null & PIDS+=($!)
 fi
 cleanup() {
+  exec 2>/dev/null  # no job reports for the loops killed below
+  rm -f "${OUT}/sf.tmp"
   local p
   for p in "${PIDS[@]}"; do pkill -P "${p}" 2>/dev/null; kill "${p}" 2>/dev/null; done
   wait 2>/dev/null

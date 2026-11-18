@@ -7,7 +7,8 @@
 # For each run of run.sh: its summary and the guard's stops; the bridge's
 # lines (what played, on which decoder and in which HDR mode, the first frame,
 # refusals, load errors and failures); each decoder start's hwRender and gdec;
-# the video layer's cadence from 30 s in; the last layer table and the busiest
+# the video layer's cadence from 30 s in (FIRST=N from the Nth sample, 20 s
+# apart, to skip a quality switch); the last layer table and the busiest
 # threads. Needs M12_RUNS.
 # ==============================================================================
 set -uo pipefail
@@ -24,7 +25,7 @@ for name in "$@"; do
   echo "decoder starts: $(grep -a -oE 'hwRender:[0-9], *secure:[0-9], *gdec:[0-9]' "${r}/logcat.txt" 2>/dev/null | sort | uniq -c | tr '\n' ';')"
   echo "fatal: $(grep -a -cE 'FATAL|ANR in com\.lemontea' "${r}/logcat.txt" 2>/dev/null)"
   for id in $(ls "${s}"/latency-*-*.txt 2>/dev/null | sed -E 's/.*latency-([0-9]+)-[0-9]+\.txt/\1/' | sort -u); do
-    python3 -I "${HERE}/layer.py" "${s}" "${id}"
+    python3 -I "${HERE}/layer.py" "${s}" "${id}" "${FIRST:-1}"
   done
   if [[ -f "${s}/layers.txt" ]]; then
     echo "last layers:"
@@ -32,6 +33,6 @@ for name in "$@"; do
   fi
   if [[ -f "${s}/top.txt" ]]; then
     echo "busiest threads (last sample):"
-    awk '/^==/{blk=""} {blk=blk $0 "\n"} END{printf "%s", blk}' "${s}/top.txt" | sed -n '/PID/,$p' | head -n 9
+    awk '/^==/{blk=""} {blk=blk $0 "\n"} END{printf "%s", blk}' "${s}/top.txt" | sed -n '/ TID /,$p' | head -n 9
   fi
 done
