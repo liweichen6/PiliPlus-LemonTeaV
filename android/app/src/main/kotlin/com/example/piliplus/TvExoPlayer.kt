@@ -113,7 +113,19 @@ class TvExoPlayer private constructor(
     private val surfaces = ArrayList<Surface>()
     private var bound: Surface? = null
     private var layer: SurfaceView? = null
-    private val hideLayer = Runnable { layer?.visibility = View.GONE }
+
+    // Flutter's surface turns opaque only once the layer is gone: an opaque
+    // Flutter surface drops off the top, and for the hide delay the layer
+    // (black once its decoder is released) drew over the page Back returned
+    // to, as a black rectangle where the video was.
+    private var opaquePending = false
+    private val hideLayer = Runnable {
+        layer?.visibility = View.GONE
+        if (opaquePending) {
+            opaquePending = false
+            applyTransparent(false)
+        }
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -1128,8 +1140,24 @@ class TvExoPlayer private constructor(
         view.visibility = View.VISIBLE
     }
 
-    /** Makes Flutter's own surface see-through, or opaque again, while the app runs. */
+    /**
+     * Makes Flutter's own surface see-through, or opaque again, while the app
+     * runs. Opaque waits while the layer is still shown (its hide is delayed,
+     * see [layerRect]), and a new player view in that time cancels it.
+     */
     private fun setTransparent(on: Boolean): Boolean {
+        if (!on && layer?.visibility == View.VISIBLE) {
+            opaquePending = true
+            // Dart sends the null rect first; make sure the hide is coming.
+            main.removeCallbacks(hideLayer)
+            main.postDelayed(hideLayer, HIDE_DELAY_MS)
+            return true
+        }
+        opaquePending = false
+        return applyTransparent(on)
+    }
+
+    private fun applyTransparent(on: Boolean): Boolean {
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         val flutter = findFlutterSurface(content) ?: return false
         flutter.holder.setFormat(if (on) PixelFormat.TRANSPARENT else PixelFormat.OPAQUE)
