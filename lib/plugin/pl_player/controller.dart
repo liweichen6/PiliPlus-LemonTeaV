@@ -32,6 +32,8 @@ import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/services/thread_ripper/auto_concurrency.dart';
 import 'package:PiliPlus/services/thread_ripper/range_proxy.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/tv/tv_exo_player.dart';
+import 'package:PiliPlus/tv/tv_platform.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
@@ -854,6 +856,19 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   Future<Player> _initPlayer() async {
     assert(_videoPlayerController == null);
+    // TV: every player is ExoPlayer, for videos and live rooms, and a
+    // failure never falls back to mpv (docs/tv/PLAN.md, M17.9).
+    if (TvPlatform.isTv) {
+      final player = await TvExoPlayer.create();
+      await setVolumeCapped(player, Pref.playerVolume / 100);
+      _videoController = player.videoController;
+      player.setMediaHeader(
+        userAgent: BrowserUa.pc,
+        referer: HttpString.baseUrl,
+      );
+      _startListeners(player);
+      return player;
+    }
     final opt = {
       'video-sync': Pref.videoSync,
       if (Platform.isAndroid) 'ao': Pref.audioOutput,
@@ -995,6 +1010,9 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
             // '!delay_open,media_type=audio;'
             '%${isFileSource ? utf8.encode(audio).length : audio.length}%$audio');
       }
+      // TV: the measured loudness for ExoPlayer's 音量均衡, also while it's
+      // off (docs/tv/PLAN.md, M17.10). Nothing off TV.
+      extras.addAll(TvExoNormalization.loudnessExtras(volume));
       audioFilterExtras(volume, map: extras);
     }
 

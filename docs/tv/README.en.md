@@ -24,8 +24,8 @@ This directory (`docs/tv/`) contains the architectural specification, milestone/
 | :--- | :--- |
 | [**README.en.md**](./README.en.md) ([中文](./README.md)) | Overview, package identity, upstream sync guide, local APK build guide, and CI/CD signing setup. |
 | [**ARCHITECTURE.md**](./ARCHITECTURE.md) | Deep dive into the Three-Tier Decoupled TV Control Layer (`lib/tv/*`, `lib/scripts/tv_*.patch`, `TvBridge.kt`), optimization & hardening mechanisms (`F1`–`F9`, `M6`–`M10`), and 23 capability invariants (`C1`–`C23`). |
-| [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant, on `variant/4k-passthrough`: what differs from `main`, how to update it from `main`, its device check, and how to build it. |
-| [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | Every mpv option tried on the video plane, with results, and which ones became settings. |
+| [**4K_VARIANT.md**](./4K_VARIANT.md) | The video plane variant, on `variant/4k-passthrough` (retired 2026-11-19; its last commit is tagged `archive/4k-passthrough`): what differs from `main`, its device check, how to build it, and how to bring it back if needed. |
+| [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | ExoPlayer's (Media3's) buffer, retries and live start on TV, with its 4K60 numbers beside mpv's; and every mpv option tried on the video plane, with results, and which ones became settings. |
 | [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0: how to time a D-pad step, the run list, the time budget, and the focus bug inventory. |
 | [**M17_MEDIA3_STUDY.md**](./M17_MEDIA3_STUDY.md) | M17's study before its spike: what four PiliPlus forks do with Media3, which pieces to adapt and which to leave, and a TV checklist. |
 | [**REVIEW.md**](./REVIEW.md) | **Comprehensive Android TV Layer Code & Architecture Review**: file-by-file engineering audit, technical observations (`R1`–`R20`), and upstream sync risk matrix. |

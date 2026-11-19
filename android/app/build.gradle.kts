@@ -37,6 +37,9 @@ android {
 
     packagingOptions.jniLibs.useLegacyPackaging = true
 
+    // Media3's `Util` reads `Build` in the JVM tests (M17.11).
+    testOptions.unitTests.isReturnDefaultValues = true
+
     val keyProperties = Properties().also {
         val properties = rootProject.file("key.properties")
         if (properties.exists())
@@ -100,4 +103,12 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Media3 pinned at 1.11.1 (M17.6, decision 14); HLS for live rooms.
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+    // JVM tests of the TV bridge's pure parts (M17.11), run locally.
+    testImplementation("junit:junit:4.13.2")
 }

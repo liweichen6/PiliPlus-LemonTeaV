@@ -36,6 +36,7 @@ import 'package:PiliPlus/pages/video/widgets/header_mixin.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
+import 'package:PiliPlus/tv/tv_exo_player.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart'
     show shutdownTimerService, ShutdownPanel;
 import 'package:PiliPlus/utils/accounts.dart';
@@ -464,6 +465,9 @@ class HeaderControlState extends State<HeaderControl>
                     title: const Text('重载视频', style: titleStyle),
                   ),
                 ],
+                // TV: mpv's shaders, volume above 100 % and flips aren't on
+                // ExoPlayer's path (docs/tv/PLAN.md, M17.10).
+                if (TvExoPlayer.notExo(plPlayerController.videoPlayerController))
                 PopupListTile<SuperResolutionType>(
                   dense: true,
                   leading: const Icon(
@@ -486,6 +490,7 @@ class HeaderControlState extends State<HeaderControl>
                   descPosType: .subtitle,
                   descStyle: subTitleStyle,
                 ),
+                if (TvExoPlayer.notExo(plPlayerController.videoPlayerController))
                 if (PlatformUtils.isMobile)
                   if (plPlayerController.videoPlayerController
                       case final player?)
@@ -549,6 +554,7 @@ class HeaderControlState extends State<HeaderControl>
                           iconData: Icons.rotate_right,
                         ),
                       ],
+                      if (TvExoPlayer.notExo(plPlayerController.videoPlayerController))
                       Obx(
                         () => ActionRowLineItem(
                           text: " 左右翻转 ",
@@ -557,6 +563,7 @@ class HeaderControlState extends State<HeaderControl>
                           selectStatus: plPlayerController.flipX.value,
                         ),
                       ),
+                      if (TvExoPlayer.notExo(plPlayerController.videoPlayerController))
                       Obx(
                         () => ActionRowLineItem(
                           text: " 上下翻转 ",

@@ -52,17 +52,26 @@ Located under **Settings → Audio & Video Settings** (changes take effect on th
 | Concurrency (并发数) | 8 | Fixed thread count (4–128) when Auto Concurrency is disabled |
 | Custom Nodes (自定义节点) | Empty | Optional override to restrict downloads to specific CDN hosts |
 
+### 3. ExoPlayer on TV: 4K, HDR and Dolby Vision
+- **One player on TV, with no setting**: on a TV, every video and live room plays on Media3 ExoPlayer, drawn on the TV's own video plane under the app's UI, so 4K, HDR 真彩 (HDR10) and 杜比视界 (Dolby Vision) play in their real mode where the TV supports them. Phones, tablets and desktop keep mpv.
+- **Only what plays is offered**: qualities and codecs this TV's decoders or display can't play are greyed with the reason (for example `4K 超高清（HEVC 5.2 超出解码器 5.1）`), and `仍要尝试` tries one anyway. A failure ends on the player's failure screen after a few retries; it never falls back to another player. `设置 → 音视频设置 → 解码能力` lists what this TV declares.
+- **音量均衡 (loudness)**: `关闭` / `标准` (−14 LUFS) / `高动态` (−24 LUFS) / `动态压缩` / `自定义`, also from the player's menu. Dolby audio passes through to the TV undecoded and isn't balanced.
+- **Buffer**: on TV, `缓冲大小` defaults to 100 MB, `缓冲时长` to 180 s and `直播缓冲大小` to 64 MB (only where you never set them). ExoPlayer keeps the buffer on Android's Java heap, so each setting shows this device's heap limit; keep the buffer well under it.
+- **Not on this path**: mpv's 超分辨率 and shaders, volume above 100 %, flips and custom ffmpeg normalization. The audio page, live photos and the WebP capture still use mpv.
+
 ---
 
 ## Known Issues
 
-> [!WARNING]
-> **On a TV with a MediaTek chip, don't pick 4K or higher in videos, or 2K or higher in live rooms.** On the one MediaTek MT9690 TV tested, 4K video freezes within seconds and the app then stops responding; 4K60 video and 2K or higher live streams (`2K`, `4K`, `4K 原画`, `杜比`) can also crash the TV's kernel and shut the TV down, and you have to turn it back on by hand.
+> [!NOTE]
+> **4K, HDR and Dolby Vision play on the TV's video plane.** On the one MediaTek MT9690 TV tested, 4K60, HDR 真彩, 杜比视界 and a 1440 × 2560 live room play on ExoPlayer with no freeze or shutdown. Releases before ExoPlayer (on mpv) could freeze that TV at 4K, and 4K60 or 2K+ live streams could shut it down; if you're on one of those, keep `默认画质` at 1080P 60帧.
 >
-> - TVs now default to **1080P 60 fps** for videos (and **原画** for live streams, which is 1080p in Bilibili's multi-tier ladder). Existing installs that never changed the default quality get this too; a default you already chose is left alone.
-> - This is a default, not a hard limit. You can still pick higher qualities in the player, and in videos that pick is saved as the new default quality, so every later video is affected too. If you already picked 4K, change it back under `设置 → 音视频设置 → 默认画质` (Settings → Audio & Video → Default Quality), and likewise keep live default quality at or below 原画.
-> - Only this one physical TV has been tested. Nothing suggests a problem on TVs with other chips so far.
+> - The TV default for videos is still **1080P 60 fps** (and **原画** for live rooms). Pick 4K in the player and it's saved as the new default.
+> - Only this one physical TV has been tested.
 
+- **Vertical videos look squeezed on some TVs.** On the TV tested, `设置 → 显示和声音 → 屏幕 → 图像比例` on `自动` (its default) treats any video narrower than 16:9 as 4:3 and squeezes it, with bars on both sides. Set it to `16:9` for now; a fix in the app is planned (`M19.1` in `docs/tv/PLAN.md`).
+- **Live rooms don't go through BTR.** A high-bitrate live room (for example a 1440 × 2560 原画) can keep reloading on a slow overseas connection; pick a lower quality. Live acceleration is planned (`M19.2`).
+- **Chinese can't be typed with the TV's own keyboard** in the search bar yet; only English reaches the field (`M19.3`).
 ---
 
 ## Download & Installation
@@ -93,7 +102,7 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 | Document | Description |
 | :--- | :--- |
 | [**docs/tv/README.en.md**](docs/tv/README.en.md) ([中文](docs/tv/README.md)) | **TV module overview, upstream sync guide (GitHub Actions & local CLI), local APK build guide, and signing setup** |
-| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance & hardening mechanisms (`F1`–`F9`, `M6`–`M9`), and 22 preserved TV invariants (`C1`–`C22`) |
+| [**docs/tv/ARCHITECTURE.md**](docs/tv/ARCHITECTURE.md) | **Three-Tier Decoupled TV Control Layer specification**, performance & hardening mechanisms (`F1`–`F9`, `M6`–`M13`), ExoPlayer on TV (§2.16), and 27 preserved TV invariants (`C1`–`C23`, `C25`–`C28`) |
 | [**docs/tv/REVIEW.md**](docs/tv/REVIEW.md) | **Comprehensive Android TV layer review**: file-by-file engineering audit, technical observations (`R1`–`R7`), and upstream merge risk matrix |
 | [**docs/tv/PLAN.md**](docs/tv/PLAN.md) | Complete milestone, epic, and task roadmap across Phase 1 (Foundation), Phase 2 (Optimization), and Phase 3 (Remediation) |
 | [**docs/tv/PROGRESS.md**](docs/tv/PROGRESS.md) | Task-by-task changelog, performance benchmark tables, and dual-device verification logs |
@@ -107,3 +116,7 @@ All Android TV functionality is isolated into a **Three-Tier Decoupled TV Contro
 - [lemonteaau/PiliPlus](https://github.com/lemonteaau/PiliPlus): Upstream fork integrating overseas multi-threaded video acceleration (BTR).
 - [N3urda/PiliPlus-TV](https://github.com/N3urda/PiliPlus-TV): Source of inspiration — originally intended to merge `lemonteaau` into it, but as fixing one issue kept uncovering more, decided to rebuild from scratch onto `lemonteaau` instead.
 - [MrTangLuyao/Bilibili-thread-ripper](https://github.com/MrTangLuyao/Bilibili-thread-ripper): Origin of the multi-threaded streaming proxy concept, licensed under MIT (see [docs/licenses/bilibili-thread-ripper.txt](docs/licenses/bilibili-thread-ripper.txt)).
+- [AndroidX Media3](https://github.com/androidx/media): ExoPlayer, the TV's player, licensed under Apache-2.0.
+- [loneshu7/PiliPlusPlus](https://github.com/loneshu7/PiliPlusPlus) (GPL-3.0): the 音量均衡 processors and the mapping of the buffer settings onto Media3, adapted in `TvExoAudio.kt` and `TvExoLoadControl.kt`.
+- [Hunter-Clipper/OpenIPTV](https://github.com/Hunter-Clipper/OpenIPTV) (GPL-3.0): the video layer under a see-through Flutter surface, adapted in `TvExoPlayer.kt` and `lib/tv/tv_exo_view.dart`.
+- [kkren/PiliPlus](https://github.com/kkren/PiliPlus) (GPL-3.0): cleartext to the local proxy only (`network_security_config.xml`). The ExoPlayer work in kkren's, yifgu's and AvalonUltra's forks and PiliPlus pull request 2145 informed the design (`docs/tv/M17_MEDIA3_STUDY.md`).

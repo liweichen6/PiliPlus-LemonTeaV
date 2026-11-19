@@ -1,6 +1,6 @@
 # Playback Parameters on the Video Plane
 
-What was tried on `<physical-tv>` (MediaTek MT9690) to make 4K60 play well on the video plane, what each option did, and which ones became settings. These are the numbers behind `TvVideoPlane`'s defaults. The story around them is in [`PROGRESS.md`](./PROGRESS.md) (M16) and [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
+Since M17, every video and live room on TV plays on Media3 ExoPlayer, on the video plane (see "Media3 on the Video Plane" below). The rest of this page is M16's: what was tried on `<physical-tv>` (MediaTek MT9690) to make 4K60 play well on mpv's video plane, what each option did, and which ones became settings. These are the numbers behind `TvVideoPlane`'s defaults on `variant/4k-passthrough`. The story around them is in [`PROGRESS.md`](./PROGRESS.md) (M16) and [`M12_CRASH_DEBUG.md`](./M12_CRASH_DEBUG.md).
 
 Every number comes from one TV, in one session. Treat them as a comparison, not a guarantee for other TVs.
 
@@ -71,6 +71,39 @@ At 1080p, danmaku on, 90 s each. These show what Hybrid Composition costs, and n
 
 There's deliberately no free-form box for mpv options. It could set `vo` and walk around everything that keeps 4K off the GPU.
 
+## Media3 on the Video Plane (M17)
+
+ExoPlayer draws into a `SurfaceView` under a see-through Flutter surface (`ARCHITECTURE.md` §2.16). Its settings, and why (`PLAN.md`, `M17.2` and `M17.6`):
+
+| Setting | Value on TV | Why |
+| :--- | :--- | :--- |
+| Media3 | 1.11.1, pinned | 1.12.0 wasn't stable by `M17.12` (2026-11-18); a switch needs a device run first |
+| Buffer, video | 缓冲大小 100 MB and 缓冲时长 180 s, bytes before time, forward only | Media3 keeps it on the Java heap, 192 MB on this TV, where about 170 MB ran out (`M17.5a`). The app's own settings, filled on TV only when unset |
+| Buffer, live | 直播缓冲大小 64 MB, 直播缓冲时长 no limit | Upstream's 0 for 直播缓冲大小 would mean twice 缓冲大小 |
+| Start and restart | 1 s buffered to start, 2 s after a rebuffer, or half the live offset | `DefaultLoadControl`'s rule, kept |
+| Live start | Three target durations from the live edge (about 3 s) | Bilibili's playlists ask for the oldest segment (`#EXT-X-START:TIME-OFFSET=0`) of a seven-second window, which fell out of it at the first delay; the tag is dropped (`M17.12`) |
+| Retries | A video 3, at 4, 6 and 10 s; a live room 5, at 4 s, or at once when it falls out of its window; then a fresh play link for a video; then the failure screen | Fail closed: never to mpv (`M17.6`, decision 4) |
+| Codec selector | Media3's default; no decoder fallback | The one change other forks tied to a black picture was a custom selector |
+| 4K check | The decoder's declared ranges | Bilibili's 3996-wide 4K fails Media3's performance-point check on this TV's decoders |
+| Dolby Vision | Only through a Dolby Vision decoder that declares the stream's profile | Profile 5 has no other decoder |
+| Tunneling, frame-rate requests, placeholder surface | Off | A decoder must never run on an EGL surface on this TV |
+| `Range` on byte 0 | `bytes=0-` for a direct video request | `upos-sz-mirrorcosov` answers 567 without it |
+
+### Media3 Beside mpv, 4K60 on the Plane
+
+| Stream | Player | Played | Video dropped | Layer fps | Long intervals | UI fps |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| AVC | mpv, 4-frame queue (M16) | 610 s | 0.3 % | | | 48.2 |
+| AVC | Media3 (`M17.4`) | 699 s | 0.18 % | 56.9 | 5.2 % | 49.9 |
+| AVC | Media3, the build (`M17.12`) | 13.3 min | | 56.6 | 5.7 % | |
+| AV1 | mpv, 4-frame queue (M16) | 610 s | 0.16 % | | | 54.7 |
+| AV1 | Media3 (`M17.4`) | 717 s | 0.06 % | 58.0 | 3.2 % | 58.0 |
+| AV1 | Media3, the build (`M17.12`) | 10.9 min | | 58.1 | 3.3 % | |
+
+* `M17.12` measured the video layer only (`tool/tv_m17/`); Media3's dropped-frame count goes to 播放信息 and isn't logged.
+* No Media3 option was swept as mpv's were: the video was already at or better than M16's, and what's left is the UI at 4K and the waits, which M18 measures.
+* On this TV, the video plane draws a source narrower than 16:9 squeezed when the TV's 图像比例 is 自动 (`PLAN.md`, `M19.1`). No player setting changes that.
+
 ## Not Tested
 
 * `vd-queue-max-samples=8` or more.
@@ -87,7 +120,7 @@ During these runs, after about 9.6 hours of uptime and dozens of starts, `dumpsy
 
 ## Reproducing This
 
-Run these on `variant/4k-passthrough`, which has `tool/tv_m16/`.
+Run these on `variant/4k-passthrough`, which has `tool/tv_m16/`. For ExoPlayer on `main`, `tool/tv_m17/run.sh` guards and records a run, opened by URL or driven by hand (`-`), and `tool/tv_m17/report.sh` summarises it.
 
 ```bash
 git apply tool/tv_m16/logging.patch

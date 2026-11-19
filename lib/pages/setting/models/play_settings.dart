@@ -14,6 +14,7 @@ import 'package:PiliPlus/plugin/pl_player/models/bottom_progress_behavior.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/tv/tv_exo_settings.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/desktop/window_controller.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -47,6 +48,7 @@ List<SettingsModel> get playSettings => [
       title: '音量均衡',
       leading: const Icon(Icons.multitrack_audio),
       getSubtitle: () {
+        if (TvExoSettings.normalizationSubtitle case final tv?) return tv;
         final audioNormalization = AudioNormalization.getTitleFromConfig(
           Pref.audioNormalization,
         );
@@ -567,6 +569,13 @@ Future<void> audioNormalization(
   VoidCallback setState, {
   bool fallback = false,
 }) async {
+  // TV: 关闭 / 标准 / 高动态 / 动态压缩 on ExoPlayer (docs/tv/PLAN.md, M17.9).
+  final tv = TvExoSettings.normalizationDialog(
+    context,
+    setState,
+    fallback: fallback,
+  );
+  if (tv != null) return tv;
   final key = fallback
       ? SettingBoxKey.fallbackNormalization
       : SettingBoxKey.audioNormalization;

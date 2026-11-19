@@ -231,6 +231,7 @@ class TvBridge private constructor(
                 flutterEngine.dartExecutor.binaryMessenger,
                 CHANNEL_NAME,
             ).setMethodCallHandler(TvBridge(activity))
+            TvExoPlayer.register(flutterEngine, activity)
         }
     }
 }

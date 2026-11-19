@@ -28,6 +28,7 @@ import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/tcp/live.dart';
+import 'package:PiliPlus/tv/tv_exo_live_source.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
@@ -322,6 +323,18 @@ class LiveRoomController extends GetxController {
     int codecIndex = 0,
     int liveUrlIndex = 0,
   }) {
+    // TV: ExoPlayer can't read FLV with HEVC, so that stream plays as HLS
+    // fMP4 with HEVC (docs/tv/PLAN.md, M17.9). Null off TV.
+    if (TvExoLiveSource.onTv(stream, (
+          stream: streamIndex,
+          format: formatIndex,
+          codec: codecIndex,
+        ))
+        case final tv?) {
+      streamIndex = tv.stream;
+      formatIndex = tv.format;
+      codecIndex = tv.codec;
+    }
     this.streamIndex = streamIndex;
     this.formatIndex = formatIndex;
     this.codecIndex = codecIndex;
