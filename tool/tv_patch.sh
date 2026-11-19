@@ -62,6 +62,7 @@ FLUTTER_PATCHES=(
   "lib/scripts/sliver.patch"
   "lib/scripts/refresh_indicator.patch"
   "lib/scripts/double_tap_gesture.patch"
+  "lib/scripts/media_query.patch"
   "lib/scripts/bottom_sheet_android.patch"
   "lib/scripts/scroll_view.patch"
   "lib/scripts/navigator.patch"

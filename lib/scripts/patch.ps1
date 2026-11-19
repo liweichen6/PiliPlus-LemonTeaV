@@ -88,6 +88,8 @@ $SliverPatch = "lib/scripts/sliver.patch"
 
 $RefreshIndicatorPatch = "lib/scripts/refresh_indicator.patch"
 
+$MediaQueryPatch = "lib/scripts/media_query.patch"
+
 # TODO: remove
 # https://github.com/flutter/flutter/issues/124078
 # https://github.com/flutter/flutter/pull/183261
@@ -143,7 +145,7 @@ $patches = @($ModalBarrierPatch, $TextSelectionPatch, $MouseCursorPatch,
             $ScrollPositionPatch, $ScrollablePatch, $ScrollableGesturePatch,
             $DraggableScrollableSheetPatch, $ScaffoldPatch, $TextPatch,
             $TextPainterPatch, $SliverPatch, $RefreshIndicatorPatch,
-            $DoubleTapGesturePatch, $TvGestureDetectorPatch,
+            $DoubleTapGesturePatch, $MediaQueryPatch, $TvGestureDetectorPatch,
             $TvRadioGroupPatch, $TvInkWellPatch)
 
 switch ($platform.ToLower()) {

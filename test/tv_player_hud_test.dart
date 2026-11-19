@@ -4170,7 +4170,7 @@ class FakeLiveRoomController extends Fake implements LiveRoomController {
   final Rxn<LiveQuality> currentQn = Rxn<LiveQuality>(LiveQuality.origin);
 
   @override
-  bool isLogin = true;
+  bool isMainLogin = true;
 
   @override
   int roomId = 42;
@@ -4418,7 +4418,7 @@ void _liveRoomTests() {
     await tester.pumpAndSettle();
     expect(scene.upstream.liveDmBlockCount, 1);
 
-    _liveOf(scene).isLogin = false;
+    _liveOf(scene).isMainLogin = false;
     _one(source, TvHudActionId.liveDmBlock).onPressed();
     await tester.pumpAndSettle();
     expect(scene.upstream.liveDmBlockCount, 1);

@@ -1145,7 +1145,7 @@ mixin _TvHudActionTable on State<TvPlayerHud>, HeaderMixin<TvPlayerHud>
       icon: Icons.block_rounded,
       label: '屏蔽词',
       onPressed: () {
-        if (!liveCtr.isLogin) {
+        if (!liveCtr.isMainLogin) {
           SmartDialog.showToast('账号未登录');
           return;
         }
