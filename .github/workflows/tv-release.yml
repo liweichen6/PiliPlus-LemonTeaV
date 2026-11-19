@@ -1,0 +1,180 @@
+# PiliPlus TV fork: a release of main as it is, by hand, with no upstream
+# sync. Fork-only file. tv-sync-build.yml merges upstream first and runs on a
+# schedule; this one only runs from the Actions tab or `gh workflow run
+# tv-release.yml`, and builds, checks and publishes main's head the same way.
+name: Release PiliPlus TV (no sync)
+
+on:
+  workflow_dispatch:
+
+# Shared with tv-sync-build.yml, so a release and a sync never overlap.
+concurrency:
+  group: tv-sync-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Tag main's head
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.tag.outputs.commit_sha }}
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+      release_version: ${{ steps.tag.outputs.release_version }}
+    steps:
+      - name: Refuse any branch but main
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Pick main under \"Use workflow from\". This run is on $GITHUB_REF."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Tag the release commit
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          # The app's version: pubspec.yaml's, plus the commit count after "+"
+          # (lib/scripts/build.ps1), the same numbers tv-sync-build.yml uses.
+          base_version="$(sed -n -E 's/^version:[[:space:]]*([0-9.]+).*/\1/p' pubspec.yaml | head -n 1)"
+          if [ -z "$base_version" ]; then
+            echo "::error::No version in pubspec.yaml."
+            exit 1
+          fi
+          release_version="${base_version}-fork.$(git rev-list --count HEAD)"
+          release_tag="v${release_version}"
+
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" --jq .tag_name 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            echo "::error::Release $release_tag already exists: main hasn't moved since it."
+            exit 1
+          fi
+
+          git tag -f "$release_tag" "$commit"
+          git push --force origin "refs/tags/$release_tag"
+
+          echo "commit_sha=$commit" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: TV checks
+    needs: prepare
+    uses: ./.github/workflows/tv-checks.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit_sha }}
+
+  android:
+    name: Build Android APKs
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the commit being released
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Apply project Flutter & TV patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Prepare build metadata
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Restore signing key from secrets
+        shell: bash
+        env:
+          SIGN_KEYSTORE_BASE64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGN_KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Signing secrets are missing. Building without them produces a random signature and every update conflicts with the installed app."
+            exit 1
+          fi
+          printf '%s' "$SIGN_KEYSTORE_BASE64" | base64 --decode > android/app/key.jks
+          printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+
+      - name: Build release APKs
+        shell: bash
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: PiliPlus-custom-Android-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [prepare, checks, android]
+    # A red TV check blocks the release even when the APKs built.
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.android.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download app artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish fork release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.prepare.outputs.commit_sha }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+        run: |
+          previous="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // ""')"
+          {
+            echo "PiliPlus-LemonTeaV Android & Android TV build $RELEASE_VERSION, released by hand from main with no upstream sync."
+            echo
+            echo "Source: https://github.com/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
+            if [ -n "$previous" ]; then
+              echo "Changes since $previous: https://github.com/$GITHUB_REPOSITORY/compare/$previous...$RELEASE_TAG"
+            fi
+            echo
+            echo "Builds passed: Android APK (arm64-v8a, armeabi-v7a, x86_64)."
+            echo "Checks passed: TV analyze and tests."
+          } > "$RUNNER_TEMP/release-notes.md"
+
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --target "$COMMIT_SHA" \
+            --title "PiliPlus $RELEASE_VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
