@@ -2935,5 +2935,6 @@ This document tracks the task-by-task execution progress of [`docs/tv/PLAN.md`](
   | When | TV up | Media service | Dev app's exits since the last check |
   | :--- | :--- | :--- | :--- |
   | 2026-11-18 11:12 | 4 d 21 h | 0.28 s | None: the same process since the device pass's last run (00:39). The latest exits are that run's force-stops, two installs and one kill (signal 9, 00:23, during the pass); no crash, no ANR |
+  | 2026-11-19 14:02 | 6 d 0 h (no reboot; adb's port changed) | 0.30 s | None: still the same process, 1 day 13 hours on |
 
 * **Next**: the rest of the soak, with `health.sh` now and then; then, with the user, landing on `main` (a pull request runs the TV checks on GitHub with the new test files) and the variant's future.
