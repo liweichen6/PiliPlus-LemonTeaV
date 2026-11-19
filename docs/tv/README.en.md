@@ -52,6 +52,17 @@ What the workflow does:
 5. Runs the TV checks (below) on the same commit, alongside the build.
 6. Publishes a GitHub Release on `liweichen6/PiliPlus-LemonTeaV` only if both the build and the TV checks passed. A red check means no APK and no release; the version tag from step 2 may already exist and is moved by the next run.
 
+> **Off for now** (2026-11-19): this workflow is disabled in Actions until M19 settles which upstream to follow (`PLAN.md`, `M19.2`). Upstream changes come in by hand, through a pull request, and releases go through the workflow below.
+
+### Option B: Manual Release Without a Sync (`tv-release.yml`)
+[`.github/workflows/tv-release.yml`](../../.github/workflows/tv-release.yml) releases `main` as it is and merges nothing from upstream. It runs only by hand: GitHub → **Actions** → **Release PiliPlus TV (no sync)** → **Run workflow** on `main`, or:
+
+```bash
+gh workflow run tv-release.yml --ref main
+```
+
+It tags `main`'s head `v<pubspec version>-fork.<commit count>` (the same numbers the app shows), then runs the TV checks and the signed build in parallel. It publishes the release only if both pass. It refuses to run on any other branch, and if `main` hasn't moved since a release with that tag. It shares `tv-sync-build.yml`'s concurrency group, so the two never overlap.
+
 ### TV Checks (`tv-checks.yml`)
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) runs on every pull request into `main` and before every release:
 1. Applies all patches with `lib/scripts/patch.ps1 android` (a patch that no longer applies after a Flutter bump fails here).

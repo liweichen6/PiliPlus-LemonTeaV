@@ -52,6 +52,17 @@
 5. 与构建并行，对同一提交运行 TV 检查（见下文）。
 6. 仅当构建与 TV 检查都通过时，才发布至本仓库 GitHub Releases。检查失败时不会发布 APK，也不会创建 Release；第 2 步的版本标签可能已经存在，下一次运行会移动它。
 
+> **暂时停用**（2026-11-19）：在 M19 决定跟随哪个上游之前（`PLAN.md`，`M19.2`），该工作流在 Actions 中保持禁用。上游改动改为手动通过 Pull Request 合入，发布改用下面的工作流。
+
+### 方式 B：不同步上游的手动发布（`tv-release.yml`）
+[`.github/workflows/tv-release.yml`](../../.github/workflows/tv-release.yml) 按 `main` 当前的状态发布，不合并任何上游改动。它只能手动运行：在 GitHub 点击 **Actions** → **Release PiliPlus TV (no sync)** → 在 `main` 上 **Run workflow**，或执行：
+
+```bash
+gh workflow run tv-release.yml --ref main
+```
+
+它会给 `main` 的最新提交打上 `v<pubspec 版本>-fork.<提交计数>` 标签（与应用显示的版本号一致），然后并行运行 TV 检查和签名构建，两者都通过才发布 Release。在其他分支上运行，或 `main` 自上次同标签发布后没有新提交时，它会直接拒绝。它与 `tv-sync-build.yml` 共用并发组，两者不会同时运行。
+
 ### TV 检查（`tv-checks.yml`）
 [`.github/workflows/tv-checks.yml`](../../.github/workflows/tv-checks.yml) 会在每个合并到 `main` 的 Pull Request 上以及每次发布前运行：
 1. 通过 `lib/scripts/patch.ps1 android` 应用全部补丁（Flutter 升级后补丁无法应用时，这一步就会失败）。
