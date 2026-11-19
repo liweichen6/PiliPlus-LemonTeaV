@@ -24,7 +24,7 @@
 | :--- | :--- |
 | [**README.md**](./README.md)（[English](./README.en.md)） | TV 模块总览、包名与多版本并存说明、上游同步指南、本地 APK 构建指南与签名配置说明。 |
 | [**ARCHITECTURE.md**](./ARCHITECTURE.md) | **三层解耦 TV 控制层架构规范**（`lib/tv/*`、`lib/scripts/tv_*.patch`、`TvBridge.kt`）、核心性能与健壮性机制（`F1`–`F9`、`M6`–`M10`）与 23 项 TV 功能不变量（`C1`–`C23`）。 |
-| [**4K_VARIANT.md**](./4K_VARIANT.md) | 视频直通版本（`variant/4k-passthrough` 分支）：与 `main` 的区别、如何从 `main` 更新、设备检查和构建方法。 |
+| [**4K_VARIANT.md**](./4K_VARIANT.md) | 视频直通版本（`variant/4k-passthrough` 分支，2026-11-19 已退役，最后一个提交打了标签 `archive/4k-passthrough`）：与 `main` 的区别、设备检查、构建方法，以及如需恢复该怎么做。 |
 | [**PLAYBACK_PARAMETERS.md**](./PLAYBACK_PARAMETERS.md) | 电视端 ExoPlayer（Media3）的缓冲、重试与直播起播等参数及其 4K60 数据，以及视频直通路径上测试过的全部 mpv 参数、结果和哪些做成了设置。 |
 | [**M13_BASELINE.md**](./M13_BASELINE.md) | M13.0：测量 D-pad 每一步耗时的方法、测试清单、时间预算和焦点问题清单。 |
 | [**M17_MEDIA3_STUDY.md**](./M17_MEDIA3_STUDY.md) | M17 在上机试验之前的调研：四个 PiliPlus 分支如何使用 Media3、哪些实现可以借鉴、哪些不采用，以及一份 TV 检查清单。 |

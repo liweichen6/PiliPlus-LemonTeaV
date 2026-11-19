@@ -191,7 +191,7 @@ Names used in §2.1–§2.13 are the ones of their time. M13.1 renamed several o
 
 ### 2.14 `TvVideoPlane`: 4K on the Video Plane (M16)
 
-Not on `main`. It lives on `variant/4k-passthrough`, whose copy of this file has the design and invariant `C24`. See [`4K_VARIANT.md`](./4K_VARIANT.md).
+Not on `main`. It lives on `variant/4k-passthrough`, retired on 2026-11-19 and tagged `archive/4k-passthrough`, whose copy of this file has the design and invariant `C24`. ExoPlayer (§2.16) took its place. See [`4K_VARIANT.md`](./4K_VARIANT.md).
 
 ### 2.15 The Focus Engine Since M13: Adapters, One Reconcile Loop and the Scorer
 
@@ -226,7 +226,7 @@ On TV every player that `PlPlayerController` makes is Media3 ExoPlayer, for vide
 
 ## 3. Preserved TV Capability Invariants (C1–C23, C25–C28)
 
-The TV control layer maintains 27 verified capability invariants across navigation, widgets, modals, inline sheets, and playback. `C24` is `TvVideoPlane`'s, on `variant/4k-passthrough` only (§2.14), so ExoPlayer's start at `C25` (see [`docs/tv/REVIEW.md`](./REVIEW.md) for a code-level audit):
+The TV control layer maintains 27 verified capability invariants across navigation, widgets, modals, inline sheets, and playback. `C24` is `TvVideoPlane`'s, on the retired `variant/4k-passthrough` only (§2.14), so ExoPlayer's start at `C25` (see [`docs/tv/REVIEW.md`](./REVIEW.md) for a code-level audit):
 
 | Invariant | Capability Description | Architectural Mechanism | Verification Test |
 | :--- | :--- | :--- | :--- |

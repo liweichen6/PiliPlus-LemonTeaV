@@ -2,7 +2,13 @@
 
 `variant/4k-passthrough` is `main` plus M16: 4K on the TV's video plane (`4K 视频直通`). It's a separate app, built by hand, with no releases and no update check.
 
-> **Frozen** (the user, 2026-11-15): no new work goes here, and M18 now targets `main`. Once M17 lands, `main` plays 4K and 2K+ live on the video plane through ExoPlayer, with real HDR and Dolby Vision, and doesn't rest on media_kit's internals. This app stays installed as the 4K fallback through `M17.12`'s soak, and `M17.12` decides with the user whether it retires. See M17 in [`PLAN.md`](./PLAN.md).
+> **Retired** (the user, 2026-11-19, in `M17.12`; frozen since 2026-11-15). M17 made ExoPlayer the TV's player on `main`: it plays 4K and 2K+ live on the video plane, with real HDR and Dolby Vision, and doesn't rest on media_kit's internals. Nothing more goes on this branch, and `main` is no longer merged into it.
+>
+> * **The code stays reproducible.** The tag `archive/4k-passthrough` marks the variant's last commit, `528d925e4` (`main` of 2026-11-09 plus M16). The branch is kept as it is, so it can still be built as under "Building" below.
+> * **Where it's described.** That commit's `ARCHITECTURE.md` (§2.14, invariant `C24`), `REVIEW.md` and READMEs describe its code. M16 in [`PLAN.md`](./PLAN.md) and [`PROGRESS.md`](./PROGRESS.md) has its history and decisions.
+> * **Don't merge `main` into it.** Since M17, `main` hooks the same files to put ExoPlayer on the plane, so a merge would leave two players competing for it. To bring the variant back, start from the tag, port M16 onto today's `main` on purpose, and pass the device check below.
+>
+> Whether to uninstall PiliPlus TVP from the TV is the user's call. The rest of this page describes the variant as it was.
 
 **Why it's separate** (the user's decision, 2026-10-31): `main` merges upstream and publishes automatically, and CI has no TV. Upstream changes the code this path relies on often: `media_kit_video` moved 15 times in six months, and `androidAttachSurfaceAfterVideoParameters` changed on 2026-10-10. On this path, a change that still compiles could put 4K60 back on the GPU, which shuts `<physical-tv>` down. So this branch only moves when someone has checked it on a TV.
 
@@ -22,9 +28,9 @@
 * **No update check**: the only releases it could find are the normal app's, which would install beside it, not over it.
 * `-Pdev` builds stay `PiliPlus TV dev`, `com.lemontea.piliplus.tv.dev`, on either branch.
 
-## Updating From `main`
+## Updating From `main` (Before It Retired)
 
-Never merge this branch into `main`.
+No longer done: see the note at the top. Never merge this branch into `main`.
 
 1. `git merge main`. Conflicts should be small: the hooks in `lib/plugin/pl_player/controller.dart`, `lib/plugin/pl_player/view/view.dart`, `lib/pages/live_room/controller.dart` and `lib/pages/setting/models/video_settings.dart`, the identity lines in `android/app/build.gradle.kts`, the update hook in `lib/utils/update.dart`, and `tv-checks.yml`.
 2. Check what moved:
