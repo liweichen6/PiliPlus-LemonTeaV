@@ -55,8 +55,9 @@ jobs:
           release_version="${base_version}-fork.$(git rev-list --count HEAD)"
           release_tag="v${release_version}"
 
-          existing="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" --jq .tag_name 2>/dev/null || true)"
-          if [ -n "$existing" ]; then
+          # gh api prints GitHub's "Not Found" body on stdout too, so only its
+          # exit status says whether the release exists.
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" > /dev/null 2>&1; then
             echo "::error::Release $release_tag already exists: main hasn't moved since it."
             exit 1
           fi
