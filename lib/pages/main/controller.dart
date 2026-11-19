@@ -36,7 +36,9 @@ class MainController extends GetxController
   RxBool? showBottomBar;
   late final bool hideBottomBar;
   late final barHideType = Pref.barHideType;
-  bool useBottomNav = true;
+  // TV: starts from 改用侧边栏. With it on, nothing else sets this, and
+  // upstream's `true` (68fbb1ff5) showed the bottom bar instead.
+  late bool useBottomNav = !useSideBar;
   late dynamic controller;
   final RxInt selectedIndex = 0.obs;
 

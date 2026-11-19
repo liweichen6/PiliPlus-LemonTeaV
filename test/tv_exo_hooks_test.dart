@@ -7,11 +7,14 @@ import 'dart:io';
 import 'package:PiliPlus/models/common/audio_normalization.dart';
 import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models/common/video/video_decode_type.dart';
+import 'package:PiliPlus/models/user/info.dart';
 import 'package:PiliPlus/models/video/play/url.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/format.dart';
 import 'package:PiliPlus/models_new/live/live_room_play_info/stream.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
+import 'package:PiliPlus/services/account_service.dart';
 import 'package:PiliPlus/tv/tv_exo_capabilities.dart';
 import 'package:PiliPlus/tv/tv_exo_hud_text.dart';
 import 'package:PiliPlus/tv/tv_exo_live_source.dart';
@@ -27,6 +30,7 @@ import 'package:PiliPlus/utils/video_utils.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp, ListTile;
 import 'package:media_kit/media_kit.dart';
@@ -331,6 +335,38 @@ void main() {
           contains('TvExoSettings.normalizationDialog('),
         ),
       );
+    });
+  });
+
+  // 改用侧边栏 (useSideBar), which TV seeds on: upstream 2.2.1 (68fbb1ff5)
+  // started `useBottomNav` at true, and only the switch's off case sets it,
+  // so with the switch on the main page drew the bottom bar.
+  group('the main page with 改用侧边栏', () {
+    setUpAll(() async {
+      try {
+        GStorage.userInfo = await Hive.openBox<UserInfoData>(
+          'userInfo',
+          bytes: Uint8List(0),
+        );
+      } catch (_) {}
+      Get.put(AccountService());
+    });
+
+    tearDownAll(() async {
+      await GStorage.setting.delete(SettingBoxKey.useSideBar);
+      Get.reset();
+    });
+
+    test('on, the sidebar, not the bottom bar', () async {
+      await GStorage.setting.put(SettingBoxKey.useSideBar, true);
+      final ctr = MainController();
+      expect(ctr.useSideBar, isTrue);
+      expect(ctr.useBottomNav, isFalse);
+    });
+
+    test('off, the bottom bar until the page reads the screen', () async {
+      await GStorage.setting.put(SettingBoxKey.useSideBar, false);
+      expect(MainController().useBottomNav, isTrue);
     });
   });
 
